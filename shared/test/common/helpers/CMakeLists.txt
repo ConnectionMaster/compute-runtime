@@ -23,7 +23,6 @@ set(NEO_CORE_HELPERS_TESTS
     ${CMAKE_CURRENT_SOURCE_DIR}/memory_leak_listener.h
     ${CMAKE_CURRENT_SOURCE_DIR}/memory_management.h
     ${CMAKE_CURRENT_SOURCE_DIR}/simd_helper_tests.inl
-    ${CMAKE_CURRENT_SOURCE_DIR}/sip_init.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/string_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/string_to_hash_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test_traits.h
@@ -35,6 +34,12 @@ set(NEO_CORE_HELPERS_TESTS
     ${CMAKE_CURRENT_SOURCE_DIR}/unit_test_helper.inl
     ${CMAKE_CURRENT_SOURCE_DIR}/variable_backup.h
 )
+
+if(TESTS_XEHP_PLUS)
+  list(APPEND NEO_CORE_HELPERS_TESTS
+       ${CMAKE_CURRENT_SOURCE_DIR}/unit_test_helper_xehp_plus.inl
+  )
+endif()
 
 add_subdirectories()
 

@@ -92,7 +92,8 @@ bool ModuleTranslationUnit::buildFromSpirV(const char *input, uint32_t inputSize
         internalOptions = NEO::CompilerOptions::concatenate(internalOptions, BuildOptions::debugKernelEnable);
     }
 
-    if (NEO::DebugManager.flags.DisableStatelessToStatefulOptimization.get()) {
+    if (NEO::DebugManager.flags.DisableStatelessToStatefulOptimization.get() ||
+        device->getNEODevice()->areSharedSystemAllocationsAllowed()) {
         internalOptions = NEO::CompilerOptions::concatenate(internalOptions, NEO::CompilerOptions::greaterThan4gbBuffersRequired);
     }
 
@@ -199,6 +200,7 @@ bool ModuleTranslationUnit::processUnpackedBinary() {
     auto blob = ArrayRef<const uint8_t>(reinterpret_cast<const uint8_t *>(this->unpackedDeviceBinary.get()), this->unpackedDeviceBinarySize);
     NEO::SingleDeviceBinary binary = {};
     binary.deviceBinary = blob;
+    binary.targetDevice.grfSize = device->getHwInfo().capabilityTable.grfSize;
     std::string decodeErrors;
     std::string decodeWarnings;
 

@@ -55,10 +55,29 @@ HWTEST_F(CommandListAppendEventReset, givenCmdlistWhenResetEventAppendedThenPost
     ASSERT_TRUE(postSyncFound);
 }
 
+HWTEST_F(CommandListAppendEventReset, whenResetEventIsAppendedAndNoSpaceIsAvailableThenNextCommandBufferIsCreated) {
+    using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
+    using POST_SYNC_OPERATION = typename PIPE_CONTROL::POST_SYNC_OPERATION;
+    using MI_BATCH_BUFFER_END = typename FamilyType::MI_BATCH_BUFFER_END;
+
+    auto firstBatchBufferAllocation = commandList->commandContainer.getCommandStream()->getGraphicsAllocation();
+
+    auto useSize = commandList->commandContainer.getCommandStream()->getAvailableSpace();
+    useSize -= sizeof(MI_BATCH_BUFFER_END);
+    commandList->commandContainer.getCommandStream()->getSpace(useSize);
+
+    auto result = commandList->appendEventReset(event->toHandle());
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+
+    auto secondBatchBufferAllocation = commandList->commandContainer.getCommandStream()->getGraphicsAllocation();
+
+    EXPECT_NE(firstBatchBufferAllocation, secondBatchBufferAllocation);
+}
+
 HWTEST_F(CommandListAppendEventReset, givenCopyOnlyCmdlistWhenResetEventAppendedThenMiFlushWithPostSyncIsGenerated) {
     using MI_FLUSH_DW = typename FamilyType::MI_FLUSH_DW;
     ze_result_t returnValue;
-    commandList.reset(whitebox_cast(CommandList::create(productFamily, device, NEO::EngineGroupType::Copy, returnValue)));
+    commandList.reset(whitebox_cast(CommandList::create(productFamily, device, NEO::EngineGroupType::Copy, 0u, returnValue)));
 
     auto usedSpaceBefore = commandList->commandContainer.getCommandStream()->getUsed();
 
@@ -138,7 +157,7 @@ HWTEST2_F(CommandListAppendEventReset, givenTimestampEventUsedInResetThenPipeCon
     commandList->appendEventReset(event->toHandle());
     ASSERT_EQ(1u, event->getPacketsInUse());
 
-    auto contextOffset = NEO::TimestampPackets<uint32_t>::getContextEndOffset();
+    auto contextOffset = event->getContextEndOffset();
     auto baseAddr = event->getGpuAddress(device);
     auto gpuAddress = ptrOffset(baseAddr, contextOffset);
 
@@ -158,7 +177,7 @@ HWTEST2_F(CommandListAppendEventReset, givenTimestampEventUsedInResetThenPipeCon
             EXPECT_EQ(cmd->getAddress(), uint32_t(gpuAddress));
             EXPECT_FALSE(cmd->getDcFlushEnable());
             postSyncFound++;
-            gpuAddress += NEO::TimestampPackets<uint32_t>::getSinglePacketSize();
+            gpuAddress += event->getSinglePacketSize();
         }
     }
     ASSERT_EQ(EventPacketsCount::eventPackets, postSyncFound);

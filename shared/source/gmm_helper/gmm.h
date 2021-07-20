@@ -7,8 +7,7 @@
 
 #pragma once
 #include "shared/source/gmm_helper/gmm_lib.h"
-
-#include "storage_info.h"
+#include "shared/source/memory_manager/definitions/storage_info.h"
 
 #include <cstdint>
 #include <cstdlib>
@@ -28,12 +27,14 @@ class Gmm {
     Gmm(GmmClientContext *clientContext, ImageInfo &inputOutputImgInfo, StorageInfo storageInfo);
     Gmm(GmmClientContext *clientContext, const void *alignedPtr, size_t alignedSize, size_t alignment, bool uncacheable);
     Gmm(GmmClientContext *clientContext, const void *alignedPtr, size_t alignedSize, size_t alignment, bool uncacheable, bool preferRenderCompressed, bool systemMemoryPool, StorageInfo storageInfo);
+    Gmm(GmmClientContext *clientContext, const void *alignedPtr, size_t alignedSize, size_t alignment, bool uncacheable, bool preferRenderCompressed, bool systemMemoryPool, StorageInfo storageInfo, bool allowLargePages);
     Gmm(GmmClientContext *clientContext, GMM_RESOURCE_INFO *inputGmm);
 
     void queryImageParams(ImageInfo &inputOutputImgInfo);
 
     void applyAuxFlagsForBuffer(bool preferRenderCompression);
     void applyMemoryFlags(bool systemMemoryPool, StorageInfo &storageInfo);
+    void applyAppResource(StorageInfo &storageInfo);
 
     bool unifiedAuxTranslationCapable() const;
     bool hasMultisampleControlSurface() const;
@@ -49,12 +50,14 @@ class Gmm {
     GMM_RESCREATE_PARAMS resourceParams = {};
     std::unique_ptr<GmmResourceInfo> gmmResourceInfo;
 
-    bool isRenderCompressed = false;
+    bool isCompressionEnabled = false;
     bool useSystemMemoryPool = true;
 
   protected:
     void applyAuxFlagsForImage(ImageInfo &imgInfo);
     void setupImageResourceParams(ImageInfo &imgInfo);
+    bool extraMemoryFlagsRequired();
+    void applyExtraMemoryFlags(const StorageInfo &storageInfo);
     GmmClientContext *clientContext = nullptr;
 };
 } // namespace NEO

@@ -17,7 +17,16 @@
 
 namespace NEO {
 void PageFaultManager::insertAllocation(void *ptr, size_t size, SVMAllocsManager *unifiedMemoryManager, void *cmdQ, const MemoryProperties &memoryProperties) {
-    const bool initialPlacementCpu = !memoryProperties.allocFlags.usmInitialPlacementGpu;
+    bool initialPlacementCpu = true;
+    if (memoryProperties.allocFlags.usmInitialPlacementGpu) {
+        initialPlacementCpu = false;
+    }
+    if (memoryProperties.allocFlags.usmInitialPlacementCpu) {
+        initialPlacementCpu = true;
+    }
+    if (const int32_t debugFlag = DebugManager.flags.UsmInitialPlacement.get(); debugFlag != -1) {
+        initialPlacementCpu = debugFlag != 1;
+    }
     const auto domain = initialPlacementCpu ? AllocationDomain::Cpu : AllocationDomain::None;
 
     std::unique_lock<SpinLock> lock{mtx};
@@ -79,12 +88,15 @@ bool PageFaultManager::verifyPageFault(void *ptr) {
         auto &pageFaultData = alloc.second;
         if (ptr >= allocPtr && ptr < ptrOffset(allocPtr, pageFaultData.size)) {
             this->setAubWritable(true, allocPtr, pageFaultData.unifiedMemoryManager);
-
             gpuDomainHandler(this, allocPtr, pageFaultData);
             return true;
         }
     }
     return false;
+}
+
+void PageFaultManager::setGpuDomainHandler(gpuDomainHandlerFunc gpuHandlerFuncPtr) {
+    this->gpuDomainHandler = gpuHandlerFuncPtr;
 }
 
 void PageFaultManager::handleGpuDomainTransferForHw(PageFaultManager *pageFaultHandler, void *allocPtr, PageFaultData &pageFaultData) {

@@ -9,6 +9,8 @@ set(NEO_CORE_OS_INTERFACE_LINUX
     ${CMAKE_CURRENT_SOURCE_DIR}/allocator_helper.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cache_info.h
     ${CMAKE_CURRENT_SOURCE_DIR}${BRANCH_DIR_SUFFIX}/cache_info_impl.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/device_time_drm.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/device_time_drm.h
     ${CMAKE_CURRENT_SOURCE_DIR}/driver_info_linux.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/driver_info_linux.h
     ${CMAKE_CURRENT_SOURCE_DIR}/drm_allocation.cpp
@@ -34,7 +36,7 @@ set(NEO_CORE_OS_INTERFACE_LINUX
     ${CMAKE_CURRENT_SOURCE_DIR}/drm_memory_operations_handler_default.h
     ${CMAKE_CURRENT_SOURCE_DIR}${BRANCH_DIR_SUFFIX}/drm_memory_operations_handler_create.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}${BRANCH_DIR_SUFFIX}/drm_query_extended.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/hw_info_config.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hw_info_config_drm.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/hw_device_id.h
     ${CMAKE_CURRENT_SOURCE_DIR}/hw_device_id_linux.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/linux_inc.cpp
@@ -45,8 +47,8 @@ set(NEO_CORE_OS_INTERFACE_LINUX
     ${CMAKE_CURRENT_SOURCE_DIR}/os_context_linux.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/os_context_linux.h
     ${CMAKE_CURRENT_SOURCE_DIR}/os_inc.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/os_interface.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/os_interface.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/os_interface_linux.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/os_interface_linux.h
     ${CMAKE_CURRENT_SOURCE_DIR}/os_library_helper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/os_library_linux.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/os_library_linux.h
@@ -57,6 +59,8 @@ set(NEO_CORE_OS_INTERFACE_LINUX
     ${CMAKE_CURRENT_SOURCE_DIR}/os_thread_linux.h
     ${CMAKE_CURRENT_SOURCE_DIR}/os_time_linux.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/os_time_linux.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/pci_path.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/pci_path.h
     ${CMAKE_CURRENT_SOURCE_DIR}/page_table_manager_functions.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/print.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/settings_reader_create.cpp
@@ -64,6 +68,17 @@ set(NEO_CORE_OS_INTERFACE_LINUX
     ${CMAKE_CURRENT_SOURCE_DIR}/system_info.h
     ${CMAKE_CURRENT_SOURCE_DIR}${BRANCH_DIR_SUFFIX}/system_info_impl.h
 )
+
+if(DISABLE_WDDM_LINUX)
+  list(APPEND NEO_CORE_OS_INTERFACE_LINUX
+       ${CMAKE_CURRENT_SOURCE_DIR}/hw_info_config_wddm_stub.cpp
+  )
+else()
+  list(APPEND NEO_CORE_OS_INTERFACE_LINUX
+       ${CMAKE_CURRENT_SOURCE_DIR}/wddm_linux/sys_calls_win.cpp
+       ${CMAKE_CURRENT_SOURCE_DIR}/wddm_linux/compatible_driver_store.cpp
+  )
+endif()
 
 if(SUPPORT_DG1 AND "${BRANCH_TYPE}" STREQUAL "")
   list(APPEND NEO_CORE_OS_INTERFACE_LINUX

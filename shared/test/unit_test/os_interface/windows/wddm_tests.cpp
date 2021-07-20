@@ -6,8 +6,8 @@
  */
 
 #include "shared/source/gmm_helper/gmm.h"
+#include "shared/test/common/os_interface/windows/wddm_fixture.h"
 
-#include "opencl/test/unit_test/os_interface/windows/wddm_fixture.h"
 #include "test.h"
 
 namespace NEO {
@@ -20,7 +20,7 @@ TEST_F(WddmTests, whenCreatingAllocation64kThenDoNotCreateResource) {
     D3DKMT_HANDLE handle;
     Gmm gmm(executionEnvironment->rootDeviceEnvironments[0]->getGmmClientContext(), nullptr, 20, 0, false, true, true, {});
 
-    EXPECT_TRUE(wddm->createAllocation64k(&gmm, handle));
+    EXPECT_TRUE(wddm->createAllocation(&gmm, handle));
     auto gdiParam = getMockAllocationFcn();
     EXPECT_EQ(FALSE, gdiParam->Flags.CreateResource);
 }

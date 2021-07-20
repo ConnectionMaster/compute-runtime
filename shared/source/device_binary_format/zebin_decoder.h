@@ -18,7 +18,7 @@
 
 namespace NEO {
 
-static constexpr NEO::Elf::ZebinKernelMetadata::Types::Version zeInfoDecoderVersion{1, 0};
+static constexpr NEO::Elf::ZebinKernelMetadata::Types::Version zeInfoDecoderVersion{1, 5};
 
 struct ZebinSections {
     using SectionHeaderData = NEO::Elf::Elf<Elf::EI_CLASS_64>::SectionHeaderAndData;
@@ -28,6 +28,7 @@ struct ZebinSections {
     StackVec<SectionHeaderData *, 1> constDataSections;
     StackVec<SectionHeaderData *, 1> symtabSections;
     StackVec<SectionHeaderData *, 1> spirvSections;
+    StackVec<SectionHeaderData *, 1> noteIntelGTSections;
 };
 
 using UniqueNode = StackVec<const NEO::Yaml::Node *, 1>;
@@ -40,6 +41,9 @@ struct ZeInfoKernelSections {
     UniqueNode perThreadMemoryBuffersNd;
     UniqueNode experimentalPropertiesNd;
 };
+
+bool validateTargetDevice(const Elf::Elf<Elf::EI_CLASS_64> &elf, const TargetDevice &targetDevice);
+std::vector<const Elf::IntelGTNote *> getIntelGTNotes(const Elf::Elf<Elf::EI_CLASS_64> &elf);
 
 DecodeError extractZebinSections(NEO::Elf::Elf<Elf::EI_CLASS_64> &elf, ZebinSections &out, std::string &outErrReason, std::string &outWarning);
 DecodeError validateZebinSectionsCount(const ZebinSections &sections, std::string &outErrReason, std::string &outWarning);
@@ -75,6 +79,7 @@ using ZeInfoPayloadArguments = StackVec<NEO::Elf::ZebinKernelMetadata::Types::Ke
 DecodeError readZeInfoPayloadArguments(const NEO::Yaml::YamlParser &parser, const NEO::Yaml::Node &node,
                                        ZeInfoPayloadArguments &ouPayloadArguments,
                                        uint32_t &outMaxPayloadArgumentIndex,
+                                       int32_t &outMaxSamplerIndex,
                                        ConstStringRef context,
                                        std::string &outErrReason, std::string &outWarning);
 
@@ -90,7 +95,7 @@ DecodeError readZeInfoPerThreadMemoryBuffers(const NEO::Yaml::YamlParser &parser
                                              ConstStringRef context,
                                              std::string &outErrReason, std::string &outWarning);
 
-NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Types::Kernel::PerThreadPayloadArgument::PerThreadPayloadArgumentBaseT &src, NEO::KernelDescriptor &dst,
+NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Types::Kernel::PerThreadPayloadArgument::PerThreadPayloadArgumentBaseT &src, NEO::KernelDescriptor &dst, const uint32_t grfSize,
                                        std::string &outErrReason, std::string &outWarning);
 
 NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Types::Kernel::PayloadArgument::PayloadArgumentBaseT &src, NEO::KernelDescriptor &dst, uint32_t &crossThreadDataSize,

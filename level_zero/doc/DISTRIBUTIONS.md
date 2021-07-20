@@ -1,3 +1,11 @@
+<!---
+
+Copyright (C) 2020-2021 Intel Corporation
+
+SPDX-License-Identifier: MIT
+
+-->
+
 # Level Zero in Linux distributions
 
 ## Centos* 7, 8, Stream, Red Hat Enterprise Linux* 7
@@ -8,7 +16,7 @@ yum copr enable jdanecki/intel-opencl
 yum install level-zero intel-level-zero-gpu
 ```
 
-## Fedora* 32, 33, 34, rawhide, Red Hat Enterprise Linux* 8, Mageia* 7, 8
+## Fedora* 33, 34, rawhide, Red Hat Enterprise Linux* 8, Mageia* 8
 
 ```
 dnf install dnf-plugins-core

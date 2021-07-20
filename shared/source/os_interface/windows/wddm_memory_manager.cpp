@@ -25,7 +25,6 @@
 #include "shared/source/memory_manager/memory_operations_handler.h"
 #include "shared/source/os_interface/os_interface.h"
 #include "shared/source/os_interface/windows/os_context_win.h"
-#include "shared/source/os_interface/windows/os_interface.h"
 #include "shared/source/os_interface/windows/wddm/wddm.h"
 #include "shared/source/os_interface/windows/wddm_allocation.h"
 #include "shared/source/os_interface/windows/wddm_residency_allocations_container.h"
@@ -47,6 +46,16 @@ WddmMemoryManager::WddmMemoryManager(ExecutionEnvironment &executionEnvironment)
     for (uint32_t rootDeviceIndex = 0; rootDeviceIndex < gfxPartitions.size(); ++rootDeviceIndex) {
         mallocRestrictions.minAddress = std::max(mallocRestrictions.minAddress, getWddm(rootDeviceIndex).getWddmMinAddress());
         getWddm(rootDeviceIndex).initGfxPartition(*getGfxPartition(rootDeviceIndex), rootDeviceIndex, gfxPartitions.size(), heapAssigner.apiAllowExternalHeapForSshAndDsh);
+    }
+
+    alignmentSelector.addCandidateAlignment(MemoryConstants::pageSize64k, true, AlignmentSelector::anyWastage);
+    if (DebugManager.flags.AlignLocalMemoryVaTo2MB.get() != 0) {
+        constexpr static float maxWastage2Mb = 0.1f;
+        alignmentSelector.addCandidateAlignment(MemoryConstants::pageSize2Mb, false, maxWastage2Mb);
+    }
+    const size_t customAlignment = static_cast<size_t>(DebugManager.flags.ExperimentalEnableCustomLocalMemoryAlignment.get());
+    if (customAlignment > 0) {
+        alignmentSelector.addCandidateAlignment(customAlignment, false, AlignmentSelector::anyWastage);
     }
 
     initialized = true;
@@ -86,15 +95,19 @@ GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryForImageImpl(const 
 }
 
 GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemory64kb(const AllocationData &allocationData) {
-    size_t sizeAligned = alignUp(allocationData.size, MemoryConstants::pageSize64k);
-    if (sizeAligned > getHugeGfxMemoryChunkSize()) {
-        return allocateHugeGraphicsMemory(allocationData);
+    return allocateGraphicsMemoryUsingKmdAndMapItToCpuVA(allocationData, true);
+}
+
+GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryUsingKmdAndMapItToCpuVA(const AllocationData &allocationData, bool allowLargePages) {
+    size_t sizeAligned = alignUp(allocationData.size, allowLargePages ? MemoryConstants::pageSize64k : MemoryConstants::pageSize);
+    if (sizeAligned > getHugeGfxMemoryChunkSize(GfxMemoryAllocationMethod::AllocateByKmd)) {
+        return allocateHugeGraphicsMemory(allocationData, false);
     }
 
     auto wddmAllocation = std::make_unique<WddmAllocation>(allocationData.rootDeviceIndex,
                                                            1u, // numGmms
                                                            allocationData.type, nullptr,
-                                                           sizeAligned, nullptr, MemoryPool::System64KBPages,
+                                                           sizeAligned, nullptr, allowLargePages ? MemoryPool::System64KBPages : MemoryPool::System4KBPages,
                                                            0u, // shareable
                                                            maxOsContextCount);
 
@@ -102,25 +115,26 @@ GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemory64kb(const Allocati
                        sizeAligned, 0u,
                        allocationData.flags.uncacheable,
                        allocationData.flags.preferRenderCompressed, true,
-                       allocationData.storageInfo);
+                       allocationData.storageInfo,
+                       allowLargePages);
     wddmAllocation->setDefaultGmm(gmm);
     wddmAllocation->setFlushL3Required(allocationData.flags.flushL3);
     wddmAllocation->storageInfo = allocationData.storageInfo;
 
-    if (!getWddm(allocationData.rootDeviceIndex).createAllocation64k(gmm, wddmAllocation->getHandleToModify(0u))) {
+    if (!getWddm(allocationData.rootDeviceIndex).createAllocation(gmm, wddmAllocation->getHandleToModify(0u))) {
         delete gmm;
         return nullptr;
     }
 
-    auto cpuPtr = gmm->isRenderCompressed ? nullptr : lockResource(wddmAllocation.get());
+    auto cpuPtr = gmm->isCompressionEnabled ? nullptr : lockResource(wddmAllocation.get());
 
-    auto status = mapGpuVirtualAddress(wddmAllocation.get(), cpuPtr);
+    [[maybe_unused]] auto status = mapGpuVirtualAddress(wddmAllocation.get(), cpuPtr);
     DEBUG_BREAK_IF(!status);
     wddmAllocation->setCpuAddress(cpuPtr);
     return wddmAllocation.release();
 }
 
-GraphicsAllocation *WddmMemoryManager::allocateHugeGraphicsMemory(const AllocationData &allocationData) {
+GraphicsAllocation *WddmMemoryManager::allocateHugeGraphicsMemory(const AllocationData &allocationData, bool sharedVirtualAddress) {
     void *hostPtr = nullptr, *alignedPtr = nullptr;
     size_t alignedSize = 0;
     bool uncacheable = allocationData.flags.uncacheable;
@@ -140,7 +154,7 @@ GraphicsAllocation *WddmMemoryManager::allocateHugeGraphicsMemory(const Allocati
         }
     }
 
-    auto chunkSize = getHugeGfxMemoryChunkSize();
+    auto chunkSize = getHugeGfxMemoryChunkSize(GfxMemoryAllocationMethod::UseUmdSystemPtr);
     auto numGmms = (alignedSize + chunkSize - 1) / chunkSize;
     auto wddmAllocation = std::make_unique<WddmAllocation>(allocationData.rootDeviceIndex, numGmms,
                                                            allocationData.type, hostPtr, allocationData.size,
@@ -166,7 +180,7 @@ GraphicsAllocation *WddmMemoryManager::allocateHugeGraphicsMemory(const Allocati
 
     wddmAllocation->storageInfo.multiStorage = true;
 
-    if (!createWddmAllocation(wddmAllocation.get(), nullptr)) {
+    if (!createWddmAllocation(wddmAllocation.get(), sharedVirtualAddress ? hostPtr : nullptr)) {
         for (auto gmmId = 0u; gmmId < wddmAllocation->getNumGmms(); ++gmmId) {
             delete wddmAllocation->getGmm(gmmId);
         }
@@ -182,8 +196,19 @@ GraphicsAllocation *WddmMemoryManager::allocateUSMHostGraphicsMemory(const Alloc
 }
 
 GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryWithAlignment(const AllocationData &allocationData) {
+    if (preferredAllocationMethod == GfxMemoryAllocationMethod::UseUmdSystemPtr) {
+        return allocateSystemMemoryAndCreateGraphicsAllocationFromIt(allocationData);
+    } else {
+        return allocateGraphicsMemoryUsingKmdAndMapItToCpuVA(allocationData, NEO::OSInterface::osEnabled64kbPages);
+    }
+}
+
+GraphicsAllocation *WddmMemoryManager::allocateSystemMemoryAndCreateGraphicsAllocationFromIt(const AllocationData &allocationData) {
     size_t newAlignment = allocationData.alignment ? alignUp(allocationData.alignment, MemoryConstants::pageSize) : MemoryConstants::pageSize;
     size_t sizeAligned = allocationData.size ? alignUp(allocationData.size, MemoryConstants::pageSize) : MemoryConstants::pageSize;
+    if (sizeAligned > getHugeGfxMemoryChunkSize(GfxMemoryAllocationMethod::UseUmdSystemPtr)) {
+        return allocateHugeGraphicsMemory(allocationData, true);
+    }
     void *pSysMem = allocateSystemMemory(sizeAligned, newAlignment);
     Gmm *gmm = nullptr;
 
@@ -216,6 +241,7 @@ GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryWithAlignment(const
         mapPtr = alignUp(mapPtr, newAlignment);
     }
 
+    mapPtr = isLimitedGPU(allocationData.rootDeviceIndex) ? nullptr : mapPtr;
     if (!createWddmAllocation(wddmAllocation.get(), mapPtr)) {
         delete gmm;
         freeSystemMemory(pSysMem);
@@ -227,8 +253,8 @@ GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryWithAlignment(const
 
 GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryForNonSvmHostPtr(const AllocationData &allocationData) {
     auto alignedSize = alignSizeWholePage(allocationData.hostPtr, allocationData.size);
-    if (alignedSize > getHugeGfxMemoryChunkSize()) {
-        return allocateHugeGraphicsMemory(allocationData);
+    if (alignedSize > getHugeGfxMemoryChunkSize(GfxMemoryAllocationMethod::UseUmdSystemPtr)) {
+        return allocateHugeGraphicsMemory(allocationData, false);
     }
 
     auto wddmAllocation = std::make_unique<WddmAllocation>(allocationData.rootDeviceIndex,
@@ -255,8 +281,8 @@ GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryForNonSvmHostPtr(co
 }
 
 GraphicsAllocation *WddmMemoryManager::allocateGraphicsMemoryWithHostPtr(const AllocationData &allocationData) {
-    if (allocationData.size > getHugeGfxMemoryChunkSize()) {
-        return allocateHugeGraphicsMemory(allocationData);
+    if (allocationData.size > getHugeGfxMemoryChunkSize(GfxMemoryAllocationMethod::UseUmdSystemPtr)) {
+        return allocateHugeGraphicsMemory(allocationData, false);
     }
 
     if (mallocRestrictions.minAddress > reinterpret_cast<uintptr_t>(allocationData.hostPtr)) {
@@ -376,7 +402,7 @@ GraphicsAllocation *WddmMemoryManager::createAllocationFromHandle(osHandle handl
     return allocation.release();
 }
 
-GraphicsAllocation *WddmMemoryManager::createGraphicsAllocationFromSharedHandle(osHandle handle, const AllocationProperties &properties, bool requireSpecificBitness) {
+GraphicsAllocation *WddmMemoryManager::createGraphicsAllocationFromSharedHandle(osHandle handle, const AllocationProperties &properties, bool requireSpecificBitness, bool isHostIpcAllocation) {
     return createAllocationFromHandle(handle, requireSpecificBitness, false, properties.allocationType, properties.rootDeviceIndex);
 }
 
@@ -420,7 +446,7 @@ void WddmMemoryManager::unlockResourceImpl(GraphicsAllocation &graphicsAllocatio
     auto &wddmAllocation = static_cast<WddmAllocation &>(graphicsAllocation);
     getWddm(graphicsAllocation.getRootDeviceIndex()).unlockResource(wddmAllocation.getDefaultHandle());
     if (wddmAllocation.needsMakeResidentBeforeLock) {
-        auto evictionStatus = getWddm(graphicsAllocation.getRootDeviceIndex()).getTemporaryResourcesContainer()->evictResource(wddmAllocation.getDefaultHandle());
+        [[maybe_unused]] auto evictionStatus = getWddm(graphicsAllocation.getRootDeviceIndex()).getTemporaryResourcesContainer()->evictResource(wddmAllocation.getDefaultHandle());
         DEBUG_BREAK_IF(evictionStatus == MemoryOperationsStatus::FAILED);
     }
 }
@@ -446,8 +472,8 @@ void WddmMemoryManager::freeGraphicsMemoryImpl(GraphicsAllocation *gfxAllocation
     auto defaultGmm = gfxAllocation->getDefaultGmm();
     if (defaultGmm) {
         auto index = gfxAllocation->getRootDeviceIndex();
-        if (defaultGmm->isRenderCompressed && executionEnvironment.rootDeviceEnvironments[index]->pageTableManager.get()) {
-            auto status = executionEnvironment.rootDeviceEnvironments[index]->pageTableManager->updateAuxTable(input->getGpuAddress(), defaultGmm, false);
+        if (defaultGmm->isCompressionEnabled && executionEnvironment.rootDeviceEnvironments[index]->pageTableManager.get()) {
+            [[maybe_unused]] auto status = executionEnvironment.rootDeviceEnvironments[index]->pageTableManager->updateAuxTable(input->getGpuAddress(), defaultGmm, false);
             DEBUG_BREAK_IF(!status);
         }
     }
@@ -461,11 +487,11 @@ void WddmMemoryManager::freeGraphicsMemoryImpl(GraphicsAllocation *gfxAllocation
         cleanGraphicsMemoryCreatedFromHostPtr(gfxAllocation);
     } else {
         if (input->peekSharedHandle()) {
-            auto status = tryDeferDeletions(nullptr, 0, input->resourceHandle, gfxAllocation->getRootDeviceIndex());
+            [[maybe_unused]] auto status = tryDeferDeletions(nullptr, 0, input->resourceHandle, gfxAllocation->getRootDeviceIndex());
             DEBUG_BREAK_IF(!status);
         } else {
             for (auto handle : input->getHandles()) {
-                auto status = tryDeferDeletions(&handle, 1, 0, gfxAllocation->getRootDeviceIndex());
+                [[maybe_unused]] auto status = tryDeferDeletions(&handle, 1, 0, gfxAllocation->getRootDeviceIndex());
                 DEBUG_BREAK_IF(!status);
             }
         }
@@ -722,7 +748,7 @@ bool WddmMemoryManager::createGpuAllocationsWithRetry(WddmAllocation *allocation
 }
 
 Wddm &WddmMemoryManager::getWddm(uint32_t rootDeviceIndex) const {
-    return *this->executionEnvironment.rootDeviceEnvironments[rootDeviceIndex]->osInterface->get()->getWddm();
+    return *this->executionEnvironment.rootDeviceEnvironments[rootDeviceIndex]->osInterface->getDriverModel()->as<Wddm>();
 }
 
 void *WddmMemoryManager::reserveCpuAddressRange(size_t size, uint32_t rootDeviceIndex) {

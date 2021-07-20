@@ -5,6 +5,7 @@
  *
  */
 
+#include "shared/source/command_stream/tbx_command_stream_receiver.h"
 #include "shared/source/device/device.h"
 #include "shared/source/helpers/hw_helper.h"
 #include "shared/source/indirect_heap/indirect_heap.h"
@@ -13,15 +14,15 @@
 #include "shared/test/common/helpers/ult_hw_config.h"
 #include "shared/test/common/helpers/unit_test_helper.h"
 #include "shared/test/common/helpers/variable_backup.h"
+#include "shared/test/common/mocks/mock_driver_info.h"
+#include "shared/test/common/mocks/mock_execution_environment.h"
 #include "shared/test/common/mocks/ult_device_factory.h"
 
-#include "opencl/source/command_stream/tbx_command_stream_receiver.h"
 #include "opencl/source/platform/platform.h"
 #include "opencl/test/unit_test/fixtures/cl_device_fixture.h"
 #include "opencl/test/unit_test/libult/ult_command_stream_receiver.h"
 #include "opencl/test/unit_test/mocks/mock_context.h"
 #include "opencl/test/unit_test/mocks/mock_csr.h"
-#include "opencl/test/unit_test/mocks/mock_execution_environment.h"
 #include "opencl/test/unit_test/mocks/mock_memory_manager.h"
 #include "opencl/test/unit_test/mocks/mock_platform.h"
 #include "test.h"
@@ -125,7 +126,7 @@ TEST_F(DeviceTest, WhenDeviceIsCreatedThenOsTimeIsNotNull) {
 TEST_F(DeviceTest, GivenDebugVariableForcing32BitAllocationsWhenDeviceIsCreatedThenMemoryManagerHasForce32BitFlagSet) {
     DebugManager.flags.Force32bitAddressing.set(true);
     auto pDevice = std::unique_ptr<Device>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(nullptr));
-    if (is64bit) {
+    if constexpr (is64bit) {
         EXPECT_TRUE(pDevice->getDeviceInfo().force32BitAddressess);
         EXPECT_TRUE(pDevice->getMemoryManager()->peekForce32BitAllocations());
     } else {
@@ -145,6 +146,36 @@ TEST_F(DeviceTest, WhenRetainingThenReferenceIsOneAndApiIsUsed) {
 
     ASSERT_FALSE(pClDevice->releaseApi().isUnused());
     ASSERT_EQ(1, pClDevice->getReference());
+}
+
+TEST_F(DeviceTest, givenNoPciBusInfoThenIsPciBusInfoValidReturnsFalse) {
+    PhysicalDevicePciBusInfo invalidPciBusInfoList[] = {
+        PhysicalDevicePciBusInfo(0, 1, 2, PhysicalDevicePciBusInfo::InvalidValue),
+        PhysicalDevicePciBusInfo(0, 1, PhysicalDevicePciBusInfo::InvalidValue, 3),
+        PhysicalDevicePciBusInfo(0, PhysicalDevicePciBusInfo::InvalidValue, 2, 3),
+        PhysicalDevicePciBusInfo(PhysicalDevicePciBusInfo::InvalidValue, 1, 2, 3)};
+
+    for (auto pciBusInfo : invalidPciBusInfoList) {
+        auto driverInfo = new DriverInfoMock();
+        driverInfo->setPciBusInfo(pciBusInfo);
+
+        pClDevice->driverInfo.reset(driverInfo);
+        pClDevice->initializeCaps();
+
+        EXPECT_FALSE(pClDevice->isPciBusInfoValid());
+    }
+}
+
+TEST_F(DeviceTest, givenPciBusInfoThenIsPciBusInfoValidReturnsTrue) {
+    PhysicalDevicePciBusInfo pciBusInfo(0, 1, 2, 3);
+
+    auto driverInfo = new DriverInfoMock();
+    driverInfo->setPciBusInfo(pciBusInfo);
+
+    pClDevice->driverInfo.reset(driverInfo);
+    pClDevice->initializeCaps();
+
+    EXPECT_TRUE(pClDevice->isPciBusInfoValid());
 }
 
 HWTEST_F(DeviceTest, WhenDeviceIsCreatedThenActualEngineTypeIsSameAsDefault) {
@@ -438,9 +469,9 @@ TEST(DeviceCreation, givenFtrSimulationModeFlagTrueWhenNoOtherSimulationFlagsAre
     EXPECT_TRUE(device->isSimulation());
 }
 
-TEST(DeviceCreation, givenDeviceWhenCheckingEnginesCountThenNumberGreaterThanZeroIsReturned) {
+TEST(DeviceCreation, givenDeviceWhenCheckingGpgpuEnginesCountThenNumberGreaterThanZeroIsReturned) {
     auto device = std::unique_ptr<Device>(MockDevice::createWithNewExecutionEnvironment<Device>(nullptr));
-    EXPECT_GT(HwHelper::getEnginesCount(device->getHardwareInfo()), 0u);
+    EXPECT_GT(HwHelper::getGpgpuEnginesCount(device->getHardwareInfo()), 0u);
 }
 
 TEST(DeviceCreation, givenDeviceWhenCheckingParentDeviceThenCorrectValueIsReturned) {
@@ -683,4 +714,44 @@ HWCMDTEST_F(IGFX_GEN8_CORE, DeviceQueueFamiliesTests, givenCopyQueueWhenGettingQ
     const cl_command_queue_capabilities_intel expectedBlitterCapabilities = setBits(MockClDevice::getQueueFamilyCapabilitiesAll(), false, capabilitiesNotSupportedOnBlitter);
     auto device = std::make_unique<MockClDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(defaultHwInfo.get()));
     EXPECT_EQ(expectedBlitterCapabilities, device->getQueueFamilyCapabilities(NEO::EngineGroupType::Copy));
+}
+
+TEST(ClDeviceHelperTest, givenNonZeroNumberOfTilesWhenPrepareDeviceEnvironmentsCountCalledThenReturnCorrectValue) {
+    DebugManagerStateRestore stateRestore;
+    FeatureTable skuTable;
+    WorkaroundTable waTable = {};
+    RuntimeCapabilityTable capTable = {};
+    GT_SYSTEM_INFO sysInfo = {};
+    sysInfo.MultiTileArchInfo.IsValid = true;
+    sysInfo.MultiTileArchInfo.TileCount = 3;
+    PLATFORM platform = {};
+    HardwareInfo hwInfo{&platform, &skuTable, &waTable, &sysInfo, capTable};
+    DebugManager.flags.CreateMultipleSubDevices.set(0);
+
+    uint32_t devicesCount = HwHelper::getSubDevicesCount(&hwInfo);
+    EXPECT_EQ(devicesCount, 3u);
+}
+
+TEST(ClDeviceHelperTest, givenZeroNumberOfTilesWhenPrepareDeviceEnvironmentsCountCalledThenReturnCorrectValue) {
+    DebugManagerStateRestore stateRestore;
+    FeatureTable skuTable;
+    WorkaroundTable waTable = {};
+    RuntimeCapabilityTable capTable = {};
+    GT_SYSTEM_INFO sysInfo = {};
+    sysInfo.MultiTileArchInfo.IsValid = true;
+    sysInfo.MultiTileArchInfo.TileCount = 0;
+    PLATFORM platform = {};
+    HardwareInfo hwInfo{&platform, &skuTable, &waTable, &sysInfo, capTable};
+    DebugManager.flags.CreateMultipleSubDevices.set(0);
+
+    uint32_t devicesCount = HwHelper::getSubDevicesCount(&hwInfo);
+    EXPECT_EQ(devicesCount, 1u);
+}
+
+TEST_F(DeviceTest, whenInitializeRayTracingIsCalledAndRtBackedBufferIsNullptrMemoryBackedBufferIsCreated) {
+    EXPECT_EQ(nullptr, pDevice->getRTMemoryBackedBuffer());
+    pDevice->initializeRayTracing();
+    EXPECT_NE(nullptr, pDevice->getRTMemoryBackedBuffer());
+    pDevice->initializeRayTracing();
+    EXPECT_NE(nullptr, pDevice->getRTMemoryBackedBuffer());
 }

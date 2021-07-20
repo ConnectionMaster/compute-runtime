@@ -6,6 +6,7 @@
  */
 
 #include "opencl/test/unit_test/fixtures/platform_fixture.h"
+#include "opencl/test/unit_test/mocks/mock_platform.h"
 #include "test.h"
 
 using namespace NEO;
@@ -104,34 +105,9 @@ TEST_F(clCreateContextFromTypeTests, GivenNonDefaultPlatformWithInvalidIcdDispat
     EXPECT_EQ(nullptr, clContext);
 }
 
-TEST(clCreateContextFromTypeTest, GivenPlatformWithMultipleDevicesAndMultiRootDeviceContextsAreEnabledWhenCreatingContextFromTypeThenContextContainsAllDevices) {
+TEST(clCreateContextFromTypeTest, GivenPlatformWithMultipleDevicesWhenCreatingContextFromTypeThenContextContainsOnlyOneDevice) {
     DebugManagerStateRestore restorer;
     DebugManager.flags.CreateMultipleRootDevices.set(2);
-    DebugManager.flags.EnableMultiRootDeviceContexts.set(true);
-
-    initPlatform();
-
-    cl_int retVal = CL_INVALID_CONTEXT;
-
-    auto context =
-        clCreateContextFromType(nullptr, CL_DEVICE_TYPE_GPU, nullptr, nullptr, &retVal);
-
-    ASSERT_EQ(CL_SUCCESS, retVal);
-    ASSERT_NE(nullptr, context);
-
-    auto pContext = castToObject<Context>(context);
-    EXPECT_EQ(2u, pContext->getNumDevices());
-    EXPECT_EQ(platform()->getClDevice(0), pContext->getDevice(0));
-    EXPECT_EQ(platform()->getClDevice(1), pContext->getDevice(1));
-
-    retVal = clReleaseContext(context);
-    ASSERT_EQ(CL_SUCCESS, retVal);
-}
-
-TEST(clCreateContextFromTypeTest, GivenPlatformWithMultipleDevicesAndMultiRootDeviceContextsAreDisabledWhenCreatingContextFromTypeThenContextContainsOnlyOneDevice) {
-    DebugManagerStateRestore restorer;
-    DebugManager.flags.CreateMultipleRootDevices.set(2);
-    DebugManager.flags.EnableMultiRootDeviceContexts.set(false);
 
     initPlatform();
 

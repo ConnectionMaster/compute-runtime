@@ -7,9 +7,9 @@
 
 #
 #include "shared/source/gmm_helper/gmm.h"
-#include "shared/source/helpers/surface_format_info.h"
 
 using namespace NEO;
 
-void Gmm::applyAuxFlagsForImage(ImageInfo &imgInfo) {}
-void Gmm::applyMemoryFlags(bool systemMemoryPool, StorageInfo &storageInfo) { this->useSystemMemoryPool = systemMemoryPool; }
+void Gmm::applyAppResource(StorageInfo &storageInfo) {}
+void Gmm::applyExtraMemoryFlags(const StorageInfo &storageInfo) {}
+bool Gmm::extraMemoryFlagsRequired() { return false; }

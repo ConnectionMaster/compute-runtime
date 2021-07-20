@@ -12,11 +12,9 @@
 #include "shared/source/os_interface/os_context.h"
 #include "shared/test/common/mocks/mock_device.h"
 
-#include "opencl/source/platform/platform.h"
 #include "opencl/test/unit_test/libult/ult_command_stream_receiver.h"
 #include "opencl/test/unit_test/mocks/mock_allocation_properties.h"
 #include "opencl/test/unit_test/mocks/mock_memory_manager.h"
-#include "opencl/test/unit_test/mocks/mock_platform.h"
 #include "test.h"
 
 using namespace NEO;
@@ -39,7 +37,8 @@ struct DeferredDeleterPublic : DeferredDeleter {
 
 struct DeferrableAllocationDeletionTest : ::testing::Test {
     void SetUp() override {
-        ExecutionEnvironment *executionEnvironment = platform()->peekExecutionEnvironment();
+        executionEnvironment = new MockExecutionEnvironment(defaultHwInfo.get(), false, 1u);
+        executionEnvironment->incRefInternal();
         memoryManager = new MockMemoryManager(*executionEnvironment);
         executionEnvironment->memoryManager.reset(memoryManager);
         device.reset(Device::create<MockDevice>(executionEnvironment, 0u));
@@ -51,7 +50,9 @@ struct DeferrableAllocationDeletionTest : ::testing::Test {
     void TearDown() override {
         asyncDeleter->allowExit = true;
         asyncDeleter->removeClient();
+        executionEnvironment->decRefInternal();
     }
+    ExecutionEnvironment *executionEnvironment;
     std::unique_ptr<DeferredDeleterPublic> asyncDeleter;
     MockMemoryManager *memoryManager = nullptr;
     std::unique_ptr<MockDevice> device;
@@ -161,7 +162,6 @@ TEST_F(DeferrableAllocationDeletionTest, givenAllocationUsedByUnregisteredEngine
     DeferrableAllocationDeletion deletion{*memoryManager, *allocation};
 
     device.reset();
-    ExecutionEnvironment *executionEnvironment = platform()->peekExecutionEnvironment();
     executionEnvironment->rootDeviceEnvironments.clear();
     EXPECT_EQ(0u, memoryManager->registeredEngines.size());
     EXPECT_TRUE(allocation->isUsed());

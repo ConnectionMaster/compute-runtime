@@ -24,6 +24,57 @@
 
 namespace NEO {
 
+bool validateTargetDevice(const Elf::Elf<Elf::EI_CLASS_64> &elf, const TargetDevice &targetDevice) {
+    GFXCORE_FAMILY gfxCore = IGFX_UNKNOWN_CORE;
+    PRODUCT_FAMILY productFamily = IGFX_UNKNOWN;
+    Elf::ZebinTargetMetadata targetMetadata = {};
+    auto intelGTNotes = getIntelGTNotes(elf);
+    for (const auto &intelGTNote : intelGTNotes) {
+        switch (intelGTNote->type) {
+        case Elf::IntelGTSectionType::ProductFamily:
+            productFamily = static_cast<PRODUCT_FAMILY>(intelGTNote->desc);
+            break;
+        case Elf::IntelGTSectionType::GfxCore:
+            gfxCore = static_cast<GFXCORE_FAMILY>(intelGTNote->desc);
+            break;
+        case Elf::IntelGTSectionType::TargetMetadata:
+            targetMetadata.packed = intelGTNote->desc;
+            break;
+        default:
+            return false;
+        }
+    }
+    bool validForTarget = (gfxCore != IGFX_UNKNOWN_CORE) | (productFamily != IGFX_UNKNOWN);
+    validForTarget &= (gfxCore != IGFX_UNKNOWN_CORE) ? targetDevice.coreFamily == gfxCore : true;
+    validForTarget &= (productFamily != IGFX_UNKNOWN) ? targetDevice.productFamily == productFamily : true;
+    validForTarget &= (0 == targetMetadata.validateRevisionId) | ((targetDevice.stepping >= targetMetadata.minHwRevisionId) & (targetDevice.stepping <= targetMetadata.maxHwRevisionId));
+    validForTarget &= (8U == targetDevice.maxPointerSizeInBytes);
+    return validForTarget;
+}
+
+std::vector<const Elf::IntelGTNote *> getIntelGTNotes(const Elf::Elf<Elf::EI_CLASS_64> &elf) {
+    std::vector<const Elf::IntelGTNote *> intelGTNotes;
+    for (size_t i = 0; i < elf.sectionHeaders.size(); i++) {
+        auto section = elf.sectionHeaders[i];
+        if (Elf::SHT_NOTE == section.header->type && Elf::SectionsNamesZebin::noteIntelGT == elf.getSectionName(static_cast<uint32_t>(i))) {
+            auto numEntries = elf.sectionHeaders[i].header->size / sizeof(Elf::IntelGTNote);
+            for (uint32_t i = 0; i < numEntries; ++i) {
+                auto intelGTNote = reinterpret_cast<const Elf::IntelGTNote *>(section.data.begin() + i * sizeof(Elf::IntelGTNote));
+
+                bool isValidGTNote = sizeof(uint32_t) == intelGTNote->descSize;
+                isValidGTNote &= Elf::IntelGtNoteOwnerName.size() + 1 == intelGTNote->nameSize;
+                isValidGTNote &= Elf::IntelGtNoteOwnerName == ConstStringRef(intelGTNote->ownerName);
+                if (isValidGTNote) {
+                    intelGTNotes.push_back(intelGTNote);
+                } else {
+                    continue;
+                }
+            }
+        }
+    }
+    return intelGTNotes;
+}
+
 DecodeError extractZebinSections(NEO::Elf::Elf<Elf::EI_CLASS_64> &elf, ZebinSections &out, std::string &outErrReason, std::string &outWarning) {
     if ((elf.elfFileHeader->shStrNdx >= elf.sectionHeaders.size()) || (NEO::Elf::SHN_UNDEF == elf.elfFileHeader->shStrNdx)) {
         outErrReason.append("DeviceBinaryFormat::Zebin : Invalid or missing shStrNdx in elf header\n");
@@ -49,8 +100,10 @@ DecodeError extractZebinSections(NEO::Elf::Elf<Elf::EI_CLASS_64> &elf, ZebinSect
                 out.constDataSections.push_back(&elfSectionHeader);
             } else if (sectionName == NEO::Elf::SectionsNamesZebin::dataGlobal) {
                 out.globalDataSections.push_back(&elfSectionHeader);
+            } else if (sectionName.startsWith(NEO::Elf::SectionsNamesZebin::debugPrefix.data())) {
+                // ignoring intentionally
             } else {
-                outErrReason.append("DeviceBinaryFormat::Zebin : Unhandled SHT_PROGBITS section : " + sectionName.str() + " currently supports only : " + NEO::Elf::SectionsNamesZebin::textPrefix.str() + "KERNEL_NAME, " + NEO::Elf::SectionsNamesZebin::dataConst.str() + " and " + NEO::Elf::SectionsNamesZebin::dataGlobal.str() + ".\n");
+                outErrReason.append("DeviceBinaryFormat::Zebin : Unhandled SHT_PROGBITS section : " + sectionName.str() + " currently supports only : " + NEO::Elf::SectionsNamesZebin::textPrefix.str() + "KERNEL_NAME, " + NEO::Elf::SectionsNamesZebin::dataConst.str() + ", " + NEO::Elf::SectionsNamesZebin::dataGlobal.str() + " and " + NEO::Elf::SectionsNamesZebin::debugPrefix.str() + "* .\n");
                 return DecodeError::InvalidBinary;
             }
             break;
@@ -62,6 +115,13 @@ DecodeError extractZebinSections(NEO::Elf::Elf<Elf::EI_CLASS_64> &elf, ZebinSect
             break;
         case NEO::Elf::SHT_ZEBIN_SPIRV:
             out.spirvSections.push_back(&elfSectionHeader);
+            break;
+        case NEO::Elf::SHT_NOTE:
+            if (sectionName == NEO::Elf::SectionsNamesZebin::noteIntelGT) {
+                out.noteIntelGTSections.push_back(&elfSectionHeader);
+            } else {
+                outWarning.append("DeviceBinaryFormat::Zebin : Unhandled SHT_NOTE section : " + sectionName.str() + " currently supports only : " + NEO::Elf::SectionsNamesZebin::noteIntelGT.str() + ".\n");
+            }
             break;
         case NEO::Elf::SHT_STRTAB:
             // ignoring intentionally - section header names
@@ -108,6 +168,7 @@ DecodeError validateZebinSectionsCount(const ZebinSections &sections, std::strin
     valid &= validateZebinSectionsCountAtMost(sections.constDataSections, NEO::Elf::SectionsNamesZebin::dataConst, 1U, outErrReason, outWarning);
     valid &= validateZebinSectionsCountAtMost(sections.symtabSections, NEO::Elf::SectionsNamesZebin::symtab, 1U, outErrReason, outWarning);
     valid &= validateZebinSectionsCountAtMost(sections.spirvSections, NEO::Elf::SectionsNamesZebin::spv, 1U, outErrReason, outWarning);
+    valid &= validateZebinSectionsCountAtMost(sections.noteIntelGTSections, NEO::Elf::SectionsNamesZebin::noteIntelGT, 1U, outErrReason, outWarning);
     return valid ? DecodeError::Success : DecodeError::InvalidBinary;
 }
 
@@ -260,6 +321,10 @@ bool readEnumChecked(const Yaml::Token *token, NEO::Elf::ZebinKernelMetadata::Ty
         out = ArgTypeT::ArgTypeArgBypointer;
     } else if (tokenValue == PayloadArgument::ArgType::bufferOffset) {
         out = ArgTypeT::ArgTypeBufferOffset;
+    } else if (tokenValue == PayloadArgument::ArgType::printfBuffer) {
+        out = ArgTypeT::ArgTypePrintfBuffer;
+    } else if (tokenValue == PayloadArgument::ArgType::workDimensions) {
+        out = ArgTypeT::ArgTypeWorkDimensions;
     } else {
         outErrReason.append("DeviceBinaryFormat::Zebin::" + NEO::Elf::SectionsNamesZebin::zeInfo.str() + " : Unhandled \"" + tokenValue.str() + "\" argument type in context of " + context.str() + "\n");
         return false;
@@ -432,6 +497,7 @@ DecodeError readZeInfoPerThreadPayloadArguments(const NEO::Yaml::YamlParser &par
 DecodeError readZeInfoPayloadArguments(const NEO::Yaml::YamlParser &parser, const NEO::Yaml::Node &node,
                                        ZeInfoPayloadArguments &ouPayloadArguments,
                                        uint32_t &outMaxPayloadArgumentIndex,
+                                       int32_t &outMaxSamplerIndex,
                                        ConstStringRef context,
                                        std::string &outErrReason, std::string &outWarning) {
     bool validPayload = true;
@@ -459,6 +525,9 @@ DecodeError readZeInfoPayloadArguments(const NEO::Yaml::YamlParser &parser, cons
             } else if (NEO::Elf::ZebinKernelMetadata::Tags::Kernel::PayloadArgument::accessType == key) {
                 auto accessTypeToken = parser.getValueToken(payloadArgumentMemberNd);
                 validPayload &= readEnumChecked(accessTypeToken, payloadArgMetadata.accessType, context, outErrReason);
+            } else if (NEO::Elf::ZebinKernelMetadata::Tags::Kernel::PayloadArgument::samplerIndex == key) {
+                validPayload &= parser.readValueChecked(payloadArgumentMemberNd, payloadArgMetadata.samplerIndex);
+                outMaxSamplerIndex = std::max<int32_t>(outMaxSamplerIndex, payloadArgMetadata.samplerIndex);
             } else {
                 outWarning.append("DeviceBinaryFormat::Zebin::" + NEO::Elf::SectionsNamesZebin::zeInfo.str() + " : Unknown entry \"" + key.str() + "\" for payload argument in context of " + context.str() + "\n");
             }
@@ -540,7 +609,7 @@ bool setVecArgIndicesBasedOnSize(CrossThreadDataOffset (&vec)[Len], size_t vecSi
     return true;
 }
 
-NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Types::Kernel::PerThreadPayloadArgument::PerThreadPayloadArgumentBaseT &src, NEO::KernelDescriptor &dst,
+NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Types::Kernel::PerThreadPayloadArgument::PerThreadPayloadArgumentBaseT &src, NEO::KernelDescriptor &dst, uint32_t grfSize,
                                        std::string &outErrReason, std::string &outWarning) {
     switch (src.argType) {
     default:
@@ -555,6 +624,8 @@ NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Type
 
         uint32_t singleChannelIndicesCount = (dst.kernelAttributes.simdSize == 32 ? 32 : 16);
         uint32_t singleChannelBytes = singleChannelIndicesCount * sizeof(LocalIdT);
+        UNRECOVERABLE_IF(0 == grfSize);
+        singleChannelBytes = alignUp(singleChannelBytes, grfSize);
         auto tupleSize = (src.size / singleChannelBytes);
         switch (tupleSize) {
         default:
@@ -569,8 +640,9 @@ NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Type
             break;
         }
         dst.kernelAttributes.perThreadDataSize = dst.kernelAttributes.simdSize;
-        dst.kernelAttributes.perThreadDataSize *= dst.kernelAttributes.numLocalIdChannels;
         dst.kernelAttributes.perThreadDataSize *= sizeof(LocalIdT);
+        dst.kernelAttributes.perThreadDataSize = alignUp(dst.kernelAttributes.perThreadDataSize, grfSize);
+        dst.kernelAttributes.perThreadDataSize *= dst.kernelAttributes.numLocalIdChannels;
         break;
     }
     case NEO::Elf::ZebinKernelMetadata::Types::Kernel::ArgTypePackedLocalIds: {
@@ -642,7 +714,9 @@ NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Type
             dst.payloadMappings.explicitArgs[src.argIndex].as<ArgDescImage>(true);
             break;
         case NEO::Elf::ZebinKernelMetadata::Types::Kernel::PayloadArgument::AddressSpaceSampler:
-            dst.payloadMappings.explicitArgs[src.argIndex].as<ArgDescSampler>(true);
+            static constexpr auto maxSamplerStateSize = 16U;
+            static constexpr auto maxIndirectSamplerStateSize = 64U;
+            dst.payloadMappings.explicitArgs[src.argIndex].as<ArgDescSampler>(true).bindful = maxIndirectSamplerStateSize + maxSamplerStateSize * src.samplerIndex;
             break;
         }
 
@@ -756,6 +830,22 @@ NEO::DecodeError populateArgDescriptor(const NEO::Elf::ZebinKernelMetadata::Type
         argAsPointer.bufferOffset = src.offset;
         break;
     }
+
+    case NEO::Elf::ZebinKernelMetadata::Types::Kernel::ArgTypePrintfBuffer: {
+        dst.kernelAttributes.flags.usesPrintf = true;
+        dst.payloadMappings.implicitArgs.printfSurfaceAddress.stateless = src.offset;
+        dst.payloadMappings.implicitArgs.printfSurfaceAddress.pointerSize = src.size;
+        break;
+    }
+
+    case NEO::Elf::ZebinKernelMetadata::Types::Kernel::ArgTypeWorkDimensions: {
+        if (4 != src.size) {
+            outErrReason.append("DeviceBinaryFormat::Zebin : Invalid size for argument of type " + NEO::Elf::ZebinKernelMetadata::Tags::Kernel::PayloadArgument::ArgType::workDimensions.str() + " in context of : " + dst.kernelMetadata.kernelName + ". Expected 4. Got : " + std::to_string(src.size) + "\n");
+            return DecodeError::InvalidBinary;
+        }
+        dst.payloadMappings.dispatchTraits.workDim = src.offset;
+        break;
+    }
     }
 
     return DecodeError::Success;
@@ -827,9 +917,10 @@ NEO::DecodeError populateKernelDescriptor(NEO::ProgramInfo &dst, NEO::Elf::Elf<N
     }
 
     uint32_t maxArgumentIndex = 0U;
+    int32_t maxSamplerIndex = -1;
     ZeInfoPayloadArguments payloadArguments;
     if (false == zeInfokernelSections.payloadArgumentsNd.empty()) {
-        auto payloadArgsErr = readZeInfoPayloadArguments(yamlParser, *zeInfokernelSections.payloadArgumentsNd[0], payloadArguments, maxArgumentIndex,
+        auto payloadArgsErr = readZeInfoPayloadArguments(yamlParser, *zeInfokernelSections.payloadArgumentsNd[0], payloadArguments, maxArgumentIndex, maxSamplerIndex,
                                                          kernelDescriptor.kernelMetadata.kernelName, outErrReason, outWarning);
         if (DecodeError::Success != payloadArgsErr) {
             return payloadArgsErr;
@@ -881,7 +972,7 @@ NEO::DecodeError populateKernelDescriptor(NEO::ProgramInfo &dst, NEO::Elf::Elf<N
     }
 
     for (const auto &arg : perThreadPayloadArguments) {
-        auto decodeErr = populateArgDescriptor(arg, kernelDescriptor, outErrReason, outWarning);
+        auto decodeErr = populateArgDescriptor(arg, kernelDescriptor, dst.grfSize, outErrReason, outWarning);
         if (DecodeError::Success != decodeErr) {
             return decodeErr;
         }
@@ -970,6 +1061,24 @@ NEO::DecodeError populateKernelDescriptor(NEO::ProgramInfo &dst, NEO::Elf::Elf<N
         kernelDescriptor.payloadMappings.bindingTable.tableOffset = static_cast<SurfaceStateHeapOffset>(generatedBindingTablePos - generatedSshPos);
     }
 
+    auto generatedDshPos = kernelDescriptor.generatedHeaps.size();
+    uint32_t generatedDshSize = 0U;
+    if (maxSamplerIndex >= 0) {
+        static constexpr auto maxSamplerStateSize = 16U;
+        static constexpr auto maxIndirectSamplerStateSize = 64U;
+
+        kernelDescriptor.kernelAttributes.flags.usesSamplers = true;
+        auto &samplerTable = kernelDescriptor.payloadMappings.samplerTable;
+
+        samplerTable.borderColor = 0U;
+        samplerTable.tableOffset = maxIndirectSamplerStateSize;
+        samplerTable.numSamplers = maxSamplerIndex + 1;
+
+        generatedDshSize = maxIndirectSamplerStateSize + kernelDescriptor.payloadMappings.samplerTable.numSamplers * maxSamplerStateSize;
+        generatedDshSize = alignUp(generatedDshSize, MemoryConstants::cacheLineSize);
+        kernelDescriptor.generatedHeaps.resize(kernelDescriptor.generatedHeaps.size() + generatedDshSize);
+    }
+
     ZebinSections::SectionHeaderData *correspondingTextSegment = nullptr;
     auto sectionHeaderNamesData = elf.sectionHeaders[elf.elfFileHeader->shStrNdx].data;
     ConstStringRef sectionHeaderNamesString(reinterpret_cast<const char *>(sectionHeaderNamesData.begin()), sectionHeaderNamesData.size());
@@ -991,6 +1100,9 @@ NEO::DecodeError populateKernelDescriptor(NEO::ProgramInfo &dst, NEO::Elf::Elf<N
     kernelInfo->heapInfo.KernelUnpaddedSize = static_cast<uint32_t>(correspondingTextSegment->data.size());
     kernelInfo->heapInfo.pSsh = kernelDescriptor.generatedHeaps.data() + generatedSshPos;
     kernelInfo->heapInfo.SurfaceStateHeapSize = generatedSshSize;
+    kernelInfo->heapInfo.pDsh = kernelDescriptor.generatedHeaps.data() + generatedDshPos;
+    kernelInfo->heapInfo.DynamicStateHeapSize = generatedDshSize;
+
     dst.kernelInfos.push_back(kernelInfo.release());
     return DecodeError::Success;
 }
@@ -1034,6 +1146,7 @@ DecodeError decodeSingleDeviceBinary<NEO::DeviceBinaryFormat::Zebin>(ProgramInfo
     }
 
     dst.decodedElf = elf;
+    dst.grfSize = src.targetDevice.grfSize;
 
     if (false == zebinSections.globalDataSections.empty()) {
         dst.globalVariables.initData = zebinSections.globalDataSections[0]->data.begin();

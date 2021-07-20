@@ -1,3 +1,11 @@
+<!---
+
+Copyright (C) 2020-2021 Intel Corporation
+
+SPDX-License-Identifier: MIT
+
+-->
+
 # NEO OpenCL in Linux distributions
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/intel-compute-runtime.svg)](https://repology.org/project/intel-compute-runtime/versions)
@@ -28,7 +36,7 @@ swupd bundle-add computer-vision-basic
 cave resolve --execute intel-compute-runtime
 ```
 
-## Fedora* 32, 33, 34, rawhide, Red Hat Enterprise Linux* 8, Mageia* 7, 8
+## Fedora* 33, 34, rawhide, Red Hat Enterprise Linux* 8, Mageia* 8
 
 ```
 dnf install dnf-plugins-core
@@ -90,6 +98,13 @@ apt install intel-opencl-icd
 
 ```
 apt install intel-opencl-icd
+```
+
+## Conda (Linux glibc>=2.12)
+
+```
+conda config --add channels conda-forge
+conda install intel-compute-runtime
 ```
 
 ## Building and installation

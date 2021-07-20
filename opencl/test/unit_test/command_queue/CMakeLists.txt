@@ -6,8 +6,8 @@
 
 set(IGDRCL_SRCS_tests_command_queue
     ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
-    ${CMAKE_CURRENT_SOURCE_DIR}/buffer_operations_fixture.h
     ${CMAKE_CURRENT_SOURCE_DIR}/blit_enqueue_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/buffer_operations_fixture.h
     ${CMAKE_CURRENT_SOURCE_DIR}/command_queue_hw_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/command_queue_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/dispatch_walker_tests.cpp
@@ -56,13 +56,14 @@ set(IGDRCL_SRCS_tests_command_queue
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_read_buffer_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_read_image_fixture.h
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_read_image_tests.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}${BRANCH_DIR_SUFFIX}/enqueue_resource_barier_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_resource_barier_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_svm_mem_copy_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_svm_mem_fill_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_svm_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_thread_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_unmap_memobject_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_waitlist_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_with_walker_partition_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_write_buffer_event_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_write_buffer_rect_fixture.h
     ${CMAKE_CURRENT_SOURCE_DIR}/enqueue_write_buffer_rect_tests.cpp
@@ -86,8 +87,16 @@ set(IGDRCL_SRCS_tests_command_queue
     ${CMAKE_CURRENT_SOURCE_DIR}/ooq_task_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/read_write_buffer_cpu_copy.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/sync_buffer_handler_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/walker_partition_tests_xehp_plus.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/work_group_size_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/zero_size_enqueue_tests.cpp
 )
+
+if(TESTS_XEHP_PLUS)
+  list(APPEND IGDRCL_SRCS_tests_command_queue
+       ${CMAKE_CURRENT_SOURCE_DIR}/walker_partition_tests_xehp_plus.cpp
+  )
+endif()
+
 target_sources(igdrcl_tests PRIVATE ${IGDRCL_SRCS_tests_command_queue})
 add_subdirectories()

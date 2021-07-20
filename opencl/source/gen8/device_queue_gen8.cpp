@@ -38,7 +38,7 @@ void DeviceQueueHw<Family>::addMiAtomicCmdWa(uint64_t atomicOpPlaceholder) {
                                           atomicOpPlaceholder,
                                           Family::MI_ATOMIC::ATOMIC_OPCODES::ATOMIC_8B_INCREMENT,
                                           Family::MI_ATOMIC::DATA_SIZE::DATA_SIZE_QWORD,
-                                          0x1u, 0x1u);
+                                          0x1u, 0x1u, 0x0u, 0x0u);
 }
 
 template <>
@@ -62,12 +62,13 @@ void DeviceQueueHw<Family>::addPipeControlCmdWa(bool isNoopCmd) {}
 
 template <>
 void DeviceQueueHw<Family>::addProfilingEndCmds(uint64_t timestampAddress) {
-    auto pPipeControlCmd = (PIPE_CONTROL *)slbCS.getSpace(sizeof(PIPE_CONTROL));
-    *pPipeControlCmd = Family::cmdInitPipeControl;
-    pPipeControlCmd->setCommandStreamerStallEnable(true);
-    pPipeControlCmd->setPostSyncOperation(PIPE_CONTROL::POST_SYNC_OPERATION_WRITE_TIMESTAMP);
-    pPipeControlCmd->setAddressHigh(timestampAddress >> 32);
-    pPipeControlCmd->setAddress(timestampAddress & (0xffffffff));
+    auto pipeControlSpace = (PIPE_CONTROL *)slbCS.getSpace(sizeof(PIPE_CONTROL));
+    auto pipeControlCmd = Family::cmdInitPipeControl;
+    pipeControlCmd.setCommandStreamerStallEnable(true);
+    pipeControlCmd.setPostSyncOperation(PIPE_CONTROL::POST_SYNC_OPERATION_WRITE_TIMESTAMP);
+    pipeControlCmd.setAddressHigh(timestampAddress >> 32);
+    pipeControlCmd.setAddress(timestampAddress & (0xffffffff));
+    *pipeControlSpace = pipeControlCmd;
 }
 
 template <>

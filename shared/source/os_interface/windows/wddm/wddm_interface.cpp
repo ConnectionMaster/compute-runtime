@@ -19,7 +19,7 @@ using namespace NEO;
 bool WddmInterface::createMonitoredFence(MonitoredFence &monitorFence) {
     NTSTATUS status = STATUS_SUCCESS;
     D3DKMT_CREATESYNCHRONIZATIONOBJECT2 CreateSynchronizationObject = {0};
-    CreateSynchronizationObject.hDevice = wddm.getDevice();
+    CreateSynchronizationObject.hDevice = wddm.getDeviceHandle();
     CreateSynchronizationObject.Info.Type = D3DDDI_MONITORED_FENCE;
     CreateSynchronizationObject.Info.MonitoredFence.InitialFenceValue = 0;
 
@@ -33,10 +33,9 @@ bool WddmInterface::createMonitoredFence(MonitoredFence &monitorFence) {
     return status == STATUS_SUCCESS;
 }
 void WddmInterface::destroyMonitorFence(D3DKMT_HANDLE fenceHandle) {
-    NTSTATUS status = STATUS_SUCCESS;
     D3DKMT_DESTROYSYNCHRONIZATIONOBJECT destroySyncObject = {0};
     destroySyncObject.hSyncObject = fenceHandle;
-    status = wddm.getGdi()->destroySynchronizationObject(&destroySyncObject);
+    [[maybe_unused]] NTSTATUS status = wddm.getGdi()->destroySynchronizationObject(&destroySyncObject);
     DEBUG_BREAK_IF(STATUS_SUCCESS != status);
 }
 
@@ -105,7 +104,7 @@ bool WddmInterface23::createHwQueue(OsContextWin &osContext) {
 
     createHwQueue.hHwContext = osContext.getWddmContextHandle();
     if (osContext.getPreemptionMode() >= PreemptionMode::MidBatch) {
-        createHwQueue.Flags.DisableGpuTimeout = wddm.readEnablePreemptionRegKey();
+        createHwQueue.Flags.DisableGpuTimeout = wddm.getEnablePreemptionRegValue();
     }
 
     auto status = wddm.getGdi()->createHwQueue(&createHwQueue);
@@ -133,7 +132,7 @@ void WddmInterface23::destroyHwQueue(D3DKMT_HANDLE hwQueue) {
         D3DKMT_DESTROYHWQUEUE destroyHwQueue = {};
         destroyHwQueue.hHwQueue = hwQueue;
 
-        auto status = wddm.getGdi()->destroyHwQueue(&destroyHwQueue);
+        [[maybe_unused]] auto status = wddm.getGdi()->destroyHwQueue(&destroyHwQueue);
         DEBUG_BREAK_IF(status != STATUS_SUCCESS);
     }
 }

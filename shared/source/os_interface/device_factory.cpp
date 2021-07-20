@@ -122,6 +122,7 @@ bool DeviceFactory::prepareDeviceEnvironments(ExecutionEnvironment &executionEnv
         rootDeviceIndex++;
     }
 
+    executionEnvironment.sortNeoDevices();
     executionEnvironment.parseAffinityMask();
     executionEnvironment.calculateMaxOsContextCount();
 
@@ -154,8 +155,6 @@ std::vector<std::unique_ptr<Device>> DeviceFactory::createDevices(ExecutionEnvir
             devices.push_back(std::move(device));
         }
     }
-
-    executionEnvironment.memoryManager->disableGemCloseWorkerForNewResidencyModel();
 
     return devices;
 }

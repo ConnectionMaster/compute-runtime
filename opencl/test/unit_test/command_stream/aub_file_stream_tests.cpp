@@ -8,6 +8,10 @@
 #include "shared/source/aub_mem_dump/page_table_entry_bits.h"
 #include "shared/source/os_interface/os_context.h"
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
+#include "shared/test/common/mocks/mock_aub_center.h"
+#include "shared/test/common/mocks/mock_aub_file_stream.h"
+#include "shared/test/common/mocks/mock_aub_manager.h"
+#include "shared/test/common/mocks/mock_execution_environment.h"
 #include "shared/test/common/mocks/mock_graphics_allocation.h"
 
 #include "opencl/source/command_stream/aub_command_stream_receiver_hw.h"
@@ -15,17 +19,14 @@
 #include "opencl/source/helpers/neo_driver_version.h"
 #include "opencl/test/unit_test/fixtures/aub_command_stream_receiver_fixture.h"
 #include "opencl/test/unit_test/fixtures/cl_device_fixture.h"
-#include "opencl/test/unit_test/mocks/mock_aub_center.h"
 #include "opencl/test/unit_test/mocks/mock_aub_csr.h"
-#include "opencl/test/unit_test/mocks/mock_aub_file_stream.h"
-#include "opencl/test/unit_test/mocks/mock_aub_manager.h"
 #include "opencl/test/unit_test/mocks/mock_aub_subcapture_manager.h"
-#include "opencl/test/unit_test/mocks/mock_execution_environment.h"
 #include "opencl/test/unit_test/mocks/mock_mdi.h"
 #include "opencl/test/unit_test/mocks/mock_os_context.h"
 #include "test.h"
 
 #include "driver_version.h"
+#include "sys_calls.h"
 
 #include <fstream>
 #include <memory>
@@ -999,4 +1000,14 @@ HWTEST_F(AubFileStreamTests, givenAubCommandStreamReceiverWhenCreateFullFilePath
     uint32_t rootDeviceIndex = 123u;
     auto fullName = AUBCommandStreamReceiver::createFullFilePath(*defaultHwInfo, "aubfile", rootDeviceIndex);
     EXPECT_NE(std::string::npos, fullName.find("_123_aubfile.aub"));
+}
+
+HWTEST_F(AubFileStreamTests, givenGenerateAubFilePerProcessIdDebugFlagAndAubCommandStreamReceiverWhenCreateFullFilePathIsCalledThenFileNameIsExtendedRootDeviceIndex) {
+    DebugManagerStateRestore stateRestore;
+
+    DebugManager.flags.GenerateAubFilePerProcessId.set(1);
+    auto fullName = AUBCommandStreamReceiver::createFullFilePath(*defaultHwInfo, "aubfile", 1u);
+    std::stringstream strExtendedFileName("_1_aubfile");
+    strExtendedFileName << "_PID_" << SysCalls::getProcessId() << ".aub";
+    EXPECT_NE(std::string::npos, fullName.find(strExtendedFileName.str()));
 }

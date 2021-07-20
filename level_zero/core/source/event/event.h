@@ -10,6 +10,7 @@
 #include "shared/source/helpers/timestamp_packet.h"
 
 #include "level_zero/core/source/cmdlist/cmdlist.h"
+#include "level_zero/core/source/context/context_imp.h"
 #include "level_zero/core/source/device/device.h"
 #include "level_zero/core/source/driver/driver_handle.h"
 #include <level_zero/ze_api.h>
@@ -58,13 +59,17 @@ struct Event : _ze_event_handle_t {
     void *getHostAddress() { return hostAddress; }
     virtual void setPacketsInUse(uint32_t value) = 0;
     uint32_t getCurrKernelDataIndex() const { return kernelCount - 1; }
+
+    virtual size_t getContextStartOffset() const = 0;
+    virtual size_t getContextEndOffset() const = 0;
+    virtual size_t getGlobalStartOffset() const = 0;
+    virtual size_t getGlobalEndOffset() const = 0;
+    virtual size_t getSinglePacketSize() const = 0;
     virtual size_t getTimestampSizeInDw() const = 0;
     void *hostAddress = nullptr;
     uint32_t kernelCount = 1u;
     ze_event_scope_flags_t signalScope = 0u;
     ze_event_scope_flags_t waitScope = 0u;
-    bool isTimestampEvent = false;
-    bool updateTaskCountEnabled = false;
 
     uint64_t globalStartTS;
     uint64_t globalEndTS;
@@ -75,9 +80,16 @@ struct Event : _ze_event_handle_t {
     MetricStreamer *metricStreamer = nullptr;
     NEO::CommandStreamReceiver *csr = nullptr;
 
+    void setEventTimestampFlag(bool timestampFlag) {
+        isTimestampEvent = timestampFlag;
+    }
+
+    bool isEventTimestampFlagSet() { return isTimestampEvent; }
+
   protected:
     uint64_t gpuAddress;
     NEO::GraphicsAllocation *allocation = nullptr;
+    bool isTimestampEvent = false;
 };
 
 template <typename TagSizeT>
@@ -106,6 +118,11 @@ struct EventImp : public Event {
     uint32_t getPacketsInUse() override;
     void setPacketsInUse(uint32_t value) override;
     size_t getTimestampSizeInDw() const override { return (sizeof(TagSizeT) / 4); };
+    size_t getContextStartOffset() const override { return NEO::TimestampPackets<TagSizeT>::getContextStartOffset(); }
+    size_t getContextEndOffset() const override { return NEO::TimestampPackets<TagSizeT>::getContextEndOffset(); }
+    size_t getGlobalStartOffset() const override { return NEO::TimestampPackets<TagSizeT>::getGlobalStartOffset(); }
+    size_t getGlobalEndOffset() const override { return NEO::TimestampPackets<TagSizeT>::getGlobalEndOffset(); }
+    size_t getSinglePacketSize() const override { return NEO::TimestampPackets<TagSizeT>::getSinglePacketSize(); };
 
     std::unique_ptr<NEO::TimestampPackets<TagSizeT>[]> kernelTimestampsData;
 
@@ -140,17 +157,30 @@ struct EventPool : _ze_event_pool_handle_t {
 
     virtual uint32_t getEventSize() = 0;
 
-    bool isEventPoolUsedForTimestamp = false;
+    bool isEventPoolTimestampFlagSet() {
+        if (NEO::DebugManager.flags.DisableTimestampEvents.get()) {
+            return false;
+        }
+        if (eventPoolFlags & ZE_EVENT_POOL_FLAG_KERNEL_TIMESTAMP) {
+            return true;
+        }
+        return false;
+    }
 
-  protected:
+    bool isEventPoolDeviceAllocationFlagSet() {
+        if (!(eventPoolFlags & ZE_EVENT_POOL_FLAG_HOST_VISIBLE)) {
+            return true;
+        }
+        return false;
+    }
+
     std::unique_ptr<NEO::MultiGraphicsAllocation> eventPoolAllocations;
+    ze_event_pool_flags_t eventPoolFlags;
 };
 
 struct EventPoolImp : public EventPool {
     EventPoolImp(const ze_event_pool_desc_t *desc) : numEvents(desc->count) {
-        if (desc->flags & ZE_EVENT_POOL_FLAG_KERNEL_TIMESTAMP) {
-            isEventPoolUsedForTimestamp = true;
-        }
+        eventPoolFlags = desc->flags;
     }
 
     ze_result_t initialize(DriverHandle *driver, Context *context, uint32_t numDevices, ze_device_handle_t *phDevices);
@@ -170,7 +200,9 @@ struct EventPoolImp : public EventPool {
 
     Device *getDevice() override { return devices[0]; }
 
+    void *eventPoolPtr = nullptr;
     std::vector<Device *> devices;
+    ContextImp *context = nullptr;
     size_t numEvents;
 
   protected:

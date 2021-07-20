@@ -8,13 +8,13 @@
 #include "shared/source/helpers/string.h"
 #include "shared/source/os_interface/device_factory.h"
 #include "shared/source/os_interface/hw_info_config.h"
+#include "shared/source/os_interface/os_inc_base.h"
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/ult_hw_config.h"
+#include "shared/test/common/mocks/mock_compilers.h"
+#include "shared/test/common/mocks/mock_io_functions.h"
 #include "shared/test/common/mocks/ult_device_factory.h"
 
-#include "opencl/source/os_interface/os_inc_base.h"
-#include "opencl/test/unit_test/mocks/mock_compilers.h"
-#include "opencl/test/unit_test/mocks/mock_io_functions.h"
 #include "test.h"
 
 #include "level_zero/core/source/driver/driver_handle_imp.h"
@@ -458,6 +458,19 @@ TEST_F(DriverHandleTest, givenInitializedDriverWhenGetDeviceIsCalledThenOneDevic
     result = driverHandle->getDevice(&count, &device);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     EXPECT_NE(nullptr, &device);
+}
+
+TEST_F(DriverHandleTest, whenQueryingForApiVersionThenExpectedVersionIsReturned) {
+    ze_api_version_t version = {};
+    ze_result_t result = driverHandle->getApiVersion(&version);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+    EXPECT_EQ(ZE_API_VERSION_1_1, version);
+}
+
+TEST_F(DriverHandleTest, whenQueryingForDevicesWithCountGreaterThanZeroAndNullDevicePointerThenNullHandleIsReturned) {
+    uint32_t count = 1;
+    ze_result_t result = driverHandle->getDevice(&count, nullptr);
+    EXPECT_EQ(ZE_RESULT_ERROR_INVALID_NULL_HANDLE, result);
 }
 
 TEST_F(DriverHandleTest, givenValidDriverHandleWhenGetSvmAllocManagerIsCalledThenSvmAllocsManagerIsObtained) {

@@ -9,34 +9,45 @@
 #include "shared/source/helpers/aligned_memory.h"
 #include "shared/source/helpers/basic_math.h"
 #include "shared/source/memory_manager/memory_manager.h"
+#include "shared/source/os_interface/driver_info.h"
 #include "shared/source/os_interface/linux/allocator_helper.h"
-#include "shared/source/os_interface/linux/os_interface.h"
 #include "shared/source/os_interface/linux/sys_calls.h"
+#include "shared/source/os_interface/os_interface.h"
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/default_hw_info.inl"
 #include "shared/test/common/helpers/ult_hw_config.inl"
 #include "shared/test/common/helpers/variable_backup.h"
+#include "shared/test/common/mocks/mock_execution_environment.h"
 
 #include "opencl/test/unit_test/custom_event_listener.h"
 #include "opencl/test/unit_test/linux/drm_wrap.h"
 #include "opencl/test/unit_test/linux/mock_os_layer.h"
-#include "opencl/test/unit_test/mocks/mock_execution_environment.h"
 #include "opencl/test/unit_test/os_interface/linux/device_command_stream_fixture.h"
 #include "test.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "os_inc.h"
 
 #include <string>
 
+namespace Os {
+extern const char *dxcoreDllName;
+}
+
 namespace NEO {
 void __attribute__((destructor)) platformsDestructor();
-}
+extern const DeviceDescriptor deviceDescriptorTable[];
+} // namespace NEO
 using namespace NEO;
 
 class DrmTestsFixture {
   public:
     void SetUp() {
+        if (deviceDescriptorTable[0].deviceId == 0) {
+            GTEST_SKIP();
+        }
+
         executionEnvironment.prepareRootDeviceEnvironments(1);
         rootDeviceEnvironment = executionEnvironment.rootDeviceEnvironments[0].get();
     }
@@ -76,7 +87,15 @@ int openWithCounter(const char *fullPath, int, ...) {
     return -1;
 };
 
-TEST(DrmTest, GivenTwoOpenableDevicesWhenDiscoverDevicesThenCreateTwoHwDeviceIds) {
+struct DrmSimpleTests : public ::testing::Test {
+    void SetUp() override {
+        if (deviceDescriptorTable[0].deviceId == 0) {
+            GTEST_SKIP();
+        }
+    }
+};
+
+TEST_F(DrmSimpleTests, GivenTwoOpenableDevicesWhenDiscoverDevicesThenCreateTwoHwDeviceIds) {
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
     openFull = openWithCounter;
     openCounter = 2;
@@ -85,7 +104,7 @@ TEST(DrmTest, GivenTwoOpenableDevicesWhenDiscoverDevicesThenCreateTwoHwDeviceIds
     EXPECT_EQ(2u, hwDeviceIds.size());
 }
 
-TEST(DrmTest, GivenSelectedNotExistingDeviceWhenGetDeviceFdThenFail) {
+TEST_F(DrmSimpleTests, GivenSelectedNotExistingDeviceWhenGetDeviceFdThenFail) {
     DebugManagerStateRestore stateRestore;
     DebugManager.flags.ForceDeviceId.set("1234");
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
@@ -96,7 +115,7 @@ TEST(DrmTest, GivenSelectedNotExistingDeviceWhenGetDeviceFdThenFail) {
     EXPECT_TRUE(hwDeviceIds.empty());
 }
 
-TEST(DrmTest, GivenSelectedExistingDeviceWhenGetDeviceFdThenReturnFd) {
+TEST_F(DrmSimpleTests, GivenSelectedExistingDeviceWhenGetDeviceFdThenReturnFd) {
     DebugManagerStateRestore stateRestore;
     DebugManager.flags.ForceDeviceId.set("1234");
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
@@ -108,7 +127,7 @@ TEST(DrmTest, GivenSelectedExistingDeviceWhenGetDeviceFdThenReturnFd) {
     EXPECT_NE(nullptr, hwDeviceIds[0].get());
 }
 
-TEST(DrmTest, GivenSelectedExistingDeviceWhenOpenDirSuccedsThenHwDeviceIdsHaveProperPciPaths) {
+TEST_F(DrmSimpleTests, GivenSelectedExistingDeviceWhenOpenDirSuccedsThenHwDeviceIdsHaveProperPciPaths) {
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
     VariableBackup<decltype(failOnOpenDir)> backupOpenDir(&failOnOpenDir, false);
     VariableBackup<decltype(entryIndex)> backupEntryIndex(&entryIndex, 0u);
@@ -121,19 +140,19 @@ TEST(DrmTest, GivenSelectedExistingDeviceWhenOpenDirSuccedsThenHwDeviceIdsHavePr
     auto hwDeviceIds = OSInterface::discoverDevices(executionEnvironment);
     EXPECT_EQ(1u, hwDeviceIds.size());
     EXPECT_NE(nullptr, hwDeviceIds[0].get());
-    EXPECT_STREQ("test1", hwDeviceIds[0]->getPciPath());
+    EXPECT_STREQ("test1", hwDeviceIds[0]->as<HwDeviceIdDrm>()->getPciPath());
 
     entryIndex = 0;
     openCounter = 2;
     hwDeviceIds = OSInterface::discoverDevices(executionEnvironment);
     EXPECT_EQ(2u, hwDeviceIds.size());
     EXPECT_NE(nullptr, hwDeviceIds[0].get());
-    EXPECT_STREQ("test1", hwDeviceIds[0]->getPciPath());
+    EXPECT_STREQ("test1", hwDeviceIds[0]->as<HwDeviceIdDrm>()->getPciPath());
     EXPECT_NE(nullptr, hwDeviceIds[1].get());
-    EXPECT_STREQ("test2", hwDeviceIds[1]->getPciPath());
+    EXPECT_STREQ("test2", hwDeviceIds[1]->as<HwDeviceIdDrm>()->getPciPath());
 }
 
-TEST(DrmTest, GivenSelectedExistingDeviceWhenOpenDirFailsThenRetryOpeningRenderDevices) {
+TEST_F(DrmSimpleTests, GivenSelectedExistingDeviceWhenOpenDirFailsThenRetryOpeningRenderDevices) {
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
     VariableBackup<decltype(failOnOpenDir)> backupOpenDir(&failOnOpenDir, true);
     VariableBackup<decltype(readLinkCalledTimes)> backupReadlink(&readLinkCalledTimes, 0);
@@ -145,19 +164,19 @@ TEST(DrmTest, GivenSelectedExistingDeviceWhenOpenDirFailsThenRetryOpeningRenderD
     EXPECT_STREQ("/dev/dri/renderD128", lastOpenedPath.c_str());
     EXPECT_EQ(1u, hwDeviceIds.size());
     EXPECT_NE(nullptr, hwDeviceIds[0].get());
-    EXPECT_STREQ("00:02.0", hwDeviceIds[0]->getPciPath());
+    EXPECT_STREQ("00:02.0", hwDeviceIds[0]->as<HwDeviceIdDrm>()->getPciPath());
 
     openCounter = 2;
     hwDeviceIds = OSInterface::discoverDevices(executionEnvironment);
     EXPECT_STREQ("/dev/dri/renderD129", lastOpenedPath.c_str());
     EXPECT_EQ(2u, hwDeviceIds.size());
     EXPECT_NE(nullptr, hwDeviceIds[0].get());
-    EXPECT_STREQ("00:02.0", hwDeviceIds[0]->getPciPath());
+    EXPECT_STREQ("00:02.0", hwDeviceIds[0]->as<HwDeviceIdDrm>()->getPciPath());
     EXPECT_NE(nullptr, hwDeviceIds[1].get());
-    EXPECT_STREQ("00:03.0", hwDeviceIds[1]->getPciPath());
+    EXPECT_STREQ("00:03.0", hwDeviceIds[1]->as<HwDeviceIdDrm>()->getPciPath());
 }
 
-TEST(DrmTest, givenPrintIoctlEntriesWhenCallIoctlThenIoctlIsPrinted) {
+TEST_F(DrmSimpleTests, givenPrintIoctlEntriesWhenCallIoctlThenIoctlIsPrinted) {
     ::testing::internal::CaptureStdout();
 
     auto executionEnvironment = std::make_unique<ExecutionEnvironment>();
@@ -171,10 +190,10 @@ TEST(DrmTest, givenPrintIoctlEntriesWhenCallIoctlThenIoctlIsPrinted) {
     drm->destroyDrmContext(contextId);
 
     std::string output = ::testing::internal::GetCapturedStdout();
-    EXPECT_STREQ(output.c_str(), "IOCTL DRM_IOCTL_I915_GEM_CONTEXT_DESTROY called\nIOCTL DRM_IOCTL_I915_GEM_CONTEXT_DESTROY returns 0, errno 9\n");
+    EXPECT_STREQ(output.c_str(), "IOCTL DRM_IOCTL_I915_GEM_CONTEXT_DESTROY called\nIOCTL DRM_IOCTL_I915_GEM_CONTEXT_DESTROY returns 0, errno 9(Bad file descriptor)\n");
 }
 
-TEST(DrmTest, givenPrintIoctlTimesWhenCallIoctlThenStatisticsAreGathered) {
+TEST_F(DrmSimpleTests, givenPrintIoctlTimesWhenCallIoctlThenStatisticsAreGathered) {
     struct DrmMock : public Drm {
         using Drm::ioctlStatistics;
     };
@@ -259,7 +278,7 @@ TEST(DrmTest, givenPrintIoctlTimesWhenCallIoctlThenStatisticsAreGathered) {
     EXPECT_STRNE(output.c_str(), "");
 }
 
-TEST(DrmTest, GivenSelectedNonExistingDeviceWhenOpenDirFailsThenRetryOpeningRenderDevicesAndNoDevicesAreCreated) {
+TEST_F(DrmSimpleTests, GivenSelectedNonExistingDeviceWhenOpenDirFailsThenRetryOpeningRenderDevicesAndNoDevicesAreCreated) {
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
     VariableBackup<decltype(failOnOpenDir)> backupOpenDir(&failOnOpenDir, true);
     openFull = openWithCounter;
@@ -270,7 +289,7 @@ TEST(DrmTest, GivenSelectedNonExistingDeviceWhenOpenDirFailsThenRetryOpeningRend
     EXPECT_EQ(0u, hwDeviceIds.size());
 }
 
-TEST(DrmTest, GivenFailingOpenDirAndMultipleAvailableDevicesWhenCreateMultipleRootDevicesFlagIsSetThenTheFlagIsRespected) {
+TEST_F(DrmSimpleTests, GivenFailingOpenDirAndMultipleAvailableDevicesWhenCreateMultipleRootDevicesFlagIsSetThenTheFlagIsRespected) {
     DebugManagerStateRestore stateRestore;
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
     VariableBackup<decltype(failOnOpenDir)> backupOpenDir(&failOnOpenDir, true);
@@ -285,12 +304,12 @@ TEST(DrmTest, GivenFailingOpenDirAndMultipleAvailableDevicesWhenCreateMultipleRo
     EXPECT_STREQ("/dev/dri/renderD129", lastOpenedPath.c_str());
     EXPECT_EQ(requestedNumRootDevices, hwDeviceIds.size());
     EXPECT_NE(nullptr, hwDeviceIds[0].get());
-    EXPECT_STREQ("00:02.0", hwDeviceIds[0]->getPciPath());
+    EXPECT_STREQ("00:02.0", hwDeviceIds[0]->as<HwDeviceIdDrm>()->getPciPath());
     EXPECT_NE(nullptr, hwDeviceIds[1].get());
-    EXPECT_STREQ("00:03.0", hwDeviceIds[1]->getPciPath());
+    EXPECT_STREQ("00:03.0", hwDeviceIds[1]->as<HwDeviceIdDrm>()->getPciPath());
 }
 
-TEST(DrmTest, GivenMultipleAvailableDevicesWhenCreateMultipleRootDevicesFlagIsSetThenTheFlagIsRespected) {
+TEST_F(DrmSimpleTests, GivenMultipleAvailableDevicesWhenCreateMultipleRootDevicesFlagIsSetThenTheFlagIsRespected) {
     DebugManagerStateRestore stateRestore;
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
     openFull = openWithCounter;
@@ -303,12 +322,12 @@ TEST(DrmTest, GivenMultipleAvailableDevicesWhenCreateMultipleRootDevicesFlagIsSe
     EXPECT_STREQ("/dev/dri/by-path/pci-0000:test2-render", lastOpenedPath.c_str());
     EXPECT_EQ(requestedNumRootDevices, hwDeviceIds.size());
     EXPECT_NE(nullptr, hwDeviceIds[0].get());
-    EXPECT_STREQ("test1", hwDeviceIds[0]->getPciPath());
+    EXPECT_STREQ("test1", hwDeviceIds[0]->as<HwDeviceIdDrm>()->getPciPath());
     EXPECT_NE(nullptr, hwDeviceIds[1].get());
-    EXPECT_STREQ("test2", hwDeviceIds[1]->getPciPath());
+    EXPECT_STREQ("test2", hwDeviceIds[1]->as<HwDeviceIdDrm>()->getPciPath());
 }
 
-TEST(DrmTest, GivenSelectedIncorectDeviceWhenGetDeviceFdThenFail) {
+TEST_F(DrmSimpleTests, GivenSelectedIncorectDeviceWhenGetDeviceFdThenFail) {
     DebugManagerStateRestore stateRestore;
     DebugManager.flags.ForceDeviceId.set("1234");
     VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
@@ -320,7 +339,7 @@ TEST(DrmTest, GivenSelectedIncorectDeviceWhenGetDeviceFdThenFail) {
     EXPECT_TRUE(hwDeviceIds.empty());
 }
 
-TEST(DrmTest, givenUseVmBindFlagWhenOverrideBindSupportThenReturnProperValue) {
+TEST_F(DrmSimpleTests, givenUseVmBindFlagWhenOverrideBindSupportThenReturnProperValue) {
     DebugManagerStateRestore dbgRestorer;
     bool useVmBind = false;
 
@@ -544,7 +563,7 @@ TEST(DrmMemoryManagerCreate, whenCallCreateMemoryManagerThenDrmMemoryManagerIsCr
     auto drm = new DrmMockSuccess(fakeFd, *executionEnvironment.rootDeviceEnvironments[0]);
 
     executionEnvironment.rootDeviceEnvironments[0]->osInterface = std::make_unique<OSInterface>();
-    executionEnvironment.rootDeviceEnvironments[0]->osInterface->get()->setDrm(drm);
+    executionEnvironment.rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(drm));
     auto drmMemoryManager = MemoryManager::createMemoryManager(executionEnvironment);
     EXPECT_NE(nullptr, drmMemoryManager.get());
     executionEnvironment.memoryManager = std::move(drmMemoryManager);
@@ -692,6 +711,7 @@ int main(int argc, char **argv) {
 
     initializeTestedDevice();
 
+    Os::dxcoreDllName = "";
     auto retVal = RUN_ALL_TESTS();
 
     return retVal;
@@ -715,4 +735,50 @@ TEST(PlatformsDestructor, whenGlobalPlatformsDestructorIsCalledThenGlobalPlatfor
 
     EXPECT_EQ(nullptr, platformsImpl);
     platformsImpl = new std::vector<std::unique_ptr<Platform>>;
+}
+
+TEST_F(DrmTests, givenInvalidPciPathThenPciBusInfoIsNotAvailable) {
+    VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
+    VariableBackup<decltype(failOnOpenDir)> backupOpenDir(&failOnOpenDir, false);
+    VariableBackup<decltype(entryIndex)> backupEntryIndex(&entryIndex, 0u);
+
+    openFull = openWithCounter;
+    entryIndex = 1;
+    openCounter = 1;
+
+    const uint32_t invVal = PhysicalDevicePciBusInfo::InvalidValue;
+
+    auto drm = DrmWrap::createDrm(*rootDeviceEnvironment);
+    ASSERT_NE(drm, nullptr);
+    EXPECT_EQ(drm->getPciBusInfo().pciDomain, invVal);
+    EXPECT_EQ(drm->getPciBusInfo().pciBus, invVal);
+    EXPECT_EQ(drm->getPciBusInfo().pciDevice, invVal);
+    EXPECT_EQ(drm->getPciBusInfo().pciFunction, invVal);
+}
+
+TEST_F(DrmTests, givenValidPciPathThenPciBusInfoIsAvailable) {
+    VariableBackup<decltype(openFull)> backupOpenFull(&openFull);
+    VariableBackup<decltype(failOnOpenDir)> backupOpenDir(&failOnOpenDir, false);
+    VariableBackup<decltype(entryIndex)> backupEntryIndex(&entryIndex, 0u);
+
+    openFull = openWithCounter;
+    entryIndex = 4;
+    openCounter = 2;
+
+    auto drm = DrmWrap::createDrm(*rootDeviceEnvironment);
+    ASSERT_NE(drm, nullptr);
+    EXPECT_EQ(drm->getPciBusInfo().pciDomain, 0u);
+    EXPECT_EQ(drm->getPciBusInfo().pciBus, 0u);
+    EXPECT_EQ(drm->getPciBusInfo().pciDevice, 2u);
+    EXPECT_EQ(drm->getPciBusInfo().pciFunction, 1u);
+
+    entryIndex = 5;
+    openCounter = 1;
+
+    drm = DrmWrap::createDrm(*rootDeviceEnvironment);
+    ASSERT_NE(drm, nullptr);
+    EXPECT_EQ(drm->getPciBusInfo().pciDomain, 0u);
+    EXPECT_EQ(drm->getPciBusInfo().pciBus, 3u);
+    EXPECT_EQ(drm->getPciBusInfo().pciDevice, 0u);
+    EXPECT_EQ(drm->getPciBusInfo().pciFunction, 0u);
 }

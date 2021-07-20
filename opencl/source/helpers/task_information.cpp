@@ -77,7 +77,8 @@ CompletionStamp &CommandMapUnmap::submit(uint32_t taskLevel, bool terminated) {
         false,                                                                       //usePerDssBackedBuffer
         false,                                                                       //useSingleSubdevice
         false,                                                                       //useGlobalAtomics
-        1u);                                                                         //numDevicesInContext
+        false,                                                                       //areMultipleSubDevicesInContext
+        false);                                                                      //memoryMigrationRequired
 
     DEBUG_BREAK_IF(taskLevel >= CompletionStamp::notReady);
 
@@ -243,7 +244,12 @@ CompletionStamp &CommandComputeKernel::submit(uint32_t taskLevel, bool terminate
         kernel->requiresPerDssBackedBuffer(),                                             //usePerDssBackedBuffer
         kernel->isSingleSubdevicePreferred(),                                             //useSingleSubdevice
         kernel->getKernelInfo().kernelDescriptor.kernelAttributes.flags.useGlobalAtomics, //useGlobalAtomics
-        kernel->areMultipleSubDevicesInContext());                                        //areMultipleSubDevicesInContext
+        kernel->areMultipleSubDevicesInContext(),                                         //areMultipleSubDevicesInContext
+        kernel->requiresMemoryMigration());                                               //memoryMigrationRequired
+
+    if (commandQueue.getContext().getRootDeviceIndices().size() > 1) {
+        eventsRequest.fillCsrDependenciesForTaskCountContainer(dispatchFlags.csrDependencies, commandStreamReceiver);
+    }
 
     if (timestampPacketDependencies) {
         eventsRequest.fillCsrDependenciesForTimestampPacketContainer(dispatchFlags.csrDependencies, commandStreamReceiver, CsrDependencies::DependenciesType::OutOfCsr);
@@ -264,6 +270,12 @@ CompletionStamp &CommandComputeKernel::submit(uint32_t taskLevel, bool terminate
     DEBUG_BREAK_IF(taskLevel >= CompletionStamp::notReady);
 
     gtpinNotifyPreFlushTask(&commandQueue);
+
+    if (kernel->requiresMemoryMigration()) {
+        for (auto &arg : kernel->getMemObjectsToMigrate()) {
+            MigrationController::handleMigration(commandQueue.getContext(), commandStreamReceiver, arg.second);
+        }
+    }
 
     completionStamp = commandStreamReceiver.flushTask(*kernelOperation->commandStream,
                                                       0,
@@ -309,6 +321,10 @@ void CommandWithoutKernel::dispatchBlitOperation() {
     blitProperties.csrDependencies.timestampPacketContainer.push_back(&timestampPacketDependencies->barrierNodes);
     blitProperties.outputTimestampPacket = currentTimestampPacketNodes->peekNodes()[0];
 
+    if (commandQueue.getContext().getRootDeviceIndices().size() > 1) {
+        eventsRequest.fillCsrDependenciesForTaskCountContainer(blitProperties.csrDependencies, *bcsCsr);
+    }
+
     auto bcsTaskCount = bcsCsr->blitBuffer(kernelOperation->blitPropertiesContainer, false, commandQueue.isProfilingEnabled());
 
     commandQueue.updateBcsTaskCount(bcsTaskCount);
@@ -329,6 +345,7 @@ CompletionStamp &CommandWithoutKernel::submit(uint32_t taskLevel, bool terminate
         return completionStamp;
     }
 
+    auto barrierNodes = timestampPacketDependencies ? &timestampPacketDependencies->barrierNodes : nullptr;
     auto lockCSR = commandStreamReceiver.obtainUniqueOwnership();
 
     auto enqueueOperationType = EnqueueProperties::Operation::DependencyResolveOnGpu;
@@ -336,41 +353,48 @@ CompletionStamp &CommandWithoutKernel::submit(uint32_t taskLevel, bool terminate
     if (kernelOperation->blitEnqueue) {
         enqueueOperationType = EnqueueProperties::Operation::Blit;
 
+        UNRECOVERABLE_IF(!barrierNodes);
         if (commandStreamReceiver.isStallingPipeControlOnNextFlushRequired()) {
-            timestampPacketDependencies->barrierNodes.add(commandStreamReceiver.getTimestampPacketAllocator()->getTag());
+            barrierNodes->add(commandStreamReceiver.getTimestampPacketAllocator()->getTag());
         }
     }
 
+    auto rootDeviceIndex = commandStreamReceiver.getRootDeviceIndex();
     DispatchFlags dispatchFlags(
-        {},                                                   //csrDependencies
-        &timestampPacketDependencies->barrierNodes,           //barrierTimestampPacketNodes
-        {},                                                   //pipelineSelectArgs
-        commandQueue.flushStamp->getStampReference(),         //flushStampReference
-        commandQueue.getThrottle(),                           //throttle
-        commandQueue.getDevice().getPreemptionMode(),         //preemptionMode
-        GrfConfig::NotApplicable,                             //numGrfRequired
-        L3CachingSettings::NotApplicable,                     //l3CacheSettings
-        ThreadArbitrationPolicy::NotPresent,                  //threadArbitrationPolicy
-        AdditionalKernelExecInfo::NotApplicable,              //additionalKernelExecInfo
-        KernelExecutionType::NotApplicable,                   //kernelExecutionType
-        MemoryCompressionState::NotApplicable,                //memoryCompressionState
-        commandQueue.getSliceCount(),                         //sliceCount
-        true,                                                 //blocking
-        false,                                                //dcFlush
-        false,                                                //useSLM
-        true,                                                 //guardCommandBufferWithPipeControl
-        false,                                                //GSBA32BitRequired
-        false,                                                //requiresCoherency
-        commandQueue.getPriority() == QueuePriority::LOW,     //lowPriority
-        false,                                                //implicitFlush
-        commandStreamReceiver.isNTo1SubmissionModelEnabled(), //outOfOrderExecutionAllowed
-        false,                                                //epilogueRequired
-        false,                                                //usePerDssBackedBuffer
-        false,                                                //useSingleSubdevice
-        false,                                                //useGlobalAtomics
-        1u);                                                  //numDevicesInContext
+        {},                                                                    //csrDependencies
+        barrierNodes,                                                          //barrierTimestampPacketNodes
+        {},                                                                    //pipelineSelectArgs
+        commandQueue.flushStamp->getStampReference(),                          //flushStampReference
+        commandQueue.getThrottle(),                                            //throttle
+        commandQueue.getDevice().getPreemptionMode(),                          //preemptionMode
+        GrfConfig::NotApplicable,                                              //numGrfRequired
+        L3CachingSettings::NotApplicable,                                      //l3CacheSettings
+        ThreadArbitrationPolicy::NotPresent,                                   //threadArbitrationPolicy
+        AdditionalKernelExecInfo::NotApplicable,                               //additionalKernelExecInfo
+        KernelExecutionType::NotApplicable,                                    //kernelExecutionType
+        MemoryCompressionState::NotApplicable,                                 //memoryCompressionState
+        commandQueue.getSliceCount(),                                          //sliceCount
+        true,                                                                  //blocking
+        false,                                                                 //dcFlush
+        false,                                                                 //useSLM
+        true,                                                                  //guardCommandBufferWithPipeControl
+        false,                                                                 //GSBA32BitRequired
+        false,                                                                 //requiresCoherency
+        commandQueue.getPriority() == QueuePriority::LOW,                      //lowPriority
+        false,                                                                 //implicitFlush
+        commandStreamReceiver.isNTo1SubmissionModelEnabled(),                  //outOfOrderExecutionAllowed
+        false,                                                                 //epilogueRequired
+        false,                                                                 //usePerDssBackedBuffer
+        false,                                                                 //useSingleSubdevice
+        false,                                                                 //useGlobalAtomics
+        commandQueue.getContext().containsMultipleSubDevices(rootDeviceIndex), //areMultipleSubDevicesInContext
+        false);                                                                //memoryMigrationRequired
 
-    UNRECOVERABLE_IF(!kernelOperation->blitEnqueue && !commandStreamReceiver.peekTimestampPacketWriteEnabled());
+    UNRECOVERABLE_IF(!kernelOperation->blitEnqueue && !commandStreamReceiver.peekTimestampPacketWriteEnabled() && commandQueue.getContext().getRootDeviceIndices().size() == 1);
+
+    if (commandQueue.getContext().getRootDeviceIndices().size() > 1) {
+        eventsRequest.fillCsrDependenciesForTaskCountContainer(dispatchFlags.csrDependencies, commandStreamReceiver);
+    }
 
     eventsRequest.fillCsrDependenciesForTimestampPacketContainer(dispatchFlags.csrDependencies, commandStreamReceiver, CsrDependencies::DependenciesType::OutOfCsr);
     makeTimestampPacketsResident(commandStreamReceiver);
@@ -402,6 +426,10 @@ void Command::setEventsRequest(EventsRequest &eventsRequest) {
         auto size = eventsRequest.numEventsInWaitList * sizeof(cl_event);
         memcpy_s(&eventsWaitlist[0], size, eventsRequest.eventWaitList, size);
         this->eventsRequest.eventWaitList = &eventsWaitlist[0];
+        for (cl_uint i = 0; i < eventsRequest.numEventsInWaitList; i++) {
+            auto event = castToObjectOrAbort<Event>(eventsRequest.eventWaitList[i]);
+            event->incRefInternal();
+        }
     }
 }
 
@@ -414,12 +442,13 @@ void Command::setTimestampPacketNode(TimestampPacketContainer &current, Timestam
 }
 
 Command::~Command() {
-    auto &commandStreamReceiver = commandQueue.getGpgpuCommandStreamReceiver();
-    if (commandStreamReceiver.peekTimestampPacketWriteEnabled()) {
-        for (cl_event &eventFromWaitList : eventsWaitlist) {
-            auto event = castToObjectOrAbort<Event>(eventFromWaitList);
-            event->decRefInternal();
-        }
+    if (commandQueue.getDeferredTimestampPackets() && timestampPacketDependencies.get()) {
+        timestampPacketDependencies->moveNodesToNewContainer(*commandQueue.getDeferredTimestampPackets());
+    }
+
+    for (cl_event &eventFromWaitList : eventsWaitlist) {
+        auto event = castToObjectOrAbort<Event>(eventFromWaitList);
+        event->decRefInternal();
     }
 }
 
@@ -427,7 +456,7 @@ void Command::makeTimestampPacketsResident(CommandStreamReceiver &commandStreamR
     if (commandStreamReceiver.peekTimestampPacketWriteEnabled()) {
         for (cl_event &eventFromWaitList : eventsWaitlist) {
             auto event = castToObjectOrAbort<Event>(eventFromWaitList);
-            if (event->getTimestampPacketNodes()) {
+            if (event->getTimestampPacketNodes() && event->getCommandQueue()->getClDevice().getRootDeviceIndex() == commandStreamReceiver.getRootDeviceIndex()) {
                 event->getTimestampPacketNodes()->makeResident(commandStreamReceiver);
             }
         }

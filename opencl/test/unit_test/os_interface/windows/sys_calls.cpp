@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2020 Intel Corporation
+ * Copyright (C) 2018-2021 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -7,22 +7,31 @@
 
 #include "sys_calls.h"
 
+#include "opencl/test/unit_test/os_interface/windows/mock_sys_calls.h"
+
 namespace NEO {
 
 namespace SysCalls {
 
-constexpr uintptr_t dummyHandle = static_cast<uintptr_t>(0x7);
+unsigned int getProcessId() {
+    return 0xABCEDF;
+}
 
 BOOL systemPowerStatusRetVal = 1;
 BYTE systemPowerStatusACLineStatusOverride = 1;
-HMODULE handleValue = reinterpret_cast<HMODULE>(dummyHandle);
 const wchar_t *currentLibraryPath = L"";
 
 HANDLE createEvent(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState, LPCSTR lpName) {
+    if (mockCreateEventClb) {
+        return mockCreateEventClb(lpEventAttributes, bManualReset, bInitialState, lpName, mockCreateEventClbData);
+    }
     return reinterpret_cast<HANDLE>(dummyHandle);
 }
 
 BOOL closeHandle(HANDLE hObject) {
+    if (mockCloseHandleClb) {
+        return mockCloseHandleClb(hObject, mockCloseHandleClbData);
+    }
     return (reinterpret_cast<HANDLE>(dummyHandle) == hObject) ? TRUE : FALSE;
 }
 
@@ -55,5 +64,17 @@ char *getenv(const char *variableName) {
     return ::getenv(variableName);
 }
 } // namespace SysCalls
+
+bool isShutdownInProgress() {
+    return false;
+}
+
+unsigned int getPid() {
+    return 0xABCEDF;
+}
+
+unsigned int readEnablePreemptionRegKey() {
+    return 1;
+}
 
 } // namespace NEO

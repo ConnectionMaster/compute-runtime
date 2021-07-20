@@ -26,6 +26,7 @@ void *DriverHandleImp::importFdHandle(ze_device_handle_t hDevice, ze_ipc_memory_
     NEO::GraphicsAllocation *alloc =
         this->getMemoryManager()->createGraphicsAllocationFromSharedHandle(osHandle,
                                                                            unifiedMemoryProperties,
+                                                                           false,
                                                                            false);
     if (alloc == nullptr) {
         return nullptr;
@@ -38,6 +39,10 @@ void *DriverHandleImp::importFdHandle(ze_device_handle_t hDevice, ze_ipc_memory_
     allocData.memoryType = InternalMemoryType::DEVICE_UNIFIED_MEMORY;
     allocData.device = neoDevice;
     if (flags & ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED) {
+        allocData.allocationFlagsProperty.flags.locallyUncachedResource = 1;
+    }
+
+    if (flags & ZE_IPC_MEMORY_FLAG_BIAS_UNCACHED) {
         allocData.allocationFlagsProperty.flags.locallyUncachedResource = 1;
     }
 

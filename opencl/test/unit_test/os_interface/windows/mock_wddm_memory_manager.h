@@ -18,6 +18,7 @@ class MockWddmMemoryManager : public MemoryManagerCreate<WddmMemoryManager> {
     using BaseClass = WddmMemoryManager;
 
   public:
+    using BaseClass::alignmentSelector;
     using BaseClass::allocateGraphicsMemoryForNonSvmHostPtr;
     using BaseClass::allocateGraphicsMemoryWithGpuVa;
     using BaseClass::allocateGraphicsMemoryWithProperties;
@@ -43,8 +44,8 @@ class MockWddmMemoryManager : public MemoryManagerCreate<WddmMemoryManager> {
         return BaseClass::allocateGraphicsMemoryInDevicePool(allocationData, status);
     }
 
-    size_t hugeGfxMemoryChunkSize = BaseClass::getHugeGfxMemoryChunkSize();
-    size_t getHugeGfxMemoryChunkSize() const override { return hugeGfxMemoryChunkSize; }
+    size_t hugeGfxMemoryChunkSize = BaseClass::getHugeGfxMemoryChunkSize(preferredAllocationMethod);
+    size_t getHugeGfxMemoryChunkSize(GfxMemoryAllocationMethod allocationMethod) const override { return hugeGfxMemoryChunkSize; }
 
     MockWddmMemoryManager(ExecutionEnvironment &executionEnvironment) : MemoryManagerCreate(false, false, executionEnvironment) {
         hostPtrManager.reset(new MockHostPtrManager);

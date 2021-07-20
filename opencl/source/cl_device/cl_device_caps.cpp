@@ -30,7 +30,7 @@ static std::string vendor = "Intel(R) Corporation";
 static std::string profile = "FULL_PROFILE";
 static std::string spirVersions = "1.2 ";
 static std::string spirvName = "SPIR-V";
-const char *latestConformanceVersionPassed = "v2020-11-23-00";
+const char *latestConformanceVersionPassed = "v2021-06-16-00";
 #define QTR(a) #a
 #define TOSTR(b) QTR(b)
 static std::string driverVersion = TOSTR(NEO_OCL_DRIVER_VERSION);
@@ -202,6 +202,21 @@ void ClDevice::initializeCaps() {
         deviceExtensions += sharingFactory.getExtensions(driverInfo.get());
     }
 
+    PhysicalDevicePciBusInfo pciBusInfo(PhysicalDevicePciBusInfo::InvalidValue, PhysicalDevicePciBusInfo::InvalidValue, PhysicalDevicePciBusInfo::InvalidValue, PhysicalDevicePciBusInfo::InvalidValue);
+
+    if (driverInfo) {
+        pciBusInfo = driverInfo->getPciBusInfo();
+    }
+
+    deviceInfo.pciBusInfo.pci_domain = pciBusInfo.pciDomain;
+    deviceInfo.pciBusInfo.pci_bus = pciBusInfo.pciBus;
+    deviceInfo.pciBusInfo.pci_device = pciBusInfo.pciDevice;
+    deviceInfo.pciBusInfo.pci_function = pciBusInfo.pciFunction;
+
+    if (isPciBusInfoValid()) {
+        deviceExtensions += "cl_khr_pci_bus_info ";
+    }
+
     deviceExtensions += hwHelper.getExtensions();
     deviceInfo.deviceExtensions = deviceExtensions.c_str();
 
@@ -287,6 +302,7 @@ void ClDevice::initializeCaps() {
 
     deviceInfo.preferredInteropUserSync = 1u;
 
+    device.reduceMaxMemAllocSize();
     // OpenCL 1.2 requires 128MB minimum
 
     deviceInfo.maxConstantBufferSize = sharedDeviceInfo.maxMemAllocSize;
