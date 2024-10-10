@@ -57,8 +57,16 @@ TEST_F(L0DebuggerTest, givenL0DebuggerWhenGettingSipAllocationThenValidSipTypeIs
 }
 
 TEST_F(L0DebuggerTest, givenL0DebuggerWhenGettingSipTypeThenDebugBindlessIsReturned) {
+    auto &compilerProductHelper = neoDevice->getCompilerProductHelper();
+    auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled();
+
     auto sipType = SipKernel::getSipKernelType(*neoDevice);
-    EXPECT_EQ(NEO::SipKernelType::dbgBindless, sipType);
+    if (heaplessEnabled) {
+        EXPECT_EQ(NEO::SipKernelType::dbgHeapless, sipType);
+
+    } else {
+        EXPECT_EQ(NEO::SipKernelType::dbgBindless, sipType);
+    }
 }
 
 TEST_F(L0DebuggerTest, givenL0DebuggerWhenGettingStateSaveAreaHeaderThenValidSipTypeIsReturned) {
@@ -231,7 +239,9 @@ HWTEST2_P(L0DebuggerParameterizedTests, givenDebuggerWhenAppendingKernelToComman
 
     auto bindlessHeapsHelper = device->getNEODevice()->getExecutionEnvironment()->rootDeviceEnvironments[device->getNEODevice()->getRootDeviceIndex()]->bindlessHeapsHelper.get();
 
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
     ze_result_t returnValue;
     std::unique_ptr<L0::CommandList> commandList(L0::CommandList::create(productFamily, device, NEO::EngineGroupType::renderCompute, 0u, returnValue, false));
     ze_group_count_t groupCount{1, 1, 1};
@@ -273,7 +283,9 @@ HWTEST2_P(L0DebuggerParameterizedTests, givenDebuggerWhenAppendingKernelToComman
 
     auto bindlessHeapsHelper = device->getNEODevice()->getExecutionEnvironment()->rootDeviceEnvironments[device->getNEODevice()->getRootDeviceIndex()]->bindlessHeapsHelper.get();
 
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
     ze_result_t returnValue;
     std::unique_ptr<L0::CommandList> commandList(L0::CommandList::create(productFamily, device, NEO::EngineGroupType::renderCompute, 0u, returnValue, false));
     ze_group_count_t groupCount{1, 1, 1};
@@ -365,7 +377,7 @@ HWTEST_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionEnabledWithImmediat
     ASSERT_NE(nullptr, eventObject->csrs[0]);
     ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
 
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
+    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false, false);
     EXPECT_EQ(returnValue, ZE_RESULT_SUCCESS);
 
     returnValue = commandList->appendBarrier(nullptr, 1, &event, false);
@@ -429,7 +441,7 @@ HWTEST_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionDisabledWithImmedia
     ASSERT_NE(nullptr, eventObject->csrs[0]);
     ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
 
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
+    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false, false);
     EXPECT_EQ(returnValue, ZE_RESULT_SUCCESS);
 
     returnValue = commandList->appendBarrier(nullptr, 1, &event, false);
@@ -590,7 +602,7 @@ HWTEST_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionDisabledForRegularC
     commandQueue->destroy();
 }
 
-HWTEST2_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionEnabledCommandListAndAppendPageFaultCopyThenSuccessIsReturned, IsAtLeastSkl) {
+HWTEST2_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionEnabledCommandListAndAppendPageFaultCopyThenSuccessIsReturned, MatchAny) {
     DebugManagerStateRestore restorer;
     NEO::debugManager.flags.EnableFlushTaskSubmission.set(true);
 
@@ -613,7 +625,7 @@ HWTEST2_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionEnabledCommandList
     commandList->destroy();
 }
 
-HWTEST2_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionDisabledCommandListAndAppendPageFaultCopyThenSuccessIsReturned, IsAtLeastSkl) {
+HWTEST2_F(L0DebuggerSimpleTest, givenUseCsrImmediateSubmissionDisabledCommandListAndAppendPageFaultCopyThenSuccessIsReturned, MatchAny) {
     DebugManagerStateRestore restorer;
     NEO::debugManager.flags.EnableFlushTaskSubmission.set(false);
 
@@ -648,7 +660,9 @@ HWTEST2_F(L0DebuggerTest, givenDebuggerEnabledAndL1CachePolicyWBWhenAppendingThe
     raii.mockProductHelper->returnedL1CachePolicy = RENDER_SURFACE_STATE::L1_CACHE_POLICY_WB;
     raii.mockProductHelper->returnedL1CachePolicyIfDebugger = RENDER_SURFACE_STATE::L1_CACHE_POLICY_WBP;
 
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
     ze_result_t returnValue;
     std::unique_ptr<L0::CommandList> commandList(L0::CommandList::create(productFamily, device, NEO::EngineGroupType::renderCompute, 0u, returnValue, false));
     ze_group_count_t groupCount{1, 1, 1};
@@ -692,7 +706,7 @@ struct MockKernelImmutableData : public KernelImmutableData {
     MockKernelImmutableData(L0::Device *device) : KernelImmutableData(device) {}
 };
 
-HWTEST2_F(L0DebuggerTest, givenFlushTaskSubmissionAndSharedHeapsEnabledWhenAppendingKernelUsingNewHeapThenDebugSurfaceIsProgrammedOnce, IsAtLeastGen12lp) {
+HWTEST2_F(L0DebuggerTest, givenFlushTaskSubmissionAndSharedHeapsEnabledWhenAppendingKernelUsingNewHeapThenDebugSurfaceIsProgrammedOnce, MatchAny) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     DebugManagerStateRestore restorer;
@@ -719,7 +733,9 @@ HWTEST2_F(L0DebuggerTest, givenFlushTaskSubmissionAndSharedHeapsEnabledWhenAppen
     kernelImmData->kernelDescriptor = kernelDescriptor.get();
     kernelImmData->isaGraphicsAllocation.reset(new MockGraphicsAllocation());
 
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
     kernel.kernelImmData = kernelImmData.get();
 
     CmdListKernelLaunchParams launchParams = {};
@@ -776,7 +792,9 @@ HWTEST2_F(L0DebuggerTest, givenImmediateFlushTaskWhenAppendingKernelUsingNewHeap
     kernelImmData->kernelDescriptor = kernelDescriptor.get();
     kernelImmData->isaGraphicsAllocation.reset(new MockGraphicsAllocation());
 
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
     kernel.kernelImmData = kernelImmData.get();
 
     CmdListKernelLaunchParams launchParams = {};
@@ -864,7 +882,9 @@ HWTEST_F(DebuggerWithGlobalBindlessTest, GivenGlobalBindlessHeapWhenAppendingKer
     DebugManagerStateRestore restore;
     debugManager.flags.SelectCmdListHeapAddressModel.set(0);
 
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
     kernel.descriptor.kernelAttributes.bufferAddressingMode = NEO::KernelDescriptor::BindlessAndStateless;
     kernel.descriptor.kernelAttributes.imageAddressingMode = NEO::KernelDescriptor::Bindless;
     ze_result_t returnValue;
@@ -897,7 +917,9 @@ HWTEST_F(DebuggerWithGlobalBindlessTest, GivenGlobalBindlessHeapWhenExecutingCmd
 
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
 
     auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
@@ -928,7 +950,9 @@ HWTEST_F(DebuggerWithGlobalBindlessTest, GivenGlobalBindlessHeapWhenAppendingToI
 
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
 
     memoryOperationsHandler->captureGfxAllocationsForMakeResident = true;
 

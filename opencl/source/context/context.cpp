@@ -166,8 +166,11 @@ CommandQueue *Context::getSpecialQueue(uint32_t rootDeviceIndex) {
 
     if (!specialQueues[rootDeviceIndex]) {
         cl_int errcodeRet = CL_SUCCESS;
-        auto deviceOrdinal = std::distance(this->getRootDeviceIndices().begin(), std::find(this->getRootDeviceIndices().begin(), this->getRootDeviceIndices().end(), rootDeviceIndex));
-        auto commandQueue = CommandQueue::create(this, this->getDevice(deviceOrdinal), nullptr, true, errcodeRet);
+        auto device = std::find_if(this->getDevices().begin(), this->getDevices().end(), [rootDeviceIndex](const auto &device) {
+            return device->getRootDeviceIndex() == rootDeviceIndex;
+        });
+
+        auto commandQueue = CommandQueue::create(this, *device, nullptr, true, errcodeRet);
         DEBUG_BREAK_IF(commandQueue == nullptr);
         DEBUG_BREAK_IF(errcodeRet != CL_SUCCESS);
         overrideSpecialQueueAndDecrementRefCount(commandQueue, rootDeviceIndex);
@@ -180,10 +183,13 @@ void Context::setSpecialQueue(CommandQueue *commandQueue, uint32_t rootDeviceInd
     specialQueues[rootDeviceIndex] = commandQueue;
 }
 void Context::overrideSpecialQueueAndDecrementRefCount(CommandQueue *commandQueue, uint32_t rootDeviceIndex) {
-    setSpecialQueue(commandQueue, rootDeviceIndex);
     commandQueue->setIsSpecialCommandQueue(true);
+
     // decrement ref count that special queue added
     this->decRefInternal();
+
+    // above decRefInternal doesn't delete this
+    setSpecialQueue(commandQueue, rootDeviceIndex); // NOLINT(clang-analyzer-cplusplus.NewDelete)
 };
 
 bool Context::areMultiStorageAllocationsPreferred() {
@@ -533,7 +539,7 @@ void Context::initializeUsmAllocationPools() {
         SVMAllocsManager::UnifiedMemoryProperties memoryProperties(InternalMemoryType::deviceUnifiedMemory, MemoryConstants::pageSize2M,
                                                                    getRootDeviceIndices(), subDeviceBitfields);
         memoryProperties.device = &neoDevice;
-        usmDeviceMemAllocPool.initialize(svmMemoryManager, memoryProperties, poolSize);
+        usmDeviceMemAllocPool.initialize(svmMemoryManager, memoryProperties, poolSize, 0u, 1 * MemoryConstants::megaByte);
     }
 
     enabled = ApiSpecificConfig::isHostUsmPoolingEnabled() && productHelper.isUsmPoolAllocatorSupported();
@@ -548,7 +554,7 @@ void Context::initializeUsmAllocationPools() {
         subDeviceBitfields[neoDevice.getRootDeviceIndex()] = neoDevice.getDeviceBitfield();
         SVMAllocsManager::UnifiedMemoryProperties memoryProperties(InternalMemoryType::hostUnifiedMemory, MemoryConstants::pageSize2M,
                                                                    getRootDeviceIndices(), subDeviceBitfields);
-        usmHostMemAllocPool.initialize(svmMemoryManager, memoryProperties, poolSize);
+        usmHostMemAllocPool.initialize(svmMemoryManager, memoryProperties, poolSize, 0u, 1 * MemoryConstants::megaByte);
     }
     this->usmPoolInitialized = true;
 }
@@ -577,7 +583,7 @@ bool Context::BufferPoolAllocator::isAggregatedSmallBuffersEnabled(Context *cont
 }
 
 Context::BufferPool::BufferPool(Context *context) : BaseType(context->memoryManager, nullptr) {
-    static constexpr cl_mem_flags flags{};
+    static constexpr cl_mem_flags flags = CL_MEM_UNCOMPRESSED_HINT_INTEL;
     [[maybe_unused]] cl_int errcodeRet{};
     Buffer::AdditionalBufferCreateArgs bufferCreateArgs{};
     bufferCreateArgs.doNotProvidePerformanceHints = true;

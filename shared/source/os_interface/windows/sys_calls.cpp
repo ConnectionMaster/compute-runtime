@@ -44,12 +44,6 @@ DWORD getLastError() {
     return GetLastError();
 }
 
-bool pathExists(const std::string &path) {
-    DWORD ret = GetFileAttributesA(path.c_str());
-
-    return ret == FILE_ATTRIBUTE_DIRECTORY;
-}
-
 HANDLE createEvent(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState, LPCSTR lpName) {
     return CreateEventA(lpEventAttributes, bManualReset, bInitialState, lpName);
 }

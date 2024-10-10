@@ -366,7 +366,7 @@ HWTEST_F(CommandQueueCreate, given100CmdListsWhenExecutingThenCommandStreamIsNot
     commandQueue->destroy();
 }
 
-HWTEST2_F(CommandQueueCreate, givenOutOfHostMemoryErrorFromSubmitBatchBufferWhenExecutingCommandListsThenOutOfHostMemoryIsReturned, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueCreate, givenOutOfHostMemoryErrorFromSubmitBatchBufferWhenExecutingCommandListsThenOutOfHostMemoryIsReturned, MatchAny) {
     const ze_command_queue_desc_t desc = {};
     auto commandQueue = new MockCommandQueueHw<gfxCoreFamily>(device, neoDevice->getDefaultEngine().commandStreamReceiver, &desc);
     commandQueue->initialize(false, false, false);
@@ -393,7 +393,7 @@ HWTEST2_F(CommandQueueCreate, givenOutOfHostMemoryErrorFromSubmitBatchBufferWhen
     commandQueue->destroy();
 }
 
-HWTEST2_F(CommandQueueCreate, givenGpuHangInReservingLinearStreamWhenExecutingCommandListsThenDeviceLostIsReturned, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueCreate, givenGpuHangInReservingLinearStreamWhenExecutingCommandListsThenDeviceLostIsReturned, MatchAny) {
     const ze_command_queue_desc_t desc = {};
     auto commandQueue = new MockCommandQueueHw<gfxCoreFamily>(device, neoDevice->getDefaultEngine().commandStreamReceiver, &desc);
     commandQueue->initialize(false, false, false);
@@ -421,7 +421,7 @@ HWTEST2_F(CommandQueueCreate, givenGpuHangInReservingLinearStreamWhenExecutingCo
     commandQueue->destroy();
 }
 
-HWTEST2_F(CommandQueueCreate, givenSwTagsEnabledWhenPrepareAndSubmitBatchBufferThenLeftoverIsZeroed, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueCreate, givenSwTagsEnabledWhenPrepareAndSubmitBatchBufferThenLeftoverIsZeroed, MatchAny) {
     DebugManagerStateRestore restorer;
     NEO::debugManager.flags.EnableSWTags.set(1);
     const ze_command_queue_desc_t desc = {};
@@ -472,7 +472,7 @@ struct MockCommandQueueHwEstimateSizeTest : public MockCommandQueueHw<gfxCoreFam
     size_t requiredSizeCalled = 0u;
 };
 
-HWTEST2_F(CommandQueueCreate, GivenDispatchTaskCountPostSyncRequiredWhenExecuteCommandListsThenEstimatedSizeIsCorrect, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueCreate, GivenDispatchTaskCountPostSyncRequiredWhenExecuteCommandListsThenEstimatedSizeIsCorrect, MatchAny) {
     const ze_command_queue_desc_t desc = {};
     auto commandQueue = new MockCommandQueueHwEstimateSizeTest<gfxCoreFamily>(device, neoDevice->getDefaultEngine().commandStreamReceiver, &desc);
     commandQueue->initialize(false, false, false);
@@ -796,12 +796,12 @@ TEST_F(DeviceCreateCommandQueueTest, givenLowPriorityDescWhenCreateCommandQueueI
 
 TEST_F(DeviceCreateCommandQueueTest, givenCopyOrdinalWhenCreateCommandQueueWithLowPriorityDescIsCalledThenCopyCsrIsAssigned) {
     auto copyCsr = std::unique_ptr<NEO::CommandStreamReceiver>(neoDevice->createCommandStreamReceiver());
-    EngineDescriptor copyEngineDescriptor({aub_stream::ENGINE_BCS, EngineUsage::regular}, neoDevice->getDeviceBitfield(), neoDevice->getPreemptionMode(), false, false);
+    EngineDescriptor copyEngineDescriptor({aub_stream::ENGINE_BCS, EngineUsage::regular}, neoDevice->getDeviceBitfield(), neoDevice->getPreemptionMode(), false);
     auto copyOsContext = neoDevice->getExecutionEnvironment()->memoryManager->createAndRegisterOsContext(copyCsr.get(), copyEngineDescriptor);
     copyCsr->setupContext(*copyOsContext);
 
     auto computeCsr = std::unique_ptr<NEO::CommandStreamReceiver>(neoDevice->createCommandStreamReceiver());
-    EngineDescriptor computeEngineDescriptor({aub_stream::ENGINE_CCS, EngineUsage::lowPriority}, neoDevice->getDeviceBitfield(), neoDevice->getPreemptionMode(), false, false);
+    EngineDescriptor computeEngineDescriptor({aub_stream::ENGINE_CCS, EngineUsage::lowPriority}, neoDevice->getDeviceBitfield(), neoDevice->getPreemptionMode(), false);
     auto computeOsContext = neoDevice->getExecutionEnvironment()->memoryManager->createAndRegisterOsContext(computeCsr.get(), computeEngineDescriptor);
     computeCsr->setupContext(*computeOsContext);
 
@@ -1055,7 +1055,7 @@ class MockCommandQueue : public L0::CommandQueueHw<gfxCoreFamily> {
 };
 
 using ExecuteCommandListTests = Test<DeviceFixture>;
-HWTEST2_F(ExecuteCommandListTests, givenExecuteCommandListWhenItReturnsThenContainersAreEmpty, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenExecuteCommandListWhenItReturnsThenContainersAreEmpty, MatchAny) {
     ze_command_queue_desc_t desc = {};
     NEO::CommandStreamReceiver *csr;
     device->getCsrForOrdinalAndIndex(&csr, 0u, 0u, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
@@ -1084,7 +1084,7 @@ HWTEST2_F(ExecuteCommandListTests, givenExecuteCommandListWhenItReturnsThenConta
     alignedFree(alloc);
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenRegularCmdListWhenExecutionThenIncSubmissionCounter, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenRegularCmdListWhenExecutionThenIncSubmissionCounter, MatchAny) {
     ze_command_queue_desc_t desc = {};
     NEO::CommandStreamReceiver *csr;
     device->getCsrForOrdinalAndIndex(&csr, 0u, 0u, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
@@ -1133,7 +1133,7 @@ class MockCommandQueueSubmitBatchBuffer : public MockCommandQueue<gfxCoreFamily>
                       bool isCooperative));
 };
 
-HWTEST2_F(ExecuteCommandListTests, givenOutOfMemorySubmitBatchBufferThenExecuteCommandListReturnsOutOfMemoryError, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenOutOfMemorySubmitBatchBufferThenExecuteCommandListReturnsOutOfMemoryError, MatchAny) {
     ze_command_queue_desc_t desc = {};
     NEO::CommandStreamReceiver *csr;
     device->getCsrForOrdinalAndIndex(&csr, 0u, 0u, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
@@ -1154,7 +1154,7 @@ HWTEST2_F(ExecuteCommandListTests, givenOutOfMemorySubmitBatchBufferThenExecuteC
 }
 
 using CommandQueueDestroy = Test<DeviceFixture>;
-HWTEST2_F(CommandQueueDestroy, givenCommandQueueAndCommandListWithSshAndScratchWhenExecuteThenSshWasUsed, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueDestroy, givenCommandQueueAndCommandListWithSshAndScratchWhenExecuteThenSshWasUsed, MatchAny) {
     DebugManagerStateRestore restorer;
     debugManager.flags.SelectCmdListHeapAddressModel.set(0);
 
@@ -1224,7 +1224,7 @@ HWTEST2_F(CommandQueueDestroy, givenCommandQueueAndCommandListWithSshAndPrivateS
     alignedFree(alloc);
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenBindlessHelperWhenCommandListIsExecutedOnCommandQueueThenHeapContainerIsEmpty, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenBindlessHelperWhenCommandListIsExecutedOnCommandQueueThenHeapContainerIsEmpty, MatchAny) {
     DebugManagerStateRestore dbgRestorer;
     debugManager.flags.UseExternalAllocatorForSshAndDsh.set(1);
     debugManager.flags.SelectCmdListHeapAddressModel.set(0);
@@ -1251,7 +1251,7 @@ HWTEST2_F(ExecuteCommandListTests, givenBindlessHelperWhenCommandListIsExecutedO
     commandList->destroy();
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenExecuteCommandListReturnsErrorUnknown, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenExecuteCommandListReturnsErrorUnknown, MatchAny) {
     ze_command_queue_desc_t desc = {};
     NEO::CommandStreamReceiver *csr;
     device->getCsrForOrdinalAndIndex(&csr, 0u, 0u, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
@@ -1271,12 +1271,8 @@ HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenExecuteComma
     commandList->destroy();
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenResetGraphicsTaskCountsLatestFlushedTaskCountZero, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenResetGraphicsTaskCountsLatestFlushedTaskCountZero, MatchAny) {
     ze_command_queue_desc_t desc = {};
-
-    auto &compilerProductHelper = device->getCompilerProductHelper();
-    auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled();
-    auto heaplessStateInitEnabled = compilerProductHelper.isHeaplessStateInitEnabled(heaplessEnabled);
 
     NEO::CommandStreamReceiver *csr;
     device->getCsrForOrdinalAndIndex(&csr, 0u, 0u, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
@@ -1299,25 +1295,16 @@ HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenResetGraphic
     auto res = commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr);
     EXPECT_EQ(ZE_RESULT_ERROR_UNKNOWN, res);
 
-    if (heaplessStateInitEnabled) {
-        EXPECT_EQ(1u, graphicsAllocation1.getTaskCount(csr->getOsContext().getContextId()));
-        EXPECT_EQ(1u, graphicsAllocation2.getTaskCount(csr->getOsContext().getContextId()));
-    } else {
-        EXPECT_EQ(NEO::GraphicsAllocation::objectNotUsed, graphicsAllocation1.getTaskCount(csr->getOsContext().getContextId()));
-        EXPECT_EQ(NEO::GraphicsAllocation::objectNotUsed, graphicsAllocation2.getTaskCount(csr->getOsContext().getContextId()));
-    }
+    EXPECT_EQ(NEO::GraphicsAllocation::objectNotUsed, graphicsAllocation1.getTaskCount(csr->getOsContext().getContextId()));
+    EXPECT_EQ(NEO::GraphicsAllocation::objectNotUsed, graphicsAllocation2.getTaskCount(csr->getOsContext().getContextId()));
 
     commandQueue->destroy();
     commandList->destroy();
     alignedFree(alloc);
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenResetGraphicsTaskCountsLatestFlushedTaskCountNonZero, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenResetGraphicsTaskCountsLatestFlushedTaskCountNonZero, MatchAny) {
     ze_command_queue_desc_t desc = {};
-
-    auto &compilerProductHelper = device->getCompilerProductHelper();
-    auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled();
-    auto heaplessStateInitEnabled = compilerProductHelper.isHeaplessStateInitEnabled(heaplessEnabled);
 
     NEO::CommandStreamReceiver *csr;
     device->getCsrForOrdinalAndIndex(&csr, 0u, 0u, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
@@ -1340,7 +1327,7 @@ HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenResetGraphic
     auto res = commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr);
     EXPECT_EQ(ZE_RESULT_ERROR_UNKNOWN, res);
 
-    auto expectedTaskCount = heaplessStateInitEnabled ? 3u : 2u;
+    auto expectedTaskCount = 2u;
     EXPECT_EQ(expectedTaskCount, graphicsAllocation1.getTaskCount(csr->getOsContext().getContextId()));
     EXPECT_EQ(expectedTaskCount, graphicsAllocation2.getTaskCount(csr->getOsContext().getContextId()));
     commandQueue->destroy();
@@ -1348,7 +1335,7 @@ HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenResetGraphic
     alignedFree(alloc);
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenWaitForCompletionFalse, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenWaitForCompletionFalse, MatchAny) {
 
     auto &compilerProductHelper = device->getCompilerProductHelper();
     auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled();
@@ -1378,7 +1365,7 @@ HWTEST2_F(ExecuteCommandListTests, givenFailingSubmitBatchBufferThenWaitForCompl
     commandList->destroy();
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenSuccessfulSubmitBatchBufferThenExecuteCommandListReturnsSuccess, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenSuccessfulSubmitBatchBufferThenExecuteCommandListReturnsSuccess, MatchAny) {
     ze_command_queue_desc_t desc = {};
     NEO::CommandStreamReceiver *csr;
     device->getCsrForOrdinalAndIndex(&csr, 0u, 0u, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
@@ -1398,7 +1385,7 @@ HWTEST2_F(ExecuteCommandListTests, givenSuccessfulSubmitBatchBufferThenExecuteCo
     commandList->destroy();
 }
 
-HWTEST2_F(ExecuteCommandListTests, givenCommandQueueHavingTwoB2BCommandListsThenMVSDirtyFlagAndGSBADirtyFlagAreSetOnlyOnce, IsAtLeastSkl) {
+HWTEST2_F(ExecuteCommandListTests, givenCommandQueueHavingTwoB2BCommandListsThenMVSDirtyFlagAndGSBADirtyFlagAreSetOnlyOnce, MatchAny) {
 
     auto &compilerProductHelper = device->getCompilerProductHelper();
     auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled();
@@ -1916,7 +1903,8 @@ HWTEST_F(ExecuteCommandListTests, givenDirectSubmissionEnabledWhenExecutingCmdLi
 
     auto bbStartCmds = findAll<MI_BATCH_BUFFER_START *>(cmdList.begin(), cmdList.end());
 
-    ASSERT_EQ(2u, bbStartCmds.size());
+    auto heaplessStateInitEnabled = commandList->heaplessStateInitEnabled;
+    EXPECT_EQ(heaplessStateInitEnabled ? 1u : 2u, bbStartCmds.size());
 
     for (auto &cmd : bbStartCmds) {
         auto bbStart = genCmdCast<MI_BATCH_BUFFER_START *>(*cmd);
@@ -1961,7 +1949,8 @@ HWTEST_F(ExecuteCommandListTests, givenDirectSubmissionEnabledAndDebugFlagSetWhe
 
     auto bbStartCmds = findAll<MI_BATCH_BUFFER_START *>(cmdList.begin(), cmdList.end());
 
-    EXPECT_EQ(2u, bbStartCmds.size());
+    auto heaplessStateInitEnabled = commandList->heaplessStateInitEnabled;
+    EXPECT_EQ(heaplessStateInitEnabled ? 1u : 2u, bbStartCmds.size());
 
     for (auto &cmd : bbStartCmds) {
         auto bbStart = genCmdCast<MI_BATCH_BUFFER_START *>(*cmd);

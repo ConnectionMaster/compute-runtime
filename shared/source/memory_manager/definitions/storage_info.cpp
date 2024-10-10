@@ -83,6 +83,7 @@ StorageInfo MemoryManager::createStorageInfoFromProperties(const AllocationPrope
     case AllocationType::commandBuffer:
     case AllocationType::internalHeap:
     case AllocationType::linearStream:
+    case AllocationType::syncBuffer:
         storageInfo.cloningOfPageTables = properties.flags.multiOsContextCapable;
         if (!properties.flags.multiOsContextCapable) {
             storageInfo.pageTablesVisibility = preferredTile;
@@ -132,9 +133,7 @@ StorageInfo MemoryManager::createStorageInfoFromProperties(const AllocationPrope
             storageInfo.cloningOfPageTables = false;
             storageInfo.tileInstanced = true;
         }
-        if (!releaseHelper ||
-            releaseHelper->isLocalOnlyAllowed() ||
-            properties.flags.isUSMDeviceAllocation) {
+        if (!releaseHelper || releaseHelper->isLocalOnlyAllowed()) {
             storageInfo.localOnlyRequired = true;
         }
 

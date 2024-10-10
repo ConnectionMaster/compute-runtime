@@ -11,6 +11,7 @@
 #include "level_zero/api/driver_experimental/public/zex_context.h"
 #include "level_zero/api/extensions/public/ze_exp_ext.h"
 #include "level_zero/include/ze_intel_gpu.h"
+#include "level_zero/include/zet_intel_gpu_metric.h"
 
 #include <cstring>
 
@@ -29,6 +30,7 @@ void *ExtensionFunctionAddressHelper::getExtensionFunctionAddress(const std::str
     RETURN_FUNC_PTR_IF_EXIST(zexDriverGetHostPointerBaseAddress);
 
     RETURN_FUNC_PTR_IF_EXIST(zexKernelGetBaseAddress);
+    RETURN_FUNC_PTR_IF_EXIST(zeIntelKernelGetBinaryExp);
 
     RETURN_FUNC_PTR_IF_EXIST(zexMemGetIpcHandles);
     RETURN_FUNC_PTR_IF_EXIST(zexMemOpenIpcHandles);
@@ -42,7 +44,7 @@ void *ExtensionFunctionAddressHelper::getExtensionFunctionAddress(const std::str
 
     RETURN_FUNC_PTR_IF_EXIST(zeMemGetPitchFor2dImage);
     RETURN_FUNC_PTR_IF_EXIST(zeImageGetDeviceOffsetExp);
-    RETURN_FUNC_PTR_IF_EXIST(zexDeviceGetConcurrentMetricGroups);
+    RETURN_FUNC_PTR_IF_EXIST(zetIntelDeviceGetConcurrentMetricGroupsExp);
     RETURN_FUNC_PTR_IF_EXIST(zeIntelGetDriverVersionString);
 
     RETURN_FUNC_PTR_IF_EXIST(zeIntelMediaCommunicationCreate);

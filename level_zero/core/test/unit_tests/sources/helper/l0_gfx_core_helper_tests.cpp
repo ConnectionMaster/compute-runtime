@@ -19,6 +19,8 @@
 
 #include "level_zero/core/source/gfx_core_helpers/l0_gfx_core_helper.h"
 
+#include "multitile_matchers.h"
+
 namespace L0 {
 namespace ult {
 
@@ -26,13 +28,6 @@ using L0GfxCoreHelperTest = ::testing::Test;
 
 TEST(L0GfxCoreHelperTest, WhenL0GfxCoreHelperIsCalledWithUnknownGfxCoreThenNullptrIsReturned) {
     EXPECT_EQ(nullptr, L0GfxCoreHelper::create(IGFX_UNKNOWN_CORE));
-}
-
-HWTEST2_F(L0GfxCoreHelperTest, givenResumeWANotNeededThenFalseIsReturned, IsAtMostGen11) {
-    MockExecutionEnvironment executionEnvironment;
-    auto &l0GfxCoreHelper = executionEnvironment.rootDeviceEnvironments[0]->getHelper<L0GfxCoreHelper>();
-
-    EXPECT_FALSE(l0GfxCoreHelper.isResumeWARequired());
 }
 
 using PlatformsWithWa = IsWithinGfxCore<IGFX_GEN12LP_CORE, IGFX_XE_HP_CORE>;
@@ -702,8 +697,6 @@ HWTEST2_F(L0GfxCoreHelperFusedEuTest, givenBitmaskWithAttentionBitsForHalfOfThre
     }
 }
 
-using NonMultiTilePlatforms = IsWithinGfxCore<IGFX_GEN9_CORE, IGFX_GEN12LP_CORE>;
-
 HWTEST2_F(L0GfxCoreHelperTest, whenAlwaysAllocateEventInLocalMemCalledThenReturnFalse, IsNotXeHpcCore) {
     MockExecutionEnvironment executionEnvironment;
     auto &l0GfxCoreHelper = executionEnvironment.rootDeviceEnvironments[0]->getHelper<L0GfxCoreHelper>();
@@ -729,7 +722,7 @@ TEST_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperWhenGettingDefaultValueForDynami
     EXPECT_TRUE(defaultValue);
 }
 
-HWTEST2_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperWhenGettingMaxKernelAndMaxPacketThenExpectBothReturnOne, NonMultiTilePlatforms) {
+HWTEST2_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperWhenGettingMaxKernelAndMaxPacketThenExpectBothReturnOne, MultiTileNotSupported) {
     auto hwInfo = *NEO::defaultHwInfo.get();
     MockExecutionEnvironment executionEnvironment;
     auto &l0GfxCoreHelper = executionEnvironment.rootDeviceEnvironments[0]->getHelper<L0GfxCoreHelper>();
@@ -878,14 +871,14 @@ TEST_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperWhenGettingDefaultCmdlistPrimary
     EXPECT_EQ(l0GfxCoreHelper.platformSupportsPrimaryBatchBufferCmdList(), L0GfxCoreHelper::dispatchCmdListBatchBufferAsPrimary(rootDeviceEnvironment, true));
 }
 
-HWTEST2_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperOnGenPlatformsWhenGettingPlatformUseImmediateFlushTaskThenReturnFalse, IsAtMostGen12lp) {
+HWTEST2_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperOnGenPlatformsWhenGettingPlatformUseImmediateFlushTaskThenReturnFalse, IsGen12LP) {
     MockExecutionEnvironment executionEnvironment;
     auto &l0GfxCoreHelper = executionEnvironment.rootDeviceEnvironments[0]->getHelper<L0GfxCoreHelper>();
 
     EXPECT_FALSE(l0GfxCoreHelper.platformSupportsImmediateComputeFlushTask());
 }
 
-HWTEST2_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperOnGenPlatformsWhenGettingCmdlistUpdateCapabilityThenReturnZero, IsAtMostGen12lp) {
+HWTEST2_F(L0GfxCoreHelperTest, givenL0GfxCoreHelperOnGenPlatformsWhenGettingCmdlistUpdateCapabilityThenReturnZero, IsGen12LP) {
     MockExecutionEnvironment executionEnvironment;
     auto &l0GfxCoreHelper = executionEnvironment.rootDeviceEnvironments[0]->getHelper<L0GfxCoreHelper>();
     EXPECT_EQ(0u, l0GfxCoreHelper.getPlatformCmdListUpdateCapabilities());

@@ -10,6 +10,7 @@
 #include "shared/source/built_ins/sip.h"
 #include "shared/source/command_container/cmdcontainer.h"
 #include "shared/source/command_container/implicit_scaling.h"
+#include "shared/source/helpers/bindless_heaps_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/helpers/ray_tracing_helper.h"
 #include "shared/source/indirect_heap/indirect_heap.h"
@@ -224,13 +225,9 @@ void CommandListPrivateHeapsFixture::setUp() {
 }
 
 void CommandListPrivateHeapsFixture::checkAndPrepareBindlessKernel() {
-    if (NEO::ApiSpecificConfig::getBindlessMode(device->getNEODevice()->getReleaseHelper())) {
+    if (NEO::ApiSpecificConfig::getBindlessMode(*device->getNEODevice())) {
         const_cast<KernelDescriptor &>(kernel->getKernelDescriptor()).kernelAttributes.bufferAddressingMode = KernelDescriptor::Bindless;
         isBindlessKernel = true;
-    }
-
-    if (commandList->commandContainer.getIndirectHeap(NEO::HeapType::surfaceState) == nullptr) {
-        commandList->commandContainer.prepareBindfulSsh();
     }
 }
 
@@ -351,7 +348,7 @@ void ImmediateCmdListSharedHeapsFlushTaskFixtureInit::appendNonKernelOperation(L
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     } else if (operation == NonKernelOperation::WaitOnEvents) {
         auto eventHandle = event->toHandle();
-        result = currentCmdList->appendWaitOnEvents(1, &eventHandle, nullptr, false, false, false, false, false);
+        result = currentCmdList->appendWaitOnEvents(1, &eventHandle, nullptr, false, false, false, false, false, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     } else if (operation == NonKernelOperation::WriteGlobalTimestamp) {
         uint64_t timestampAddress = 0xfffffffffff0L;
@@ -436,7 +433,7 @@ void TbxImmediateCommandListFixture::setEvent() {
     auto mockEvent = static_cast<Event *>(event.get());
 
     size_t offset = event->getCompletionFieldOffset();
-    void *completionAddress = ptrOffset(mockEvent->hostAddress, offset);
+    void *completionAddress = ptrOffset(mockEvent->hostAddressFromPool, offset);
     size_t packets = event->getPacketsInUse();
     EventFieldType signaledValue = Event::STATE_SIGNALED;
     for (size_t i = 0; i < packets; i++) {
@@ -636,6 +633,7 @@ uint64_t CommandListScratchPatchFixtureInit::getSurfStateGpuBase(bool useImmedia
     if (fixtureGlobalStatelessMode == 1) {
         return device->getNEODevice()->getDefaultEngine().commandStreamReceiver->getGlobalStatelessHeapAllocation()->getGpuAddress();
     } else {
+
         if (useImmediate) {
             return device->getNEODevice()->getDefaultEngine().commandStreamReceiver->getIndirectHeap(NEO::surfaceState, 0).getGpuBase();
         } else {

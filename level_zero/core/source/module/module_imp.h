@@ -53,7 +53,7 @@ struct ModuleTranslationUnit {
                                                 const ze_module_constants_t *pConstants);
     MOCKABLE_VIRTUAL ze_result_t staticLinkSpirV(std::vector<const char *> inputSpirVs, std::vector<uint32_t> inputModuleSizes, const char *buildOptions, const char *internalBuildOptions,
                                                  std::vector<const ze_module_constants_t *> specConstants);
-    MOCKABLE_VIRTUAL ze_result_t createFromNativeBinary(const char *input, size_t inputSize);
+    MOCKABLE_VIRTUAL ze_result_t createFromNativeBinary(const char *input, size_t inputSize, const char *internalBuildOptions);
     MOCKABLE_VIRTUAL ze_result_t processUnpackedBinary();
     std::vector<uint8_t> generateElfFromSpirV(std::vector<const char *> inputSpirVs, std::vector<uint32_t> inputModuleSizes);
     bool processSpecConstantInfo(NEO::CompilerInterface *compilerInterface, const ze_module_constants_t *pConstants, const char *input, uint32_t inputSize);
@@ -170,7 +170,6 @@ struct ModuleImp : public Module {
     ze_result_t allocateKernelImmutableDatas(size_t kernelsCount);
     ze_result_t initializeKernelImmutableDatas();
     void copyPatchedSegments(const NEO::Linker::PatchableSegments &isaSegmentsForPatching);
-    void verifyDebugCapabilities();
     void checkIfPrivateMemoryPerDispatchIsNeeded() override;
     NEO::Zebin::Debug::Segments getZebinSegments();
     void createDebugZebin();

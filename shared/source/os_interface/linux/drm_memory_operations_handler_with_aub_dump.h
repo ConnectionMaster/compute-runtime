@@ -36,19 +36,24 @@ class DrmMemoryOperationsHandlerWithAubDump : public BaseOperationsHandler {
 
     ~DrmMemoryOperationsHandlerWithAubDump() override = default;
 
-    MemoryOperationsStatus makeResident(Device *device, ArrayRef<GraphicsAllocation *> gfxAllocations) override {
-        aubMemoryOperationsHandler->makeResident(device, gfxAllocations);
-        return BaseOperationsHandler::makeResident(device, gfxAllocations);
+    MemoryOperationsStatus makeResident(Device *device, ArrayRef<GraphicsAllocation *> gfxAllocations, bool isDummyExecNeeded) override {
+        aubMemoryOperationsHandler->makeResident(device, gfxAllocations, isDummyExecNeeded);
+        return BaseOperationsHandler::makeResident(device, gfxAllocations, isDummyExecNeeded);
     }
 
     MemoryOperationsStatus lock(Device *device, ArrayRef<GraphicsAllocation *> gfxAllocations) override {
-        aubMemoryOperationsHandler->makeResident(device, gfxAllocations);
+        aubMemoryOperationsHandler->makeResident(device, gfxAllocations, false);
         return BaseOperationsHandler::lock(device, gfxAllocations);
     }
 
     MemoryOperationsStatus evict(Device *device, GraphicsAllocation &gfxAllocation) override {
         aubMemoryOperationsHandler->evict(device, gfxAllocation);
         return BaseOperationsHandler::evict(device, gfxAllocation);
+    }
+
+    MemoryOperationsStatus free(Device *device, GraphicsAllocation &gfxAllocation) override {
+        aubMemoryOperationsHandler->free(device, gfxAllocation);
+        return BaseOperationsHandler::free(device, gfxAllocation);
     }
 
     MemoryOperationsStatus isResident(Device *device, GraphicsAllocation &gfxAllocation) override {

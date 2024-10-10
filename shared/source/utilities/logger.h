@@ -20,6 +20,7 @@ namespace NEO {
 class Kernel;
 struct MultiDispatchInfo;
 class GraphicsAllocation;
+class MemoryManager;
 
 static const int32_t maxErrorDescriptionSize = 1024;
 const char *getAllocationTypeString(GraphicsAllocation const *graphicsAllocation);
@@ -35,12 +36,12 @@ class FileLogger {
     FileLogger &operator=(const FileLogger &) = delete;
 
     static constexpr bool enabled() {
-        return debugLevel == DebugFunctionalityLevel::full;
+        return debugLevel != DebugFunctionalityLevel::none;
     }
 
     void dumpKernel(const std::string &name, const std::string &src);
     void logApiCall(const char *function, bool enter, int32_t errorCode);
-    void logAllocation(GraphicsAllocation const *graphicsAllocation);
+    void logAllocation(GraphicsAllocation const *graphicsAllocation, MemoryManager const *memoryManager);
     size_t getInput(const size_t *input, int32_t index);
 
     MOCKABLE_VIRTUAL void writeToFile(std::string filename, const char *str, size_t length, std::ios_base::openmode mode);

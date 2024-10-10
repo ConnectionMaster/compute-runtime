@@ -742,6 +742,10 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenEnqueueWithoutArbitrationPoli
     debugManager.flags.ForceThreadArbitrationPolicyProgrammingWithScm.set(1);
 
     auto &commandStreamReceiver = pDevice->getUltCommandStreamReceiver<FamilyType>();
+    if (commandStreamReceiver.heaplessStateInitialized) {
+        GTEST_SKIP();
+    }
+
     commandStreamReceiver.streamProperties.initSupport(pDevice->getRootDeviceEnvironment());
     auto &csrThreadArbitrationPolicy = commandStreamReceiver.streamProperties.stateComputeMode.threadArbitrationPolicy.value;
 
@@ -763,7 +767,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenEnqueueWithoutArbitrationPoli
 struct PreambleThreadArbitrationMatcher {
     template <PRODUCT_FAMILY productFamily>
     static constexpr bool isMatched() {
-        if constexpr (HwMapper<productFamily>::GfxProduct::supportsCmdSet(IGFX_GEN8_CORE)) {
+        if constexpr (HwMapper<productFamily>::GfxProduct::supportsCmdSet(IGFX_GEN12LP_CORE)) {
             return TestTraits<NEO::ToGfxCoreFamily<productFamily>::get()>::implementsPreambleThreadArbitration;
         }
         return false;

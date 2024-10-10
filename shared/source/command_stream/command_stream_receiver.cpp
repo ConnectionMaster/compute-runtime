@@ -46,6 +46,7 @@
 #include "shared/source/utilities/tag_allocator.h"
 #include "shared/source/utilities/wait_util.h"
 
+#include <array>
 #include <iostream>
 
 namespace AubMemDump {
@@ -99,6 +100,7 @@ CommandStreamReceiver::CommandStreamReceiver(ExecutionEnvironment &executionEnvi
 
     auto &compilerProductHelper = rootDeviceEnvironment.getHelper<CompilerProductHelper>();
     this->heaplessModeEnabled = compilerProductHelper.isHeaplessModeEnabled();
+    this->evictionAllocations.reserve(2 * MemoryConstants::kiloByte);
 }
 
 CommandStreamReceiver::~CommandStreamReceiver() {
@@ -182,7 +184,7 @@ void CommandStreamReceiver::processEviction() {
 void CommandStreamReceiver::makeNonResident(GraphicsAllocation &gfxAllocation) {
     if (gfxAllocation.isResident(osContext->getContextId())) {
         if (gfxAllocation.peekEvictable() && !gfxAllocation.isAlwaysResident(osContext->getContextId())) {
-            this->getEvictionAllocations().push_back(&gfxAllocation);
+            this->addToEvictionContainer(gfxAllocation);
         } else {
             gfxAllocation.setEvictable(true);
         }
@@ -203,7 +205,7 @@ void CommandStreamReceiver::makeSurfacePackNonResident(ResidencyContainer &alloc
     this->processEviction();
 }
 
-SubmissionStatus CommandStreamReceiver::processResidency(const ResidencyContainer &allocationsForResidency, uint32_t handleId) {
+SubmissionStatus CommandStreamReceiver::processResidency(ResidencyContainer &allocationsForResidency, uint32_t handleId) {
     return SubmissionStatus::success;
 }
 
@@ -658,6 +660,13 @@ bool CommandStreamReceiver::enqueueWaitForPagingFence(uint64_t pagingFenceValue)
     return false;
 }
 
+void CommandStreamReceiver::drainPagingFenceQueue() {
+    auto controller = this->executionEnvironment.directSubmissionController.get();
+    if (this->isAnyDirectSubmissionEnabled() && controller) {
+        controller->drainPagingFenceQueue();
+    }
+}
+
 GraphicsAllocation *CommandStreamReceiver::allocateDebugSurface(size_t size) {
     UNRECOVERABLE_IF(debugSurface != nullptr);
     if (primaryCsr) {
@@ -688,6 +697,10 @@ IndirectHeap &CommandStreamReceiver::getIndirectHeap(IndirectHeap::Type heapType
         internalAllocationStorage->storeAllocation(std::unique_ptr<GraphicsAllocation>(heapMemory), REUSABLE_ALLOCATION);
         heapMemory = nullptr;
         this->heapStorageRequiresRecyclingTag = true;
+
+        if (this->peekRootDeviceEnvironment().getProductHelper().isDcFlushMitigated()) {
+            this->registerDcFlushForDcMitigation();
+        }
     }
 
     if (!heapMemory) {
@@ -704,7 +717,7 @@ void CommandStreamReceiver::allocateHeapMemory(IndirectHeap::Type heapType,
     if (IndirectHeap::Type::surfaceState == heapType) {
         finalHeapSize = defaultSshSize;
     }
-    bool requireInternalHeap = IndirectHeap::Type::indirectObject == heapType ? canUse4GbHeaps : false;
+    bool requireInternalHeap = IndirectHeap::Type::indirectObject == heapType ? canUse4GbHeaps() : false;
 
     if (debugManager.flags.AddPatchInfoCommentsForAUBDump.get()) {
         requireInternalHeap = false;
@@ -852,15 +865,16 @@ bool CommandStreamReceiver::createWorkPartitionAllocation(const Device &device) 
     }
 
     uint32_t logicalId = 0;
+    auto copySrc = std::make_unique<std::array<uint32_t, 2>>();
     for (uint32_t deviceIndex = 0; deviceIndex < deviceBitfield.size(); deviceIndex++) {
         if (!deviceBitfield.test(deviceIndex)) {
             continue;
         }
 
-        const uint32_t copySrc[2] = {logicalId++, deviceIndex};
+        *copySrc = {logicalId++, deviceIndex};
         DeviceBitfield copyBitfield{};
         copyBitfield.set(deviceIndex);
-        auto copySuccess = MemoryTransferHelper::transferMemoryToAllocationBanks(device, workPartitionAllocation, 0, copySrc, sizeof(copySrc), copyBitfield);
+        auto copySuccess = MemoryTransferHelper::transferMemoryToAllocationBanks(device, workPartitionAllocation, 0, copySrc.get(), 2 * sizeof(uint32_t), copyBitfield);
 
         if (!copySuccess) {
             return false;
@@ -883,10 +897,11 @@ bool CommandStreamReceiver::createGlobalFenceAllocation() {
 }
 
 bool CommandStreamReceiver::createPreemptionAllocation() {
-    if (EngineHelpers::isBcs(osContext->getEngineType())) {
+    auto &rootDeviceEnvironment = executionEnvironment.rootDeviceEnvironments[rootDeviceIndex];
+    if (EngineHelpers::isBcs(osContext->getEngineType()) || rootDeviceEnvironment->debugger.get()) {
         return true;
     }
-    auto hwInfo = executionEnvironment.rootDeviceEnvironments[rootDeviceIndex]->getHardwareInfo();
+    auto hwInfo = rootDeviceEnvironment->getHardwareInfo();
     auto &gfxCoreHelper = getGfxCoreHelper();
     size_t preemptionSurfaceSize = hwInfo->capabilityTable.requiredPreemptionSurfaceSize;
     if (debugManager.flags.OverrideCsrAllocationSize.get() > 0) {
@@ -1035,7 +1050,7 @@ bool CommandStreamReceiver::testTaskCountReady(volatile TagAddressType *pollAddr
         pollAddress = ptrOffset(pollAddress, this->immWritePostSyncWriteOffset);
     }
 
-    downloadAllocations();
+    downloadAllocations(true);
 
     return true;
 }
@@ -1078,6 +1093,14 @@ bool CommandStreamReceiver::createPerDssBackedBuffer(Device &device) {
 }
 
 void CommandStreamReceiver::printTagAddressContent(TaskCountType taskCountToWait, int64_t waitTimeout, bool start) {
+    if (getType() == NEO::CommandStreamReceiverType::aub) {
+        if (start) {
+            PRINT_DEBUG_STRING(true, stdout, "\nAub dump wait for task count %llu", taskCountToWait);
+        } else {
+            PRINT_DEBUG_STRING(true, stdout, "\nAub dump wait completed.");
+        }
+        return;
+    }
     auto postSyncAddress = getTagAddress();
     if (start) {
         PRINT_DEBUG_STRING(true, stdout,
@@ -1087,6 +1110,7 @@ void CommandStreamReceiver::printTagAddressContent(TaskCountType taskCountToWait
         PRINT_DEBUG_STRING(true, stdout,
                            "%s", "\nWaiting completed. Current value:");
     }
+
     for (uint32_t i = 0; i < activePartitions; i++) {
         PRINT_DEBUG_STRING(true, stdout, " %u", *postSyncAddress);
         postSyncAddress = ptrOffset(postSyncAddress, this->immWritePostSyncWriteOffset);
@@ -1166,6 +1190,10 @@ void CommandStreamReceiver::unregisterClient(void *client) {
 void CommandStreamReceiver::ensurePrimaryCsrInitialized(Device &device) {
     auto csrToInitialize = primaryCsr ? primaryCsr : this;
     csrToInitialize->initializeDeviceWithFirstSubmission(device);
+}
+
+void CommandStreamReceiver::addToEvictionContainer(GraphicsAllocation &gfxAllocation) {
+    this->getEvictionAllocations().push_back(&gfxAllocation);
 }
 
 std::function<void()> CommandStreamReceiver::debugConfirmationFunction = []() { std::cin.get(); };

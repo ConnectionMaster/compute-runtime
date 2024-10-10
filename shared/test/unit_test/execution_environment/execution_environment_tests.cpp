@@ -384,6 +384,8 @@ TEST(ExecutionEnvironment, givenMultipleRootDevicesWhenTheyAreCreatedThenReuseMe
         executionEnvironment.rootDeviceEnvironments[i]->setHwInfoAndInitHelpers(defaultHwInfo.get());
         executionEnvironment.rootDeviceEnvironments[i]->initGmm();
     }
+    executionEnvironment.calculateMaxOsContextCount();
+
     std::unique_ptr<MockDevice> device(Device::create<MockDevice>(&executionEnvironment, 0u));
     auto &commandStreamReceiver = device->getGpgpuCommandStreamReceiver();
     auto memoryManager = device->getMemoryManager();
@@ -461,7 +463,6 @@ TEST(ExecutionEnvironment, whenCalculateMaxOsContexCountThenGlobalVariableHasPro
     uint32_t expectedOsContextCountForCcs = 0u;
 
     {
-        debugManager.flags.EngineInstancedSubDevices.set(false);
         MockExecutionEnvironment executionEnvironment(nullptr, true, numRootDevices);
 
         for (const auto &rootDeviceEnvironment : executionEnvironment.rootDeviceEnvironments) {
@@ -483,7 +484,6 @@ TEST(ExecutionEnvironment, whenCalculateMaxOsContexCountThenGlobalVariableHasPro
     }
 
     {
-        debugManager.flags.EngineInstancedSubDevices.set(true);
         MockExecutionEnvironment executionEnvironment(nullptr, true, numRootDevices);
 
         EXPECT_EQ(expectedOsContextCount + expectedOsContextCountForCcs, MemoryManager::maxOsContextCount);
@@ -639,8 +639,6 @@ TEST(ExecutionEnvironment, givenExecutionEnvironmentWhenSetErrorDescriptionIsCal
     EXPECT_NE(0, result);
     executionEnvironment.getErrorDescription(&pStr);
     std::string expectedString = errorString2;
-    printf("the received string is: \"%s\"\n", pStr);
-    printf("the expected string is: \"%s\"\n", expectedString.c_str());
     EXPECT_EQ(0, strcmp(expectedString.c_str(), pStr));
 }
 

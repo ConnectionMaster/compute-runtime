@@ -224,7 +224,7 @@ TEST_F(CommandListImmediateWithAssert, GivenImmediateCmdListWhenKernelWithAssert
     EXPECT_FALSE(commandList->hasKernelWithAssert());
 }
 
-HWTEST2_F(CommandListImmediateWithAssert, GivenImmediateCmdListWhenCheckingAssertThenPrintMessageAndAbortOnAssertHandlerIsCalled, IsAtLeastSkl) {
+HWTEST2_F(CommandListImmediateWithAssert, GivenImmediateCmdListWhenCheckingAssertThenPrintMessageAndAbortOnAssertHandlerIsCalled, MatchAny) {
     ze_result_t result;
     ze_command_queue_desc_t desc = {};
     desc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
@@ -242,7 +242,7 @@ HWTEST2_F(CommandListImmediateWithAssert, GivenImmediateCmdListWhenCheckingAsser
     EXPECT_EQ(1u, assertHandler->printAssertAndAbortCalled);
 }
 
-HWTEST2_F(CommandListImmediateWithAssert, GivenImmediateCmdListAndNoAssertHandlerWhenCheckingAssertThenUnrecoverableIsCalled, IsAtLeastSkl) {
+HWTEST2_F(CommandListImmediateWithAssert, GivenImmediateCmdListAndNoAssertHandlerWhenCheckingAssertThenUnrecoverableIsCalled, MatchAny) {
     ze_result_t result;
     ze_command_queue_desc_t desc = {};
     desc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
@@ -256,7 +256,7 @@ HWTEST2_F(CommandListImmediateWithAssert, GivenImmediateCmdListAndNoAssertHandle
     EXPECT_THROW(static_cast<MockCommandListImmediate<gfxCoreFamily> *>(commandList.get())->checkAssert(), std::exception);
 }
 
-HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToAsynchronousImmCommandListThenAssertIsNotChecked, IsAtLeastSkl) {
+HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToAsynchronousImmCommandListThenAssertIsNotChecked, MatchAny) {
     ze_result_t result;
 
     Mock<Module> module(device, nullptr, ModuleType::user);
@@ -273,7 +273,7 @@ HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToAsy
     cmdList.callBaseExecute = true;
     cmdList.cmdListType = CommandList::CommandListType::typeImmediate;
     cmdList.isSyncModeQueue = false;
-    auto commandQueue = CommandQueue::create(productFamily, device, &csr, &desc, cmdList.isCopyOnly(), false, false, result);
+    auto commandQueue = CommandQueue::create(productFamily, device, &csr, &desc, cmdList.isCopyOnly(false), false, false, result);
     cmdList.cmdQImmediate = commandQueue;
 
     result = cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
@@ -291,7 +291,7 @@ HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToAsy
     EXPECT_EQ(0u, cmdList.checkAssertCalled);
 }
 
-HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToSynchronousImmCommandListThenAssertIsChecked, IsAtLeastSkl) {
+HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToSynchronousImmCommandListThenAssertIsChecked, MatchAny) {
     ze_result_t result;
     auto &csr = neoDevice->getUltCommandStreamReceiver<FamilyType>();
     Mock<Module> module(device, nullptr, ModuleType::user);
@@ -307,7 +307,7 @@ HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToSyn
     desc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
     desc.pNext = 0;
     desc.mode = ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS;
-    auto commandQueue = CommandQueue::create(productFamily, device, &csr, &desc, cmdList.isCopyOnly(), false, false, result);
+    auto commandQueue = CommandQueue::create(productFamily, device, &csr, &desc, cmdList.isCopyOnly(false), false, false, result);
     cmdList.cmdQImmediate = commandQueue;
 
     result = cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
@@ -325,7 +325,7 @@ HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendedToSyn
     EXPECT_EQ(1u, cmdList.checkAssertCalled);
 }
 
-HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendToSynchronousImmCommandListHangsThenAssertIsChecked, IsAtLeastSkl) {
+HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendToSynchronousImmCommandListHangsThenAssertIsChecked, MatchAny) {
     ze_result_t result;
 
     Mock<Module> module(device, nullptr, ModuleType::user);
@@ -347,7 +347,7 @@ HWTEST2_F(CommandListImmediateWithAssert, givenKernelWithAssertWhenAppendToSynch
     desc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
     desc.pNext = 0;
     desc.mode = ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS;
-    auto commandQueue = CommandQueue::create(productFamily, device, &csr, &desc, cmdList.isCopyOnly(), false, false, result);
+    auto commandQueue = CommandQueue::create(productFamily, device, &csr, &desc, cmdList.isCopyOnly(false), false, false, result);
     cmdList.cmdQImmediate = commandQueue;
 
     result = cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);

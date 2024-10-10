@@ -8,6 +8,7 @@
 #include "zello_compile.h"
 
 #include "ocloc_api.h"
+#include "zello_common.h"
 
 #include <cstring>
 
@@ -69,12 +70,12 @@ std::vector<uint8_t> compileToSpirV(const std::string &src, const std::string &o
     return ret;
 }
 
-std::vector<uint8_t> compileToNative(const std::string &src, const std::string &deviceName, const std::string &revisionId, const std::string &options, const std::string &internalOptions, std::string &outCompilerLog) {
+std::vector<uint8_t> compileToNative(const std::string &src, const std::string &deviceName, const std::string &revisionId, const std::string &options, const std::string &internalOptions, const std::string &statefulMode, std::string &outCompilerLog) {
     std::vector<uint8_t> ret;
 
     const char *mainFileName = "main.cl";
-    const char *argv[] = {"ocloc", "-q", "-device", deviceName.c_str(), "-revision_id", revisionId.c_str(), "-file", mainFileName, "-o", "output.bin", "", "", "", ""};
-    uint32_t numArgs = sizeof(argv) / sizeof(argv[0]) - 4;
+    const char *argv[] = {"ocloc", "-v", "-device", deviceName.c_str(), "-revision_id", revisionId.c_str(), "-file", mainFileName, "-o", "output.bin", "", "", "", "", "", ""};
+    uint32_t numArgs = sizeof(argv) / sizeof(argv[0]) - 6;
     int argIndex = 10;
     if (options.size() > 0) {
         argv[argIndex++] = "-options";
@@ -84,6 +85,11 @@ std::vector<uint8_t> compileToNative(const std::string &src, const std::string &
     if (internalOptions.size() > 0) {
         argv[argIndex++] = "-internal_options";
         argv[argIndex++] = internalOptions.c_str();
+        numArgs += 2;
+    }
+    if (statefulMode.size() > 0) {
+        argv[argIndex++] = "-stateful_address_mode";
+        argv[argIndex++] = statefulMode.c_str();
         numArgs += 2;
     }
     const unsigned char *sources[] = {reinterpret_cast<const unsigned char *>(src.c_str())};
@@ -181,6 +187,8 @@ scratch_kernel(__global int *resIdx, global TYPE *src, global TYPE *dst) {
     dst[gid] = res;
 }
 )===";
+
+const char *scratchKernelBuildOptions = "-igc_opts 'VISAOptions=-forcespills' ";
 
 const char *printfKernelSource = R"===(
 __kernel void printf_kernel(char byteValue, short shortValue, int intValue, long longValue) {
@@ -385,5 +393,51 @@ int lib_func_add5(int x) {
 )===";
 
 } // namespace DynamicLink
+
+void createScratchModuleKernel(ze_context_handle_t &context,
+                               ze_device_handle_t &device,
+                               ze_module_handle_t &module,
+                               ze_kernel_handle_t &kernel,
+                               std::string *additionalBuildOptions) {
+    std::string buildLog;
+    auto spirV = LevelZeroBlackBoxTests::compileToSpirV(LevelZeroBlackBoxTests::scratchKernelSrc, "", buildLog);
+    LevelZeroBlackBoxTests::printBuildLog(buildLog);
+    SUCCESS_OR_TERMINATE((0 == spirV.size()));
+
+    std::string buildOptions = LevelZeroBlackBoxTests::scratchKernelBuildOptions;
+    if (additionalBuildOptions != nullptr) {
+        buildOptions += (*additionalBuildOptions);
+    }
+    ze_module_desc_t moduleDesc = {ZE_STRUCTURE_TYPE_MODULE_DESC};
+    ze_module_build_log_handle_t buildlog;
+    moduleDesc.format = ZE_MODULE_FORMAT_IL_SPIRV;
+    moduleDesc.pInputModule = spirV.data();
+    moduleDesc.inputSize = spirV.size();
+    moduleDesc.pBuildFlags = buildOptions.c_str();
+
+    if (zeModuleCreate(context, device, &moduleDesc, &module, &buildlog) != ZE_RESULT_SUCCESS) {
+        size_t szLog = 0;
+        zeModuleBuildLogGetString(buildlog, &szLog, nullptr);
+
+        char *strLog = (char *)malloc(szLog);
+        zeModuleBuildLogGetString(buildlog, &szLog, strLog);
+        LevelZeroBlackBoxTests::printBuildLog(strLog);
+
+        free(strLog);
+        SUCCESS_OR_TERMINATE(zeModuleBuildLogDestroy(buildlog));
+        std::cerr << "\nScratch Module creation error."
+                  << std::endl;
+        SUCCESS_OR_TERMINATE_BOOL(false);
+    }
+    SUCCESS_OR_TERMINATE(zeModuleBuildLogDestroy(buildlog));
+
+    ze_kernel_desc_t kernelDesc = {ZE_STRUCTURE_TYPE_KERNEL_DESC};
+    kernelDesc.pKernelName = "scratch_kernel";
+    SUCCESS_OR_TERMINATE(zeKernelCreate(module, &kernelDesc, &kernel));
+
+    ze_kernel_properties_t kernelProperties{ZE_STRUCTURE_TYPE_KERNEL_PROPERTIES};
+    SUCCESS_OR_TERMINATE(zeKernelGetProperties(kernel, &kernelProperties));
+    std::cout << "Scratch size = " << std::dec << kernelProperties.spillMemSize << "\n";
+}
 
 } // namespace LevelZeroBlackBoxTests

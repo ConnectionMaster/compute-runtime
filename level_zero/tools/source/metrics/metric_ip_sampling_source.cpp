@@ -16,6 +16,7 @@
 #include "level_zero/core/source/device/device_imp.h"
 #include "level_zero/core/source/gfx_core_helpers/l0_gfx_core_helper.h"
 #include "level_zero/include/zet_intel_gpu_metric.h"
+#include "level_zero/include/zet_intel_gpu_metric_export.h"
 #include "level_zero/tools/source/metrics/metric.h"
 #include "level_zero/tools/source/metrics/metric_ip_sampling_streamer.h"
 #include "level_zero/tools/source/metrics/os_interface_metric.h"
@@ -178,8 +179,8 @@ ze_result_t IpSamplingMetricGroupBase::getExportData(const uint8_t *pRawData, si
 
     zet_intel_metric_df_gpu_export_data_format_t *exportData = reinterpret_cast<zet_intel_metric_df_gpu_export_data_format_t *>(pExportData);
     exportData->header.type = ZET_INTEL_METRIC_DF_SOURCE_TYPE_IPSAMPLING;
-    exportData->header.version.major = ZET_INTEL_GPU_METRIC_VERSION_MAJOR;
-    exportData->header.version.minor = ZET_INTEL_GPU_METRIC_VERSION_MINOR;
+    exportData->header.version.major = ZET_INTEL_GPU_METRIC_EXPORT_VERSION_MAJOR;
+    exportData->header.version.minor = ZET_INTEL_GPU_METRIC_EXPORT_VERSION_MINOR;
     exportData->header.rawDataOffset = sizeof(zet_intel_metric_df_gpu_export_data_format_t);
     exportData->header.rawDataSize = rawDataSize;
 
@@ -206,6 +207,33 @@ ze_result_t IpSamplingMetricSourceImp::getConcurrentMetricGroups(std::vector<zet
     return ZE_RESULT_SUCCESS;
 }
 
+ze_result_t IpSamplingMetricSourceImp::handleMetricGroupExtendedProperties(zet_metric_group_handle_t hMetricGroup, void *pNext) {
+    ze_result_t retVal = ZE_RESULT_ERROR_INVALID_ARGUMENT;
+    while (pNext) {
+        auto extendedProperties = reinterpret_cast<zet_base_properties_t *>(pNext);
+
+        if (extendedProperties->stype == ZET_STRUCTURE_TYPE_METRIC_GLOBAL_TIMESTAMPS_RESOLUTION_EXP) {
+
+            zet_metric_global_timestamps_resolution_exp_t *metricsTimestampProperties =
+                reinterpret_cast<zet_metric_global_timestamps_resolution_exp_t *>(extendedProperties);
+
+            getTimerResolution(metricsTimestampProperties->timerResolution);
+            getTimestampValidBits(metricsTimestampProperties->timestampValidBits);
+            retVal = ZE_RESULT_SUCCESS;
+        }
+
+        if (extendedProperties->stype == ZET_INTEL_STRUCTURE_TYPE_METRIC_GROUP_TYPE_EXP) { // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+            zet_intel_metric_group_type_exp_t *groupType = reinterpret_cast<zet_intel_metric_group_type_exp_t *>(extendedProperties);
+            groupType->type = ZET_INTEL_METRIC_GROUP_TYPE_EXP_OTHER;
+            retVal = ZE_RESULT_SUCCESS;
+        }
+
+        pNext = extendedProperties->pNext;
+    }
+
+    return retVal;
+}
+
 IpSamplingMetricGroupImp::IpSamplingMetricGroupImp(IpSamplingMetricSourceImp &metricSource,
                                                    std::vector<IpSamplingMetricImp> &metrics) : IpSamplingMetricGroupBase(metricSource) {
     this->metrics.reserve(metrics.size());
@@ -228,7 +256,7 @@ ze_result_t IpSamplingMetricGroupImp::getProperties(zet_metric_group_properties_
     pProperties->pNext = pNext;
 
     if (pNext) {
-        return getMetricGroupExtendedProperties(metricSource, pNext);
+        return metricSource.handleMetricGroupExtendedProperties(toHandle(), pNext);
     }
 
     return ZE_RESULT_SUCCESS;
@@ -266,8 +294,8 @@ ze_result_t IpSamplingMetricGroupImp::calculateMetricValues(const zet_metric_gro
     const bool calculateCountOnly = *pMetricValueCount == 0;
 
     if (isMultiDeviceCaptureData(rawDataSize, pRawData)) {
-        METRICS_LOG_INFO("The call is not supported for multiple devices");
-        METRICS_LOG_INFO("Please use zetMetricGroupCalculateMultipleMetricValuesExp instead");
+        METRICS_LOG_INFO("%s", "The call is not supported for multiple devices");
+        METRICS_LOG_INFO("%s", "Please use zetMetricGroupCalculateMultipleMetricValuesExp instead");
         return ZE_RESULT_ERROR_INVALID_ARGUMENT;
     }
 

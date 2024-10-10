@@ -80,7 +80,7 @@ class CommandStreamReceiverHw : public CommandStreamReceiver {
     size_t getCmdsSizeForHardwareContext() const override;
 
     static void addBatchBufferEnd(LinearStream &commandStream, void **patchLocation);
-    void programEndingCmd(LinearStream &commandStream, void **patchLocation, bool directSubmissionEnabled, bool hasRelaxedOrderingDependencies);
+    void programEndingCmd(LinearStream &commandStream, void **patchLocation, bool directSubmissionEnabled, bool hasRelaxedOrderingDependencies, bool isBcs);
     void addBatchBufferStart(MI_BATCH_BUFFER_START *commandBufferMemory, uint64_t startAddress, bool secondary);
 
     size_t getRequiredStateBaseAddressSize(const Device &device) const;
@@ -137,7 +137,7 @@ class CommandStreamReceiverHw : public CommandStreamReceiver {
     SubmissionStatus flushPipeControl(bool stateCacheFlush);
     SubmissionStatus flushSmallTask(LinearStream &commandStreamTask,
                                     size_t commandStreamStartTask);
-    SubmissionStatus flushHandler(BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency);
+    MOCKABLE_VIRTUAL SubmissionStatus flushHandler(BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency);
     SubmissionStatus sendRenderStateCacheFlush() override;
 
     bool isUpdateTagFromWaitEnabled() override;
@@ -195,7 +195,7 @@ class CommandStreamReceiverHw : public CommandStreamReceiver {
     uint64_t getScratchPatchAddress();
 
     SubmissionStatus programHeaplessProlog(Device &device);
-    void programHeaplessStateProlog(Device &device, LinearStream &commandStream);
+    MOCKABLE_VIRTUAL void programHeaplessStateProlog(Device &device, LinearStream &commandStream);
     void programStateBaseAddressHeapless(Device &device, LinearStream &commandStream);
     void programComputeModeHeapless(Device &device, LinearStream &commandStream);
     void handleAllocationsResidencyForflushTaskStateless(const IndirectHeap *dsh, const IndirectHeap *ioh, const IndirectHeap *ssh, Device &device);
@@ -225,7 +225,6 @@ class CommandStreamReceiverHw : public CommandStreamReceiver {
     size_t getCmdSizeForHeaplessPrologue(Device &device) const;
     void handleAllocationsResidencyForHeaplessProlog(LinearStream &linearStream, Device &device);
 
-    void setClearSlmWorkAroundParameter(PipeControlArgs &args);
     void addPipeControlBeforeStateSip(LinearStream &commandStream, Device &device);
     void addPipeControlBefore3dState(LinearStream &commandStream, DispatchFlags &dispatchFlags);
     bool are4GbHeapsAvailable() const;

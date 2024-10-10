@@ -156,4 +156,16 @@ uint64_t UnitTestHelper<GfxFamily>::getWalkerPartitionEstimateSpaceRequiredInCom
     return WalkerPartition::estimateSpaceRequiredInCommandBuffer<GfxFamily, DefaultWalkerType>(testArgs);
 }
 
+template <typename GfxFamily>
+void UnitTestHelper<GfxFamily>::getSpaceAndInitWalkerCmd(LinearStream &stream, bool heapless) {
+    using COMPUTE_WALKER = typename GfxFamily::COMPUTE_WALKER;
+    *stream.getSpaceForCmd<COMPUTE_WALKER>() = GfxFamily::template getInitGpuWalker<COMPUTE_WALKER>();
+}
+
+template <typename GfxFamily>
+void *UnitTestHelper<GfxFamily>::getInitWalkerCmd(bool heapless) {
+    using COMPUTE_WALKER = typename GfxFamily::COMPUTE_WALKER;
+    return new COMPUTE_WALKER;
+}
+
 } // namespace NEO

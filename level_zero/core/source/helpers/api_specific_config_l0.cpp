@@ -5,11 +5,15 @@
  *
  */
 
+#include "shared/source/ail/ail_configuration.h"
 #include "shared/source/debug_settings/debug_settings_manager.h"
+#include "shared/source/device/device.h"
+#include "shared/source/execution_environment/root_device_environment.h"
 #include "shared/source/helpers/api_specific_config.h"
 #include "shared/source/release_helper/release_helper.h"
 
 #include "level_zero/core/source/compiler_interface/l0_reg_path.h"
+#include "level_zero/core/source/gfx_core_helpers/l0_gfx_core_helper.h"
 
 #include <string>
 #include <vector>
@@ -28,9 +32,15 @@ bool ApiSpecificConfig::getGlobalBindlessHeapConfiguration(const ReleaseHelper *
     return releaseHelper ? releaseHelper->isGlobalBindlessAllocatorEnabled() : false;
 }
 
-bool ApiSpecificConfig::getBindlessMode(const ReleaseHelper *releaseHelper) {
+bool ApiSpecificConfig::getBindlessMode(const Device &device) {
     if (debugManager.flags.UseBindlessMode.get() != -1) {
         return debugManager.flags.UseBindlessMode.get();
+    }
+
+    auto ailHelper = device.getAilConfigurationHelper();
+    auto releaseHelper = device.getReleaseHelper();
+    if (ailHelper && ailHelper->disableBindlessAddressing()) {
+        return false;
     } else {
         return releaseHelper ? !releaseHelper->isBindlessAddressingDisabled() : false;
     }
@@ -45,7 +55,7 @@ bool ApiSpecificConfig::isHostAllocationCacheEnabled() {
 }
 
 bool ApiSpecificConfig::isDeviceUsmPoolingEnabled() {
-    return false;
+    return true;
 }
 
 bool ApiSpecificConfig::isHostUsmPoolingEnabled() {
@@ -93,4 +103,11 @@ std::string ApiSpecificConfig::compilerCacheFileExtension() {
 int64_t ApiSpecificConfig::compilerCacheDefaultEnabled() {
     return 1l;
 }
+
+bool ApiSpecificConfig::isGlobalStatelessEnabled(const RootDeviceEnvironment &rootDeviceEnvironment) {
+
+    auto &l0GfxCoreHelper = rootDeviceEnvironment.getHelper<L0::L0GfxCoreHelper>();
+    return l0GfxCoreHelper.getHeapAddressModel(rootDeviceEnvironment) == HeapAddressModel::globalStateless;
+}
+
 } // namespace NEO

@@ -9,6 +9,7 @@
 #include "shared/source/command_stream/scratch_space_controller.h"
 #include "shared/source/gen_common/reg_configs_common.h"
 #include "shared/source/gmm_helper/gmm_helper.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/helpers/state_base_address.h"
 #include "shared/source/memory_manager/internal_allocation_storage.h"
@@ -53,10 +54,12 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenBlockedKernelNotRequiringDCFl
 
     auto &commandStreamCSR = commandStreamReceiver.getCS();
 
+    auto usedBefore = commandStreamCSR.getUsed();
     commandQueue.enqueueWriteBuffer(buffer, CL_FALSE, 0, sizeof(tempBuffer), dstBuffer, nullptr, 1, &blockingEvent, 0);
+    auto usedAfter = commandStreamCSR.getUsed();
 
     // Expect nothing was sent
-    EXPECT_EQ(0u, commandStreamCSR.getUsed());
+    EXPECT_EQ(usedBefore, usedAfter);
 
     // Unblock Event
     mockEvent.setStatus(CL_COMPLETE);
@@ -172,12 +175,12 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenEmptyQueueWhenFinishingThenTa
     commandStreamReceiver.taskLevel = taskCount;
     commandStreamReceiver.taskCount = taskCount;
 
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(commandStreamReceiver.heaplessStateInitialized ? 1u : 0u, commandStreamReceiver.peekLatestSentTaskCount());
     mockCmdQueue.finish();
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(commandStreamReceiver.heaplessStateInitialized ? 1u : 0u, commandStreamReceiver.peekLatestSentTaskCount());
     mockCmdQueue.finish();
     // nothings sent to the HW, no need to bump tags
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(commandStreamReceiver.heaplessStateInitialized ? 1u : 0u, commandStreamReceiver.peekLatestSentTaskCount());
     EXPECT_EQ(0u, mockCmdQueue.latestTaskCountWaited);
 }
 
@@ -210,7 +213,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenNonDcFlushWithInitialTaskCoun
     mockCmdQueue.taskLevel = taskCount;
     commandStreamReceiver.taskLevel = taskCount;
     commandStreamReceiver.taskCount = taskCount;
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(commandStreamReceiver.heaplessStateInitialized ? 1u : 0u, commandStreamReceiver.peekLatestSentTaskCount());
 
     // finish after enqueued kernel(cmdq task count = 1)
     mockCmdQueue.enqueueKernel(kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
@@ -244,7 +247,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenDcFlushWhenFinishingThenTaskC
     mockCmdQueue.taskLevel = taskCount;
     commandStreamReceiver.taskLevel = taskCount;
     commandStreamReceiver.taskCount = taskCount;
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(commandStreamReceiver.heaplessStateInitialized ? 1u : 0u, commandStreamReceiver.peekLatestSentTaskCount());
 
     // finish(dcFlush=true) from blocking MapBuffer after enqueued kernel
     mockCmdQueue.enqueueKernel(kernel, 1, nullptr, &gws, nullptr, 0, nullptr, nullptr);
@@ -279,7 +282,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenDcFlushWhenFinishingThenTaskC
     EXPECT_EQ(retVal, CL_SUCCESS);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenPowerOfTwoGlobalWorkSizeAndNullLocalWorkgroupSizeWhenEnqueueKernelIsCalledThenGpGpuWalkerHasOptimalSIMDmask) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenPowerOfTwoGlobalWorkSizeAndNullLocalWorkgroupSizeWhenEnqueueKernelIsCalledThenGpGpuWalkerHasOptimalSIMDmask) {
     typedef typename FamilyType::GPGPU_WALKER GPGPU_WALKER;
     MockContext ctx(pClDevice);
     MockKernelWithInternals kernel(*pClDevice);
@@ -318,7 +321,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenEventIsQueriedWhenEnqueuingTh
     commandQueue.taskLevel = taskCount;
     commandStreamReceiver.taskLevel = taskCount;
     commandStreamReceiver.taskCount = taskCount;
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(commandStreamReceiver.heaplessStateInitialized ? 1u : 0u, commandStreamReceiver.peekLatestSentTaskCount());
 
     commandQueue.enqueueReadBuffer(buffer, CL_FALSE, 0, sizeof(tempBuffer), dstBuffer, nullptr, 0, 0, &event);
 
@@ -353,17 +356,18 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenNonBlockingMapEnqueueWhenFini
     commandQueue.taskLevel = taskCount;
     commandStreamReceiver.taskLevel = taskCount;
     commandStreamReceiver.taskCount = taskCount;
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    auto expectedTaskCount = commandStreamReceiver.heaplessStateInitialized ? 1u : 0u;
+    EXPECT_EQ(expectedTaskCount, commandStreamReceiver.peekLatestSentTaskCount());
 
     auto ptr = commandQueue.enqueueMapBuffer(&mockBuffer, CL_FALSE, CL_MAP_READ, 0, sizeof(tempBuffer), 0, nullptr, nullptr, retVal);
     EXPECT_EQ(retVal, CL_SUCCESS);
     EXPECT_NE(nullptr, ptr);
 
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(expectedTaskCount, commandStreamReceiver.peekLatestSentTaskCount());
 
     commandQueue.finish();
 
-    EXPECT_EQ(0u, commandStreamReceiver.peekLatestSentTaskCount());
+    EXPECT_EQ(expectedTaskCount, commandStreamReceiver.peekLatestSentTaskCount());
 
     auto &commandStreamTask = commandQueue.getCS(1024);
     parseCommands<FamilyType>(commandStreamTask, 0);
@@ -372,7 +376,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenNonBlockingMapEnqueueWhenFini
     ASSERT_EQ(cmdList.end(), itorPC);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests,
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests,
             GivenFlushedCallRequiringDCFlushWhenBlockingEnqueueIsCalledThenPipeControlWithDCFlushIsAdded) {
     typedef typename FamilyType::PIPE_CONTROL PIPE_CONTROL;
 
@@ -707,7 +711,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, whenPrivateScratchIsRequiredForFir
     EXPECT_TRUE(commandStreamReceiver->isMadeNonResident(scratch1Allocation));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenTwoConsecutiveNdRangeKernelsThenStateBaseAddressIsProgrammedOnceAndScratchAddressInMediaVfeStateIsProgrammedTwiceBothWithCorrectAddress) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenTwoConsecutiveNdRangeKernelsThenStateBaseAddressIsProgrammedOnceAndScratchAddressInMediaVfeStateIsProgrammedTwiceBothWithCorrectAddress) {
     typedef typename FamilyType::Parse Parse;
     typedef typename Parse::MEDIA_VFE_STATE MEDIA_VFE_STATE;
     typedef typename Parse::STATE_BASE_ADDRESS STATE_BASE_ADDRESS;
@@ -820,7 +824,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenTwoConsecu
     }
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenNdRangeKernelAndReadBufferStateBaseAddressAndScratchAddressInMediaVfeStateThenProgrammingIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenNdRangeKernelAndReadBufferStateBaseAddressAndScratchAddressInMediaVfeStateThenProgrammingIsCorrect) {
 
     typedef typename FamilyType::Parse Parse;
     typedef typename Parse::MEDIA_VFE_STATE MEDIA_VFE_STATE;
@@ -982,6 +986,12 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenForced32BitAllocationsModeSto
 
         auto commandStreamReceiver = new MockCsrHw<FamilyType>(*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield());
 
+        auto &compilerProductHelper = pDevice->getCompilerProductHelper();
+        auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled();
+        if (compilerProductHelper.isHeaplessStateInitEnabled(heaplessEnabled)) {
+            GTEST_SKIP();
+        }
+
         pDevice->getMemoryManager()->setForce32BitAllocations(true);
 
         pDevice->resetCommandStreamReceiver(commandStreamReceiver);
@@ -1007,7 +1017,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenForced32BitAllocationsModeSto
     }
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenEnabledPreemptionWhenFlushTaskCalledThenDontProgramMediaVfeStateAgain) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenEnabledPreemptionWhenFlushTaskCalledThenDontProgramMediaVfeStateAgain) {
     pDevice->setPreemptionMode(PreemptionMode::ThreadGroup);
     auto &csr = pDevice->getUltCommandStreamReceiver<FamilyType>();
     HardwareParse hwParser;
@@ -1029,7 +1039,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenEnabledPre
     EXPECT_EQ(nullptr, cmd);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, GivenPreambleSentAndL3ConfigChangedWhenFlushingTaskThenPipeControlIsAdded) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, GivenPreambleSentAndL3ConfigChangedWhenFlushingTaskThenPipeControlIsAdded) {
     typedef typename FamilyType::PIPE_CONTROL PIPE_CONTROL;
     typedef typename FamilyType::STATE_BASE_ADDRESS STATE_BASE_ADDRESS;
     typedef typename FamilyType::MI_BATCH_BUFFER_START MI_BATCH_BUFFER_START;
@@ -1140,7 +1150,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrWhenSamplerCacheFlushSentT
     EXPECT_EQ(sizeof(typename FamilyType::PIPE_CONTROL), difference);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInNonDirtyStateWhenflushTaskIsCalledThenNoFlushIsCalled) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInNonDirtyStateWhenflushTaskIsCalledThenNoFlushIsCalled) {
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
 
@@ -1161,10 +1171,10 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInNonDi
                        dispatchFlags,
                        *pDevice);
 
-    EXPECT_EQ(0, mockCsr->flushCalledCount);
+    EXPECT_EQ(0u, mockCsr->flushCalledCount);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInNonDirtyStateAndBatchingModeWhenflushTaskIsCalledWithDisabledPreemptionThenSubmissionIsNotRecorded) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInNonDirtyStateAndBatchingModeWhenflushTaskIsCalledWithDisabledPreemptionThenSubmissionIsNotRecorded) {
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
 
@@ -1190,7 +1200,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInNonDi
                        dispatchFlags,
                        *pDevice);
 
-    EXPECT_EQ(0, mockCsr->flushCalledCount);
+    EXPECT_EQ(0u, mockCsr->flushCalledCount);
 
     EXPECT_TRUE(mockedSubmissionsAggregator->peekCmdBufferList().peekIsEmpty());
 

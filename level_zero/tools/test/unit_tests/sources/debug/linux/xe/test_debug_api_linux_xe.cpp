@@ -16,7 +16,6 @@
 #include "shared/test/common/helpers/gtest_helpers.h"
 #include "shared/test/common/helpers/variable_backup.h"
 #include "shared/test/common/libult/linux/drm_mock_helper.h"
-#include "shared/test/common/libult/linux/drm_query_mock.h"
 #include "shared/test/common/mocks/mock_device.h"
 #include "shared/test/common/mocks/mock_sip.h"
 #include "shared/test/common/mocks/ult_device_factory.h"
@@ -1001,7 +1000,7 @@ TEST_F(DebugApiLinuxTestXe, GivenMetadataCreateEventForL0ZebinModuleWhenHandling
 
     EXPECT_EQ(kernelCount, session->clientHandleToConnection[MockDebugSessionLinuxXe::mockClientHandle]->metaDataToModule[metadata.metadata_handle].segmentCount);
 
-    EXPECT_EQ(metadata.metadata_handle, session->clientHandleToConnection[MockDebugSessionLinuxXe::mockClientHandle]->metaDataMap[metadata.metadata_handle].metadata.metadata_handle);
+    EXPECT_EQ_VAL(metadata.metadata_handle, session->clientHandleToConnection[MockDebugSessionLinuxXe::mockClientHandle]->metaDataMap[metadata.metadata_handle].metadata.metadata_handle);
     EXPECT_NE(nullptr, session->clientHandleToConnection[MockDebugSessionLinuxXe::mockClientHandle]->metaDataMap[metadata.metadata_handle].data);
     EXPECT_EQ(sizeof(kernelCount), session->clientHandleToConnection[MockDebugSessionLinuxXe::mockClientHandle]->metaDataMap[metadata.metadata_handle].metadata.len);
 
@@ -1310,6 +1309,7 @@ TEST_F(DebugApiLinuxTestXe, GivenVmBindOpMetadataCreateEventAndUfenceForProgramM
     client1.base.type = DRM_XE_EUDEBUG_EVENT_OPEN;
     client1.base.flags = DRM_XE_EUDEBUG_EVENT_CREATE;
     client1.client_handle = MockDebugSessionLinuxXe::mockClientHandle;
+    session->pushApiEventValidateAckEvents = true;
     session->handleEvent(reinterpret_cast<drm_xe_eudebug_event *>(&client1));
 
     auto &connection = session->clientHandleToConnection[MockDebugSessionLinuxXe::mockClientHandle];
@@ -1380,6 +1380,8 @@ TEST_F(DebugApiLinuxTestXe, GivenVmBindOpMetadataCreateEventAndUfenceForProgramM
 
     EXPECT_EQ(vmBindOpData.pendingNumExtensions, 0ull);
     EXPECT_EQ(vmBindOpData.vmBindOpMetadataVec.size(), 2ull);
+
+    EXPECT_TRUE(session->pushApiEventAckEventsFound);
 
     EXPECT_EQ(connection->metaDataToModule[10].ackEvents->size(), 1ull);
     EXPECT_EQ(connection->metaDataToModule[10].ackEvents[0][0].seqno, vmBindUfence.base.seqno);
@@ -1787,13 +1789,23 @@ TEST_F(DebugApiLinuxTestXe, GivenErrorFromIoctlWhenCallingThreadControlThenThrea
 
     EXPECT_EQ(4, handler->ioctlCalled);
 
+    auto &l0GfxCoreHelper = neoDevice->getRootDeviceEnvironment().getHelper<L0GfxCoreHelper>();
+
     result = sessionMock->threadControl(threads, 0, MockDebugSessionLinuxXe::ThreadControlCmd::resume, bitmaskOut, bitmaskSizeOut);
     EXPECT_NE(0, result);
-    EXPECT_EQ(5, handler->ioctlCalled);
+    if (l0GfxCoreHelper.threadResumeRequiresUnlock()) {
+        EXPECT_EQ(6, handler->ioctlCalled);
+    } else {
+        EXPECT_EQ(5, handler->ioctlCalled);
+    }
 
     result = sessionMock->threadControl(threads, 0, MockDebugSessionLinuxXe::ThreadControlCmd::stopped, bitmaskOut, bitmaskSizeOut);
     EXPECT_NE(0, result);
-    EXPECT_EQ(9, handler->ioctlCalled);
+    if (l0GfxCoreHelper.threadResumeRequiresUnlock()) {
+        EXPECT_EQ(10, handler->ioctlCalled);
+    } else {
+        EXPECT_EQ(9, handler->ioctlCalled);
+    }
 }
 
 TEST_F(DebugApiLinuxTestXe, GivenSuccessFromIoctlWhenCallingThreadControlForInterruptAllThenSequenceNumbersProperlyUpdates) {
@@ -1863,8 +1875,15 @@ TEST_F(DebugApiLinuxTestXe, WhenCallingThreadControlForResumeThenProperIoctlsIsC
     auto result = sessionMock->threadControl(threads, 0, MockDebugSessionLinuxXe::ThreadControlCmd::resume, bitmaskOut, bitmaskSizeOut);
     EXPECT_EQ(result, ZE_RESULT_SUCCESS);
 
-    EXPECT_EQ(1, handler->ioctlCalled);
-    EXPECT_EQ(uint32_t(DRM_XE_EUDEBUG_EU_CONTROL_CMD_RESUME), handler->euControlArgs[0].euControl.cmd);
+    auto &l0GfxCoreHelper = neoDevice->getRootDeviceEnvironment().getHelper<L0GfxCoreHelper>();
+    if (l0GfxCoreHelper.threadResumeRequiresUnlock()) {
+        EXPECT_EQ(2, handler->ioctlCalled);
+        EXPECT_EQ(uint32_t(sessionMock->getEuControlCmdUnlock()), handler->euControlArgs[0].euControl.cmd);
+        EXPECT_EQ(uint32_t(DRM_XE_EUDEBUG_EU_CONTROL_CMD_RESUME), handler->euControlArgs[1].euControl.cmd);
+    } else {
+        EXPECT_EQ(1, handler->ioctlCalled);
+        EXPECT_EQ(uint32_t(DRM_XE_EUDEBUG_EU_CONTROL_CMD_RESUME), handler->euControlArgs[0].euControl.cmd);
+    }
     EXPECT_NE(0u, handler->euControlArgs[0].euControl.bitmask_size);
     auto bitMaskPtrToCheck = handler->euControlArgs[0].euControl.bitmask_ptr;
     EXPECT_NE(0u, bitMaskPtrToCheck);
@@ -2285,7 +2304,7 @@ TEST_F(DebugApiLinuxTestXe, GivenBindInfoForVmHandleWhenReadingModuleDebugAreaTh
 TEST(DebugSessionLinuxXeTest, GivenRootDebugSessionWhenCreateTileSessionCalledThenSessionIsNotCreated) {
     auto hwInfo = *NEO::defaultHwInfo.get();
     NEO::MockDevice *neoDevice(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&hwInfo, 0));
-    auto mockDrm = new DrmQueryMock(*neoDevice->executionEnvironment->rootDeviceEnvironments[0]);
+    auto mockDrm = new DrmMock(*neoDevice->executionEnvironment->rootDeviceEnvironments[0]);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
     MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());

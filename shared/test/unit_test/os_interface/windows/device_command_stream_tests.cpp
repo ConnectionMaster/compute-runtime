@@ -9,6 +9,7 @@
 #include "shared/source/command_stream/preemption.h"
 #include "shared/source/direct_submission/direct_submission_controller.h"
 #include "shared/source/direct_submission/relaxed_ordering_helper.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/helpers/windows/gmm_callbacks.h"
 #include "shared/source/indirect_heap/indirect_heap.h"
@@ -126,7 +127,7 @@ struct MockWddmCsr : public WddmCommandStreamReceiver<GfxFamily> {
     void startControllingDirectSubmissions() override {
         directSubmissionControllerStarted = true;
     }
-    int flushCalledCount = 0;
+    uint32_t flushCalledCount = 0;
     std::unique_ptr<CommandBuffer> recordedCommandBuffer;
 
     bool callParentInitDirectSubmission = true;
@@ -687,26 +688,7 @@ TEST_F(WddmCommandStreamTest, WhenMakingNonResidentThenAllocationIsPlacedInEvict
     memoryManager->freeGraphicsMemory(commandBuffer);
 }
 
-TEST_F(WddmCommandStreamTest, WhenProcessingEvictionThenAllAllocationsArePlacedOnTrimCandidateList) {
-    GraphicsAllocation *allocation = memoryManager->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
-    GraphicsAllocation *allocation2 = memoryManager->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
-    ASSERT_NE(nullptr, allocation);
-    ASSERT_NE(nullptr, allocation2);
-
-    csr->getEvictionAllocations().push_back(allocation);
-    csr->getEvictionAllocations().push_back(allocation2);
-
-    EXPECT_EQ(2u, csr->getEvictionAllocations().size());
-
-    csr->processEviction();
-
-    EXPECT_EQ(2u, static_cast<OsContextWin &>(csr->getOsContext()).getResidencyController().peekTrimCandidateList().size());
-
-    memoryManager->freeGraphicsMemory(allocation);
-    memoryManager->freeGraphicsMemory(allocation2);
-}
-
-TEST_F(WddmCommandStreamTest, WhenProcesssingEvictionThenEvictionAllocationsListIsCleared) {
+TEST_F(WddmCommandStreamTest, WhenProcesssingEvictionThenEvictionAllocationsListIsNotCleared) {
     GraphicsAllocation *allocation = memoryManager->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
     ASSERT_NE(nullptr, allocation);
 
@@ -716,7 +698,7 @@ TEST_F(WddmCommandStreamTest, WhenProcesssingEvictionThenEvictionAllocationsList
 
     csr->processEviction();
 
-    EXPECT_EQ(0u, csr->getEvictionAllocations().size());
+    EXPECT_EQ(1u, csr->getEvictionAllocations().size());
 
     memoryManager->freeGraphicsMemory(allocation);
 }
@@ -888,16 +870,12 @@ HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, WhenMakingResidentThenResidency
     EXPECT_EQ(1u, csr->getResidencyAllocations().size());
     EXPECT_EQ(0u, csr->getEvictionAllocations().size());
 
-    EXPECT_EQ(trimListUnusedPosition, static_cast<WddmAllocation *>(commandBuffer)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
-
     csr->processResidency(csr->getResidencyAllocations(), 0u);
 
     csr->makeSurfacePackNonResident(csr->getResidencyAllocations(), true);
 
     EXPECT_EQ(0u, csr->getResidencyAllocations().size());
-    EXPECT_EQ(0u, csr->getEvictionAllocations().size());
-
-    EXPECT_EQ(0u, static_cast<WddmAllocation *>(commandBuffer)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
+    EXPECT_EQ(1u, csr->getEvictionAllocations().size());
 
     memoryManager->freeGraphicsMemory(commandBuffer);
 }
@@ -980,12 +958,22 @@ HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, givenRecordedCommandBufferWhenI
         EXPECT_TRUE(found);
     }
 
-    EXPECT_NE(trimListUnusedPosition, static_cast<WddmAllocation *>(tagAllocation)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
-    EXPECT_NE(trimListUnusedPosition, static_cast<WddmAllocation *>(commandBuffer)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
-    EXPECT_EQ(trimListUnusedPosition, static_cast<WddmAllocation *>(dshAlloc)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
-    EXPECT_EQ(trimListUnusedPosition, static_cast<WddmAllocation *>(iohAlloc)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
-    EXPECT_NE(trimListUnusedPosition, static_cast<WddmAllocation *>(sshAlloc)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
-    EXPECT_NE(trimListUnusedPosition, static_cast<WddmAllocation *>(csrCommandStream)->getTrimCandidateListPosition(csr->getOsContext().getContextId()));
+    struct {
+        GraphicsAllocation *gfxAlloc;
+        bool expectEviction;
+    } evictAllocs[] = {
+        {tagAllocation, true},
+        {commandBuffer, true},
+        {sshAlloc, true},
+        {csrCommandStream, true},
+        {dshAlloc, false},
+        {iohAlloc, false}};
+
+    for (auto &alloc : evictAllocs) {
+        // If eviction is required then allocation should be added to container
+        auto iter = std::find(csr->getEvictionAllocations().begin(), csr->getEvictionAllocations().end(), alloc.gfxAlloc);
+        EXPECT_EQ(alloc.expectEviction, iter != csr->getEvictionAllocations().end());
+    }
 
     memoryManager->freeGraphicsMemory(dshAlloc);
     memoryManager->freeGraphicsMemory(iohAlloc);
@@ -1139,7 +1127,16 @@ HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, givenCsrWhenFlushMonitorFenceTh
     auto mockCsr = static_cast<MockWddmCsr<FamilyType> *>(csr);
 
     debugManager.flags.EnableDirectSubmission.set(1);
-
+    bool renderStreamerFound = false;
+    for (auto &engine : device->allEngines) {
+        if (engine.osContext->getEngineType() == aub_stream::EngineType::ENGINE_RCS) {
+            renderStreamerFound = true;
+            break;
+        }
+    }
+    if (!renderStreamerFound) {
+        GTEST_SKIP();
+    }
     auto hwInfo = device->getRootDeviceEnvironment().getMutableHardwareInfo();
     hwInfo->capabilityTable.directSubmissionEngines.data[aub_stream::ENGINE_RCS].engineSupported = true;
 
@@ -1164,6 +1161,17 @@ HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, givenLastSubmittedFenceLowerTha
     auto mockCsr = static_cast<MockWddmCsr<FamilyType> *>(csr);
 
     debugManager.flags.EnableDirectSubmission.set(1);
+
+    bool renderStreamerFound = false;
+    for (auto &engine : device->allEngines) {
+        if (engine.osContext->getEngineType() == aub_stream::EngineType::ENGINE_RCS) {
+            renderStreamerFound = true;
+            break;
+        }
+    }
+    if (!renderStreamerFound) {
+        GTEST_SKIP();
+    }
 
     auto hwInfo = device->getRootDeviceEnvironment().getMutableHardwareInfo();
     hwInfo->capabilityTable.directSubmissionEngines.data[aub_stream::ENGINE_RCS].engineSupported = true;
@@ -1191,6 +1199,17 @@ HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, givenLastSubmittedFenceLowerTha
 HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, givenDirectSubmissionFailsThenFlushReturnsError) {
     using MockSubmission = MockWddmDrmDirectSubmissionDispatchCommandBuffer<FamilyType>;
     auto mockCsr = static_cast<MockWddmCsr<FamilyType> *>(csr);
+
+    bool renderStreamerFound = false;
+    for (auto &engine : device->allEngines) {
+        if (engine.osContext->getEngineType() == aub_stream::EngineType::ENGINE_RCS) {
+            renderStreamerFound = true;
+            break;
+        }
+    }
+    if (!renderStreamerFound) {
+        GTEST_SKIP();
+    }
 
     debugManager.flags.EnableDirectSubmission.set(1);
 
@@ -1226,6 +1245,16 @@ HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, givenDirectSubmissionEnabledOnR
         MockWddmDirectSubmission<FamilyType, Dispatcher>;
 
     auto mockCsr = static_cast<MockWddmCsr<FamilyType> *>(csr);
+    bool renderStreamerFound = false;
+    for (auto &engine : device->allEngines) {
+        if (engine.osContext->getEngineType() == aub_stream::EngineType::ENGINE_RCS) {
+            renderStreamerFound = true;
+            break;
+        }
+    }
+    if (!renderStreamerFound) {
+        GTEST_SKIP();
+    }
 
     debugManager.flags.EnableDirectSubmission.set(1);
     debugManager.flags.DirectSubmissionFlatRingBuffer.set(0);
@@ -1301,7 +1330,10 @@ HWTEST_TEMPLATED_F(WddmCommandStreamMockGdiTest, givenDirectSubmissionEnabledOnB
                           Dispatcher::getSizePreemption() +
                           directSubmission->getSizeDispatch(false, false, directSubmission->dispatchMonitorFenceRequired(false));
 
-    if (directSubmission->miMemFenceRequired) {
+    auto &compilerProductHelper = device->getCompilerProductHelper();
+    auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(compilerProductHelper.isHeaplessModeEnabled());
+
+    if (directSubmission->miMemFenceRequired && !heaplessStateInit) {
         expectedSize += directSubmission->getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission->isRelaxedOrderingEnabled()) {
@@ -1384,23 +1416,27 @@ struct SemaphorWaitForResidencyTest : public WddmCommandStreamTest {
     MockWddmDirectSubmissionCsr *mockCsr;
 };
 
-TEST_F(SemaphorWaitForResidencyTest, givenNoAllocationsToMakeResidentThenSignalFlag) {
+TEST_F(SemaphorWaitForResidencyTest, givenCommandBufferToMakeResidentThenSignalFlag) {
     LinearStream cs(commandBuffer);
     BatchBuffer batchBuffer = BatchBufferHelper::createDefaultBatchBuffer(cs.getGraphicsAllocation(), &cs, cs.getUsed());
 
-    // no allocations to make resident, no need to wait
+    // command buffer to be resident, requires blocking
     mockCsr->flush(batchBuffer, mockCsr->getResidencyAllocations());
     EXPECT_TRUE(batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling);
 }
 
-TEST_F(SemaphorWaitForResidencyTest, givenPagingFenceNotUpdatedThenSignalFlag) {
+TEST_F(SemaphorWaitForResidencyTest, givenPagingFenceNotUpdatedThenDontSignalFlag) {
     LinearStream cs(commandBuffer);
     BatchBuffer batchBuffer = BatchBufferHelper::createDefaultBatchBuffer(cs.getGraphicsAllocation(), &cs, cs.getUsed());
     mockCsr->flush(batchBuffer, mockCsr->getResidencyAllocations());
 
+    auto controller = mockCsr->peekExecutionEnvironment().initializeDirectSubmissionController();
+    controller->stopThread();
+    mockCsr->directSubmissionAvailable = true;
+
     mockCsr->getResidencyAllocations().push_back(buffer);
     mockCsr->flush(batchBuffer, mockCsr->getResidencyAllocations());
-    EXPECT_TRUE(batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling);
+    EXPECT_FALSE(batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling);
 }
 
 TEST_F(SemaphorWaitForResidencyTest, givenUllsControllerNotEnabledThenSignalFlag) {
@@ -1447,6 +1483,30 @@ TEST_F(SemaphorWaitForResidencyTest, givenBufferHostMemoryAllocationThenSignalFl
     mockCsr->flush(batchBuffer, mockCsr->getResidencyAllocations());
     EXPECT_FALSE(batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling);
     EXPECT_EQ(100u, batchBuffer.pagingFenceSemInfo.pagingFenceValue);
+}
+
+TEST_F(SemaphorWaitForResidencyTest, givenAnotherFlushWithSamePagingFenceValueThenDontProgramPagingFenceSemWaitAndDontBlock) {
+    LinearStream cs(commandBuffer);
+    BatchBuffer batchBuffer = BatchBufferHelper::createDefaultBatchBuffer(cs.getGraphicsAllocation(), &cs, cs.getUsed());
+    mockCsr->flush(batchBuffer, mockCsr->getResidencyAllocations());
+
+    mockCsr->getResidencyAllocations().push_back(bufferHostMemory);
+    *wddm->pagingFenceAddress = 0u;
+    wddm->currentPagingFenceValue = 100u;
+    auto controller = mockCsr->peekExecutionEnvironment().initializeDirectSubmissionController();
+    controller->stopThread();
+    mockCsr->directSubmissionAvailable = true;
+
+    mockCsr->flush(batchBuffer, mockCsr->getResidencyAllocations());
+    EXPECT_FALSE(batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling);
+    EXPECT_EQ(100u, batchBuffer.pagingFenceSemInfo.pagingFenceValue);
+    EXPECT_TRUE(batchBuffer.pagingFenceSemInfo.requiresProgrammingSemaphore());
+
+    BatchBuffer batchBuffer2 = BatchBufferHelper::createDefaultBatchBuffer(cs.getGraphicsAllocation(), &cs, cs.getUsed());
+    mockCsr->flush(batchBuffer2, mockCsr->getResidencyAllocations());
+    EXPECT_FALSE(batchBuffer2.pagingFenceSemInfo.requiresBlockingResidencyHandling);
+    EXPECT_EQ(0u, batchBuffer2.pagingFenceSemInfo.pagingFenceValue);
+    EXPECT_FALSE(batchBuffer2.pagingFenceSemInfo.requiresProgrammingSemaphore());
 }
 
 TEST_F(SemaphorWaitForResidencyTest, givenDebugFlagDisabledThenDontSignalFlag) {

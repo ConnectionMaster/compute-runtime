@@ -25,13 +25,13 @@
 #include "opencl/source/accelerators/intel_motion_estimation.h"
 #include "opencl/source/api/additional_extensions.h"
 #include "opencl/source/api/api_enter.h"
-#include "opencl/source/built_ins/vme_builtin.h"
 #include "opencl/source/cl_device/cl_device.h"
 #include "opencl/source/command_queue/command_queue.h"
 #include "opencl/source/context/context.h"
 #include "opencl/source/context/driver_diagnostics.h"
 #include "opencl/source/event/user_event.h"
 #include "opencl/source/execution_environment/cl_execution_environment.h"
+#include "opencl/source/global_teardown/global_platform_teardown.h"
 #include "opencl/source/gtpin/gtpin_notify.h"
 #include "opencl/source/helpers/cl_memory_properties_helpers.h"
 #include "opencl/source/helpers/cl_validators.h"
@@ -384,6 +384,9 @@ cl_int CL_API_CALL clRetainDevice(cl_device_id device) {
 
 cl_int CL_API_CALL clReleaseDevice(cl_device_id device) {
     TRACING_ENTER(ClReleaseDevice, &device);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_INVALID_DEVICE;
     API_ENTER(&retVal);
     DBG_LOG_INPUTS("device", device);
@@ -520,6 +523,9 @@ cl_int CL_API_CALL clRetainContext(cl_context context) {
 
 cl_int CL_API_CALL clReleaseContext(cl_context context) {
     TRACING_ENTER(ClReleaseContext, &context);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_SUCCESS;
     API_ENTER(&retVal);
     DBG_LOG_INPUTS("context", context);
@@ -637,6 +643,9 @@ cl_int CL_API_CALL clRetainCommandQueue(cl_command_queue commandQueue) {
 
 cl_int CL_API_CALL clReleaseCommandQueue(cl_command_queue commandQueue) {
     TRACING_ENTER(ClReleaseCommandQueue, &commandQueue);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_INVALID_COMMAND_QUEUE;
     API_ENTER(&retVal);
     DBG_LOG_INPUTS("commandQueue", commandQueue);
@@ -1116,6 +1125,9 @@ cl_int CL_API_CALL clRetainMemObject(cl_mem memobj) {
 
 cl_int CL_API_CALL clReleaseMemObject(cl_mem memobj) {
     TRACING_ENTER(ClReleaseMemObject, &memobj);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_INVALID_MEM_OBJECT;
     API_ENTER(&retVal);
 
@@ -1340,6 +1352,9 @@ cl_int CL_API_CALL clRetainSampler(cl_sampler sampler) {
 
 cl_int CL_API_CALL clReleaseSampler(cl_sampler sampler) {
     TRACING_ENTER(ClReleaseSampler, &sampler);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_SUCCESS;
     API_ENTER(&retVal);
     DBG_LOG_INPUTS("sampler", sampler);
@@ -1506,36 +1521,12 @@ cl_program CL_API_CALL clCreateProgramWithBuiltInKernels(cl_context context,
     TRACING_ENTER(ClCreateProgramWithBuiltInKernels, &context, &numDevices, &deviceList, &kernelNames, &errcodeRet);
     cl_int retVal = CL_SUCCESS;
     API_ENTER(&retVal);
+    cl_program program = nullptr;
     DBG_LOG_INPUTS("context", context,
                    "numDevices", numDevices,
                    "deviceList", deviceList,
                    "kernelNames", kernelNames);
-    cl_program program = nullptr;
-    Context *pContext = nullptr;
-
-    retVal = validateObjects(withCastToInternal(context, &pContext), numDevices,
-                             deviceList, kernelNames, errcodeRet);
-
-    if (retVal == CL_SUCCESS) {
-        ClDeviceVector deviceVector;
-        for (auto i = 0u; i < numDevices; i++) {
-            auto device = castToObject<ClDevice>(deviceList[i]);
-            if (!device || !pContext->isDeviceAssociated(*device)) {
-                retVal = CL_INVALID_DEVICE;
-                break;
-            }
-            deviceVector.push_back(device);
-        }
-        if (retVal == CL_SUCCESS) {
-
-            program = Vme::createBuiltInProgram(
-                *pContext,
-                deviceVector,
-                kernelNames,
-                retVal);
-        }
-    }
-
+    retVal = CL_INVALID_VALUE;
     if (errcodeRet) {
         *errcodeRet = retVal;
     }
@@ -1562,6 +1553,9 @@ cl_int CL_API_CALL clRetainProgram(cl_program program) {
 
 cl_int CL_API_CALL clReleaseProgram(cl_program program) {
     TRACING_ENTER(ClReleaseProgram, &program);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_SUCCESS;
     API_ENTER(&retVal);
     DBG_LOG_INPUTS("program", program);
@@ -1903,6 +1897,9 @@ cl_int CL_API_CALL clRetainKernel(cl_kernel kernel) {
 
 cl_int CL_API_CALL clReleaseKernel(cl_kernel kernel) {
     TRACING_ENTER(ClReleaseKernel, &kernel);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_SUCCESS;
     API_ENTER(&retVal);
     DBG_LOG_INPUTS("kernel", kernel);
@@ -2197,6 +2194,9 @@ cl_int CL_API_CALL clRetainEvent(cl_event event) {
 
 cl_int CL_API_CALL clReleaseEvent(cl_event event) {
     TRACING_ENTER(ClReleaseEvent, &event);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     auto retVal = CL_SUCCESS;
     API_ENTER(&retVal);
     auto pEvent = castToObject<Event>(event);
@@ -4534,6 +4534,9 @@ cl_int CL_API_CALL clReleaseAcceleratorINTEL(
     cl_accelerator_intel accelerator) {
 
     TRACING_ENTER(ClReleaseAcceleratorINTEL, &accelerator);
+    if (wasPlatformTeardownCalled) {
+        return CL_SUCCESS;
+    }
     cl_int retVal = CL_SUCCESS;
     API_ENTER(&retVal);
     DBG_LOG_INPUTS("accelerator", accelerator);
@@ -6252,7 +6255,7 @@ cl_int CL_API_CALL clGetKernelMaxConcurrentWorkGroupCountINTEL(cl_command_queue 
     }
 
     withCastToInternal(commandQueue, &pCommandQueue);
-    *suggestedWorkGroupCount = pKernel->getMaxWorkGroupCount(workDim, localWorkSize, pCommandQueue);
+    *suggestedWorkGroupCount = pKernel->getMaxWorkGroupCount(workDim, localWorkSize, pCommandQueue, false);
 
     TRACING_EXIT(ClGetKernelMaxConcurrentWorkGroupCountINTEL, &retVal);
     return retVal;
@@ -6332,7 +6335,7 @@ cl_int CL_API_CALL clEnqueueNDCountKernelINTEL(cl_command_queue commandQueue,
         for (size_t i = 0; i < workDim; i++) {
             requestedNumberOfWorkgroups *= workgroupCount[i];
         }
-        size_t maximalNumberOfWorkgroupsAllowed = pKernel->getMaxWorkGroupCount(workDim, localWorkSize, pCommandQueue);
+        size_t maximalNumberOfWorkgroupsAllowed = pKernel->getMaxWorkGroupCount(workDim, localWorkSize, pCommandQueue, false);
         if (requestedNumberOfWorkgroups > maximalNumberOfWorkgroupsAllowed) {
             retVal = CL_INVALID_VALUE;
             TRACING_EXIT(ClEnqueueNDCountKernelINTEL, &retVal);

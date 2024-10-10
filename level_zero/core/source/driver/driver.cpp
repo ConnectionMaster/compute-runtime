@@ -85,18 +85,14 @@ void DriverImp::initialize(ze_result_t *result) {
             if (envVariables.metrics) {
                 *result = MetricDeviceContext::enableMetricApi();
             }
-
-            if ((*result == ZE_RESULT_SUCCESS) && envVariables.pin) {
-                std::string gtpinFuncName{"OpenGTPin"};
-                if (false == NEO::PinContext::init(gtpinFuncName)) {
-                    *result = ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE;
-                }
-            }
             if (*result != ZE_RESULT_SUCCESS) {
                 delete globalDriver;
                 globalDriverHandle = nullptr;
                 globalDriver = nullptr;
                 driverCount = 0;
+            } else if (envVariables.pin) {
+                std::unique_lock<std::mutex> mtx{this->gtpinInitMtx};
+                this->gtPinInitializationNeeded = true;
             }
         }
     }
@@ -114,6 +110,7 @@ ze_result_t DriverImp::driverInit(ze_init_flags_t flags) {
 }
 
 ze_result_t driverHandleGet(uint32_t *pCount, ze_driver_handle_t *phDriverHandles) {
+    Driver::get()->tryInitGtpin();
     if (*pCount == 0) {
         *pCount = driverCount;
         return ZE_RESULT_SUCCESS;
@@ -132,6 +129,18 @@ ze_result_t driverHandleGet(uint32_t *pCount, ze_driver_handle_t *phDriverHandle
     }
 
     return ZE_RESULT_SUCCESS;
+}
+
+void DriverImp::tryInitGtpin() {
+    if (!this->gtPinInitializationNeeded) {
+        return;
+    }
+    std::unique_lock<std::mutex> mtx{this->gtpinInitMtx};
+    if (this->gtPinInitializationNeeded) {
+        this->gtPinInitializationNeeded = false;
+        std::string gtpinFuncName{"OpenGTPin"};
+        NEO::PinContext::init(gtpinFuncName);
+    }
 }
 
 static DriverImp driverImp;

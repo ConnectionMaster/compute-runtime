@@ -84,13 +84,16 @@ SubmissionStatus WddmCommandStreamReceiver<GfxFamily>::flush(BatchBuffer &batchB
     }
     batchBuffer.allocationsForResidency = &allocationsForResidency;
 
-    // Enqueue wait for paging fence only if it's valid and there's actual paging fence to wait for
+    auto mustWaitForResidency = this->requiresBlockingResidencyHandling;
+    mustWaitForResidency |= !this->executionEnvironment.directSubmissionController.get();
+    batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling = mustWaitForResidency;
+
     auto pagingFenceValue = this->wddm->getCurrentPagingFenceValue();
-    if (!this->requiresBlockingResidencyHandling && pagingFenceValue > *this->wddm->getPagingFenceAddress()) {
+    if (this->validForEnqueuePagingFence(pagingFenceValue)) {
         auto waitEnqueued = this->enqueueWaitForPagingFence(pagingFenceValue);
         if (waitEnqueued) {
-            batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling = false;
             batchBuffer.pagingFenceSemInfo.pagingFenceValue = pagingFenceValue;
+            this->lastEnqueuedPagingFenceValue = pagingFenceValue;
         }
     }
 
@@ -146,14 +149,12 @@ SubmissionStatus WddmCommandStreamReceiver<GfxFamily>::flush(BatchBuffer &batchB
 }
 
 template <typename GfxFamily>
-SubmissionStatus WddmCommandStreamReceiver<GfxFamily>::processResidency(const ResidencyContainer &allocationsForResidency, uint32_t handleId) {
+SubmissionStatus WddmCommandStreamReceiver<GfxFamily>::processResidency(ResidencyContainer &allocationsForResidency, uint32_t handleId) {
     return static_cast<OsContextWin *>(this->osContext)->getResidencyController().makeResidentResidencyAllocations(allocationsForResidency, this->requiresBlockingResidencyHandling) ? SubmissionStatus::success : SubmissionStatus::outOfMemory;
 }
 
 template <typename GfxFamily>
 void WddmCommandStreamReceiver<GfxFamily>::processEviction() {
-    static_cast<OsContextWin *>(this->osContext)->getResidencyController().makeNonResidentEvictionAllocations(this->getEvictionAllocations());
-    this->getEvictionAllocations().clear();
 }
 
 template <typename GfxFamily>
@@ -215,6 +216,26 @@ CommandStreamReceiver *createWddmDeviceCommandStreamReceiver(bool withAubDump,
     } else {
         return new WddmCommandStreamReceiver<GfxFamily>(executionEnvironment, rootDeviceIndex, deviceBitfield);
     }
+}
+
+template <typename GfxFamily>
+void WddmCommandStreamReceiver<GfxFamily>::setupContext(OsContext &osContext) {
+    this->osContext = &osContext;
+    static_cast<OsContextWin *>(this->osContext)->getResidencyController().setCommandStreamReceiver(this);
+}
+
+template <typename GfxFamily>
+void WddmCommandStreamReceiver<GfxFamily>::addToEvictionContainer(GraphicsAllocation &gfxAllocation) {
+    // Eviction allocations are shared with trim callback thread.
+    auto lock = static_cast<OsContextWin *>(this->osContext)->getResidencyController().acquireLock();
+    this->getEvictionAllocations().push_back(&gfxAllocation);
+}
+
+template <typename GfxFamily>
+bool WddmCommandStreamReceiver<GfxFamily>::validForEnqueuePagingFence(uint64_t pagingFenceValue) const {
+    return !this->requiresBlockingResidencyHandling &&
+           pagingFenceValue > *this->wddm->getPagingFenceAddress() &&
+           pagingFenceValue > this->lastEnqueuedPagingFenceValue;
 }
 
 } // namespace NEO

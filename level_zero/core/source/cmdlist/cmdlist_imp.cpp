@@ -55,7 +55,7 @@ ze_result_t CommandListImp::destroy() {
     }
 
     if (!isImmediateType() &&
-        !isCopyOnly() &&
+        !isCopyOnly(false) &&
         this->stateBaseAddressTracking &&
         this->cmdListHeapAddressModel == NEO::HeapAddressModel::privateHeaps) {
 
@@ -75,6 +75,8 @@ ze_result_t CommandListImp::destroy() {
             }
         }
     }
+
+    this->forceDcFlushForDcFlushMitigation();
 
     delete this;
     return ZE_RESULT_SUCCESS;
@@ -234,6 +236,14 @@ CommandList *CommandList::createImmediate(uint32_t productFamily, Device *device
             commandList->enableInOrderExecution();
         }
 
+        if (queueProperties.synchronizedDispatchMode != NEO::SynchronizedDispatchMode::disabled) {
+            if (commandList->isInOrderExecutionEnabled()) {
+                commandList->enableSynchronizedDispatch(queueProperties.synchronizedDispatchMode);
+            } else {
+                returnValue = ZE_RESULT_ERROR_INVALID_ARGUMENT;
+            }
+        }
+
         if (returnValue != ZE_RESULT_SUCCESS) {
             commandList->destroy();
             commandList = nullptr;
@@ -247,11 +257,7 @@ CommandList *CommandList::createImmediate(uint32_t productFamily, Device *device
 
         commandList->copyThroughLockedPtrEnabled = gfxCoreHelper.copyThroughLockedPtrEnabled(hwInfo, device->getProductHelper());
 
-        if (queueProperties.synchronizedDispatchMode != NEO::SynchronizedDispatchMode::disabled) {
-            commandList->enableSynchronizedDispatch(queueProperties.synchronizedDispatchMode);
-        }
-
-        if ((NEO::debugManager.flags.ForceCopyOperationOffloadForComputeCmdList.get() == 1 || queueProperties.copyOffloadHint) && !commandList->isCopyOnly() && commandList->isInOrderExecutionEnabled()) {
+        if ((NEO::debugManager.flags.ForceCopyOperationOffloadForComputeCmdList.get() == 1 || queueProperties.copyOffloadHint) && !commandList->isCopyOnly(false) && commandList->isInOrderExecutionEnabled()) {
             commandList->enableCopyOperationOffload(productFamily, device, desc);
         }
 
@@ -286,7 +292,7 @@ void CommandListImp::setStreamPropertiesDefaultSettings(NEO::StreamProperties &s
         streamProperties.stateComputeMode.setPropertiesCoherencyDevicePreemption(cmdListDefaultCoherency, this->commandListPreemptionMode, true);
     }
 
-    streamProperties.frontEndState.setPropertiesDisableOverdispatchEngineInstanced(cmdListDefaultDisableOverdispatch, cmdListDefaultEngineInstancedDevice, true);
+    streamProperties.frontEndState.setPropertiesDisableOverdispatch(cmdListDefaultDisableOverdispatch, true);
     streamProperties.pipelineSelect.setPropertiesModeSelectedMediaSamplerClockGate(cmdListDefaultPipelineSelectModeSelected, cmdListDefaultMediaSamplerClockGate, true);
 }
 

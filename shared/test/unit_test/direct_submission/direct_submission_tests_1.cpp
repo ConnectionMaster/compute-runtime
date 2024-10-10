@@ -10,6 +10,7 @@
 #include "shared/source/debug_settings/debug_settings_manager.h"
 #include "shared/source/direct_submission/dispatchers/render_dispatcher.h"
 #include "shared/source/direct_submission/relaxed_ordering_helper.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/flush_stamp.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/utilities/cpu_info.h"
@@ -750,7 +751,7 @@ HWTEST_F(DirectSubmissionTest, givenDirectSubmissionAvailableWhenProgrammingEndi
     uint8_t buffer[128];
     mockCsr->commandStream.replaceBuffer(&buffer[0], 128u);
     mockCsr->commandStream.replaceGraphicsAllocation(&mockAllocation);
-    mockCsr->programEndingCmd(mockCsr->commandStream, &location, ret, false);
+    mockCsr->programEndingCmd(mockCsr->commandStream, &location, ret, false, false);
     EXPECT_EQ(sizeof(MI_BATCH_BUFFER_START), mockCsr->commandStream.getUsed());
 
     DispatchFlags dispatchFlags = DispatchFlagsHelper::createDefaultDispatchFlags();
@@ -794,7 +795,7 @@ HWTEST_F(DirectSubmissionTest, givenDebugFlagSetWhenProgrammingEndingCommandThen
         auto currectBbStartCmd = reinterpret_cast<MI_BATCH_BUFFER_START *>(cmdStream.getSpace(0));
         uint64_t expectedGpuVa = cmdStream.getGraphicsAllocation()->getGpuAddress() + cmdStream.getUsed();
 
-        mockCsr->programEndingCmd(cmdStream, &location, ret, false);
+        mockCsr->programEndingCmd(cmdStream, &location, ret, false, false);
         EncodeNoop<FamilyType>::alignToCacheLine(cmdStream);
 
         if (value == 0) {
@@ -848,6 +849,8 @@ HWTEST_F(DirectSubmissionTest,
     if (NEO::directSubmissionDiagnosticAvailable) {
         GTEST_SKIP();
     }
+    auto &compilerProductHelper = pDevice->getCompilerProductHelper();
+    auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(compilerProductHelper.isHeaplessModeEnabled());
 
     DebugManagerStateRestore restore;
     debugManager.flags.DirectSubmissionEnableDebugBuffer.set(1);
@@ -874,7 +877,7 @@ HWTEST_F(DirectSubmissionTest,
     EXPECT_EQ(0u, NEO::IoFunctions::mockFcloseCalled);
     size_t expectedSize = Dispatcher::getSizePreemption() +
                           directSubmission.getSizeSemaphoreSection(false);
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         expectedSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -927,6 +930,9 @@ HWTEST_F(DirectSubmissionTest,
         GTEST_SKIP();
     }
 
+    auto &compilerProductHelper = pDevice->getCompilerProductHelper();
+    auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(compilerProductHelper.isHeaplessModeEnabled());
+
     uint32_t execCount = 5u;
     DebugManagerStateRestore restore;
     debugManager.flags.DirectSubmissionEnableDebugBuffer.set(1);
@@ -953,7 +959,7 @@ HWTEST_F(DirectSubmissionTest,
                           directSubmission.getDiagnosticModeSection();
     expectedSize += expectedExecCount * (directSubmission.getSizeDispatch(false, false, directSubmission.dispatchMonitorFenceRequired(false)) - directSubmission.getSizeNewResourceHandler());
 
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         expectedSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -996,7 +1002,7 @@ HWTEST_F(DirectSubmissionTest,
     }
 
     size_t cmdOffset = 0;
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         cmdOffset = directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -1033,6 +1039,9 @@ HWTEST_F(DirectSubmissionTest,
         GTEST_SKIP();
     }
 
+    auto &compilerProductHelper = pDevice->getCompilerProductHelper();
+    auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(compilerProductHelper.isHeaplessModeEnabled());
+
     DebugManagerStateRestore restore;
     debugManager.flags.DirectSubmissionEnableDebugBuffer.set(2);
     debugManager.flags.DirectSubmissionDisableCacheFlush.set(true);
@@ -1059,7 +1068,7 @@ HWTEST_F(DirectSubmissionTest,
     EXPECT_EQ(expectedDispatch, directSubmission.getSizeDispatch(false, false, directSubmission.dispatchMonitorFenceRequired(false)) - directSubmission.getSizeNewResourceHandler());
     expectedSize += expectedExecCount * expectedDispatch;
 
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         expectedSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -1153,7 +1162,7 @@ HWTEST_F(DirectSubmissionTest,
     EXPECT_EQ(2u, NEO::IoFunctions::mockFcloseCalled);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, DirectSubmissionTest,
+HWCMDTEST_F(IGFX_GEN12LP_CORE, DirectSubmissionTest,
             givenLegacyPlatformsWhenProgrammingPartitionRegisterThenExpectNoAction) {
     using Dispatcher = RenderDispatcher<FamilyType>;
 

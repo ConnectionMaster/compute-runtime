@@ -11,6 +11,7 @@
 #include "shared/source/os_interface/linux/drm_memory_operations_handler_with_aub_dump.h"
 #include "shared/test/common/libult/linux/drm_query_mock.h"
 #include "shared/test/common/mocks/linux/mock_drm_allocation.h"
+#include "shared/test/common/mocks/mock_aub_manager.h"
 #include "shared/test/common/mocks/mock_aub_memory_operations_handler.h"
 #include "shared/test/common/mocks/mock_device.h"
 #include "shared/test/common/mocks/mock_graphics_allocation.h"
@@ -52,12 +53,30 @@ struct DrmMemoryOperationsHandlerWithAubDumpTest : public ::testing::Test {
 };
 
 TEST_F(DrmMemoryOperationsHandlerWithAubDumpTest, whenMakingAllocationResidentThenAllocationIsResident) {
-    EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->makeResident(nullptr, ArrayRef<GraphicsAllocation *>(&allocationPtr, 1)), MemoryOperationsStatus::success);
+    EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->makeResident(nullptr, ArrayRef<GraphicsAllocation *>(&allocationPtr, 1), false), MemoryOperationsStatus::success);
     EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->residency.size(), 1u);
     EXPECT_TRUE(drmMemoryOperationsHandlerWithAubDumpMock->residency.find(allocationPtr) != drmMemoryOperationsHandlerWithAubDumpMock->residency.end());
     EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->isResident(nullptr, graphicsAllocation), MemoryOperationsStatus::success);
     EXPECT_TRUE(mockAubMemoryOperationsHandler->makeResidentCalled);
     EXPECT_TRUE(mockAubMemoryOperationsHandler->isResidentCalled);
+}
+
+TEST_F(DrmMemoryOperationsHandlerWithAubDumpTest, givenRegularAllocationWhenFreeResidentAllocationThenFreeCalledAndAllocationIsRemovedFromResidencyInAubOperationsHandler) {
+    MockAubManager aubManager;
+    mockAubMemoryOperationsHandler->setAubManager(&aubManager);
+    allocationPtr->setAubWritable(true, 0xff);
+
+    EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->makeResident(device.get(), ArrayRef<GraphicsAllocation *>(&allocationPtr, 1), false), MemoryOperationsStatus::success);
+    EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->residency.size(), 1u);
+    EXPECT_TRUE(drmMemoryOperationsHandlerWithAubDumpMock->residency.find(allocationPtr) != drmMemoryOperationsHandlerWithAubDumpMock->residency.end());
+    EXPECT_EQ(1u, mockAubMemoryOperationsHandler->residentAllocations.size());
+
+    drmMemoryOperationsHandlerWithAubDumpMock->free(device.get(), *allocationPtr);
+
+    EXPECT_TRUE(mockAubMemoryOperationsHandler->makeResidentCalled);
+    EXPECT_TRUE(mockAubMemoryOperationsHandler->freeCalled);
+
+    EXPECT_EQ(0u, mockAubMemoryOperationsHandler->residentAllocations.size());
 }
 
 TEST_F(DrmMemoryOperationsHandlerWithAubDumpTest, whenEvictingResidentAllocationThenAllocationIsNotResident) {
@@ -71,7 +90,7 @@ TEST_F(DrmMemoryOperationsHandlerWithAubDumpTest, whenEvictingResidentAllocation
     GraphicsAllocation *mockDrmAllocation = new MockDrmAllocation(AllocationType::unknown, MemoryPool::localMemory, bos);
 
     EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->residency.size(), 0u);
-    EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->makeResident(nullptr, ArrayRef<GraphicsAllocation *>(&mockDrmAllocation, 1)), MemoryOperationsStatus::success);
+    EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->makeResident(nullptr, ArrayRef<GraphicsAllocation *>(&mockDrmAllocation, 1), false), MemoryOperationsStatus::success);
     EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->isResident(nullptr, *mockDrmAllocation), MemoryOperationsStatus::success);
     EXPECT_EQ(drmMemoryOperationsHandlerWithAubDumpMock->residency.size(), 1u);
     EXPECT_TRUE(drmMemoryOperationsHandlerWithAubDumpMock->residency.find(mockDrmAllocation) != drmMemoryOperationsHandlerWithAubDumpMock->residency.end());

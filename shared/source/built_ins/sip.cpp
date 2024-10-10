@@ -15,6 +15,7 @@
 #include "shared/source/execution_environment/execution_environment.h"
 #include "shared/source/execution_environment/root_device_environment.h"
 #include "shared/source/helpers/aligned_memory.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/debug_helpers.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/helpers/hw_info.h"
@@ -98,7 +99,9 @@ size_t SipKernel::getStateSaveAreaSize(Device *device) const {
 
     auto numSlices = NEO::GfxCoreHelper::getHighestEnabledSlice(hwInfo);
     size_t stateSaveAreaSize = 0;
-    if (hdr->versionHeader.version.major >= 3) {
+    if (hdr->versionHeader.version.major == 4) {
+        stateSaveAreaSize = static_cast<size_t>(hdr->totalWmtpDataSize);
+    } else if (hdr->versionHeader.version.major == 3) {
         stateSaveAreaSize = numSlices *
                                 hdr->regHeaderV3.num_subslices_per_slice *
                                 hdr->regHeaderV3.num_eus_per_subslice *
@@ -107,7 +110,7 @@ size_t SipKernel::getStateSaveAreaSize(Device *device) const {
                             hdr->versionHeader.size * 8 + hdr->regHeaderV3.state_area_offset;
         stateSaveAreaSize += hdr->regHeaderV3.fifo_size * sizeof(SIP::fifo_node);
 
-    } else {
+    } else if (hdr->versionHeader.version.major < 3) {
         stateSaveAreaSize = numSlices *
                                 hdr->regHeader.num_subslices_per_slice *
                                 hdr->regHeader.num_eus_per_subslice *
@@ -120,7 +123,12 @@ size_t SipKernel::getStateSaveAreaSize(Device *device) const {
 
 SipKernelType SipKernel::getSipKernelType(Device &device) {
     if (device.getDebugger() != nullptr) {
-        return SipKernelType::dbgBindless;
+        auto &compilerProductHelper = device.getRootDeviceEnvironment().getHelper<CompilerProductHelper>();
+        if (compilerProductHelper.isHeaplessModeEnabled()) {
+            return SipKernelType::dbgHeapless;
+        } else {
+            return SipKernelType::dbgBindless;
+        }
     }
     bool debuggingEnabled = device.getDebugger() != nullptr;
     return getSipKernelType(device, debuggingEnabled);
@@ -296,8 +304,14 @@ const SipKernel &SipKernel::getSipKernelImpl(Device &device) {
     }
 }
 
-const SipKernel &SipKernel::getBindlessDebugSipKernel(Device &device) {
-    auto debugSipType = SipKernelType::dbgBindless;
+const SipKernel &SipKernel::getDebugSipKernel(Device &device) {
+    SipKernelType debugSipType;
+    auto &compilerProductHelper = device.getRootDeviceEnvironment().getHelper<CompilerProductHelper>();
+    if (compilerProductHelper.isHeaplessModeEnabled()) {
+        debugSipType = SipKernelType::dbgHeapless;
+    } else {
+        debugSipType = SipKernelType::dbgBindless;
+    }
     SipKernel::initSipKernelImpl(debugSipType, device, nullptr);
 
     switch (SipKernel::classType) {
@@ -308,8 +322,14 @@ const SipKernel &SipKernel::getBindlessDebugSipKernel(Device &device) {
     }
 }
 
-const SipKernel &SipKernel::getBindlessDebugSipKernel(Device &device, OsContext *context) {
-    auto debugSipType = SipKernelType::dbgBindless;
+const SipKernel &SipKernel::getDebugSipKernel(Device &device, OsContext *context) {
+    SipKernelType debugSipType;
+    auto &compilerProductHelper = device.getRootDeviceEnvironment().getHelper<CompilerProductHelper>();
+    if (compilerProductHelper.isHeaplessModeEnabled()) {
+        debugSipType = SipKernelType::dbgHeapless;
+    } else {
+        debugSipType = SipKernelType::dbgBindless;
+    }
     SipKernel::initSipKernelImpl(debugSipType, device, context);
 
     switch (SipKernel::classType) {

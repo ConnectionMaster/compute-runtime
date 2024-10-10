@@ -46,11 +46,9 @@ class ProductHelperHw : public ProductHelper {
     uint32_t getAubStreamSteppingFromHwRevId(const HardwareInfo &hwInfo) const override;
     std::optional<aub_stream::ProductFamily> getAubStreamProductFamily() const override;
     bool isDefaultEngineTypeAdjustmentRequired(const HardwareInfo &hwInfo) const override;
-    std::string getDeviceMemoryName() const override;
     bool isDisableOverdispatchAvailable(const HardwareInfo &hwInfo) const override;
     bool allowCompression(const HardwareInfo &hwInfo) const override;
     LocalMemoryAccessMode getLocalMemoryAccessMode(const HardwareInfo &hwInfo) const override;
-    bool isAllocationSizeAdjustmentRequired(const HardwareInfo &hwInfo) const override;
     bool isNewResidencyModelSupported() const override;
     bool isDirectSubmissionSupported(ReleaseHelper *releaseHelper) const override;
     bool isDirectSubmissionConstantCacheInvalidationNeeded(const HardwareInfo &hwInfo) const override;
@@ -76,7 +74,10 @@ class ProductHelperHw : public ProductHelper {
     bool isTile64With3DSurfaceOnBCSSupported(const HardwareInfo &hwInfo) const override;
     bool isDcFlushAllowed() const override;
     bool isDcFlushMitigated() const override;
-    bool overridePatAndUsageForDcFlushMitigation(AllocationType allocationType) const override;
+    bool mitigateDcFlush() const override;
+    bool overrideUsageForDcFlushMitigation(AllocationType allocationType) const override;
+    bool overridePatToUCAndTwoWayCohForDcFlushMitigation(AllocationType allocationType) const override;
+    bool overridePatToUCAndOneWayCohForDcFlushMitigation(AllocationType allocationType) const override;
     bool overrideCacheableForDcFlushMitigation(AllocationType allocationType) const override;
     uint32_t computeMaxNeededSubSliceSpace(const HardwareInfo &hwInfo) const override;
     bool getUuid(NEO::DriverModel *driverModel, uint32_t subDeviceCount, uint32_t deviceIndex, std::array<uint8_t, ProductHelper::uuidSize> &uuid) const override;
@@ -86,7 +87,6 @@ class ProductHelperHw : public ProductHelper {
     bool isCopyEngineSelectorEnabled(const HardwareInfo &hwInfo) const override;
     bool isGlobalFenceInCommandStreamRequired(const HardwareInfo &hwInfo) const override;
     bool isGlobalFenceInDirectSubmissionRequired(const HardwareInfo &hwInfo) const override;
-    bool isAdjustProgrammableIdPreferredSlmSizeRequired(const HardwareInfo &hwInfo) const override;
     uint32_t getThreadEuRatioForScratch(const HardwareInfo &hwInfo) const override;
     size_t getSvmCpuAlignment() const override;
     bool isComputeDispatchAllWalkerEnableInCfeStateRequired(const HardwareInfo &hwInfo) const override;
@@ -95,7 +95,6 @@ class ProductHelperHw : public ProductHelper {
     bool isGrfNumReportedWithScm() const override;
     bool isThreadArbitrationPolicyReportedWithScm() const override;
     bool isCopyBufferRectSplitSupported() const override;
-    bool isFlatRingBufferSupported() const override;
     bool isCooperativeEngineSupported(const HardwareInfo &hwInfo) const override;
     bool isTimestampWaitSupportedForEvents() const override;
     bool isTilePlacementResourceWaRequired(const HardwareInfo &hwInfo) const override;
@@ -118,7 +117,6 @@ class ProductHelperHw : public ProductHelper {
     bool isPlatformQuerySupported() const override;
     bool isNonBlockingGpuSubmissionSupported() const override;
     bool isResolveDependenciesByPipeControlsSupported(const HardwareInfo &hwInfo, bool isOOQ, TaskCountType queueTaskCount, const CommandStreamReceiver &queueCsr) const override;
-    bool isMidThreadPreemptionDisallowedForRayTracingKernels() const override;
     bool isBufferPoolAllocatorSupported() const override;
     bool isUsmPoolAllocatorSupported() const override;
     bool isDeviceUsmAllocationReuseSupported() const override;
@@ -127,7 +125,9 @@ class ProductHelperHw : public ProductHelper {
     bool useGemCreateExtInAllocateMemoryByKMD() const override;
     bool isTlbFlushRequired() const override;
     bool isDummyBlitWaRequired() const override;
-    bool isDetectIndirectAccessInKernelSupported(const KernelDescriptor &kernelDescriptor, const bool isPrecompiled, const uint32_t kernelIndirectDetectionVersion) const override;
+    bool isDetectIndirectAccessInKernelSupported(const KernelDescriptor &kernelDescriptor, const bool isPrecompiled, const uint32_t precompiledKernelIndirectDetectionVersion) const override;
+    uint32_t getRequiredDetectIndirectVersion() const override;
+    uint32_t getRequiredDetectIndirectVersionVC() const override;
     bool isLinearStoragePreferred(bool isImage1d, bool forceLinearStorage) const override;
     bool isTranslationExceptionSupported() const override;
     uint32_t getMaxNumSamplers() const override;

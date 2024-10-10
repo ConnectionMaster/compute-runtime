@@ -7,6 +7,7 @@
 
 #include "shared/source/built_ins/sip.h"
 #include "shared/source/gmm_helper/gmm.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/file_io.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/helpers/string.h"
@@ -535,7 +536,7 @@ struct CompressionMemoryTest : public MemoryTest {
     void *ptr = nullptr;
 };
 
-HWTEST2_F(CompressionMemoryTest, givenDeviceUsmWhenAllocatingThenEnableCompressionIfPossible, IsAtLeastSkl) {
+HWTEST2_F(CompressionMemoryTest, givenDeviceUsmWhenAllocatingThenEnableCompressionIfPossible, MatchAny) {
     device->getNEODevice()->getRootDeviceEnvironment().getMutableHardwareInfo()->capabilityTable.ftrRenderCompressedBuffers = true;
     auto &hwInfo = device->getHwInfo();
     auto &l0GfxCoreHelper = device->getL0GfxCoreHelper();
@@ -2550,7 +2551,7 @@ TEST_F(MemoryRelaxedSizeTests,
     hostDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     ze_relaxed_allocation_limits_exp_desc_t relaxedSizeDesc = {};
     relaxedSizeDesc.stype = ZE_STRUCTURE_TYPE_RELAXED_ALLOCATION_LIMITS_EXP_DESC;
-    relaxedSizeDesc.flags = static_cast<ze_relaxed_allocation_limits_exp_flag_t>(ZE_BIT(1));
+    relaxedSizeDesc.flags = {};
     hostDesc.pNext = &relaxedSizeDesc;
     ze_result_t result = context->allocHostMem(&hostDesc,
                                                size, alignment, &ptr);
@@ -2568,7 +2569,7 @@ TEST_F(MemoryRelaxedSizeTests,
     hostDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     ze_relaxed_allocation_limits_exp_desc_t relaxedSizeDesc = {};
     relaxedSizeDesc.stype = ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES;
-    relaxedSizeDesc.flags = static_cast<ze_relaxed_allocation_limits_exp_flag_t>(ZE_BIT(1));
+    relaxedSizeDesc.flags = {};
     hostDesc.pNext = &relaxedSizeDesc;
     ze_result_t result = context->allocHostMem(&hostDesc,
                                                size, alignment, &ptr);
@@ -2615,9 +2616,12 @@ TEST_F(MemoryRelaxedSizeTests,
 
 TEST_F(MemoryRelaxedSizeTests,
        givenCallToDeviceAllocWithLargerThanAllowedSizeAndRelaxedFlagThenAllocationIsMade) {
-    if (device->getNEODevice()->areSharedSystemAllocationsAllowed()) {
+    auto &rootDeviceEnvironment = neoDevice->getRootDeviceEnvironmentRef();
+    const auto &compilerProductHelper = rootDeviceEnvironment.getHelper<NEO::CompilerProductHelper>();
+    if (compilerProductHelper.isForceToStatelessRequired()) {
         GTEST_SKIP();
     }
+
     size_t size = device->getNEODevice()->getDeviceInfo().maxMemAllocSize + 1;
     size_t alignment = 1u;
     void *ptr = nullptr;
@@ -2640,9 +2644,12 @@ TEST_F(MemoryRelaxedSizeTests,
 
 TEST_F(MemoryRelaxedSizeTests,
        givenCallToDeviceAllocWithLargerThanAllowedSizeAndDebugFlagThenAllocationIsMade) {
-    if (device->getNEODevice()->areSharedSystemAllocationsAllowed()) {
+    auto &rootDeviceEnvironment = neoDevice->getRootDeviceEnvironmentRef();
+    const auto &compilerProductHelper = rootDeviceEnvironment.getHelper<NEO::CompilerProductHelper>();
+    if (compilerProductHelper.isForceToStatelessRequired()) {
         GTEST_SKIP();
     }
+
     DebugManagerStateRestore restorer;
     debugManager.flags.AllowUnrestrictedSize.set(1);
     size_t size = device->getNEODevice()->getDeviceInfo().maxMemAllocSize + 1;
@@ -2663,6 +2670,12 @@ TEST_F(MemoryRelaxedSizeTests,
 
 TEST_F(MemoryRelaxedSizeTests,
        givenCallToDeviceAllocWithLargerThanGlobalMemSizeAndRelaxedFlagThenAllocationIsNotMade) {
+    auto &rootDeviceEnvironment = neoDevice->getRootDeviceEnvironmentRef();
+    const auto &compilerProductHelper = rootDeviceEnvironment.getHelper<NEO::CompilerProductHelper>();
+    if (compilerProductHelper.isForceToStatelessRequired()) {
+        GTEST_SKIP();
+    }
+
     size_t size = device->getNEODevice()->getDeviceInfo().globalMemSize + 1;
     size_t alignment = 1u;
     void *ptr = nullptr;
@@ -2782,7 +2795,7 @@ TEST_F(MemoryRelaxedSizeTests,
     deviceDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     ze_relaxed_allocation_limits_exp_desc_t relaxedSizeDesc = {};
     relaxedSizeDesc.stype = ZE_STRUCTURE_TYPE_RELAXED_ALLOCATION_LIMITS_EXP_DESC;
-    relaxedSizeDesc.flags = static_cast<ze_relaxed_allocation_limits_exp_flag_t>(ZE_BIT(1));
+    relaxedSizeDesc.flags = {};
     deviceDesc.pNext = &relaxedSizeDesc;
     ze_result_t result = context->allocDeviceMem(device->toHandle(),
                                                  &deviceDesc,
@@ -2801,7 +2814,7 @@ TEST_F(MemoryRelaxedSizeTests,
     deviceDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     ze_relaxed_allocation_limits_exp_desc_t relaxedSizeDesc = {};
     relaxedSizeDesc.stype = ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES;
-    relaxedSizeDesc.flags = static_cast<ze_relaxed_allocation_limits_exp_flag_t>(ZE_BIT(1));
+    relaxedSizeDesc.flags = {};
     deviceDesc.pNext = &relaxedSizeDesc;
     ze_result_t result = context->allocDeviceMem(device->toHandle(),
                                                  &deviceDesc,
@@ -2854,9 +2867,12 @@ TEST_F(MemoryRelaxedSizeTests,
 
 TEST_F(MemoryRelaxedSizeTests,
        givenCallToSharedAllocWithLargerThanAllowedSizeAndRelaxedFlagThenAllocationIsMade) {
-    if (device->getNEODevice()->areSharedSystemAllocationsAllowed()) {
+    auto &rootDeviceEnvironment = neoDevice->getRootDeviceEnvironmentRef();
+    const auto &compilerProductHelper = rootDeviceEnvironment.getHelper<NEO::CompilerProductHelper>();
+    if (compilerProductHelper.isForceToStatelessRequired()) {
         GTEST_SKIP();
     }
+
     size_t size = device->getNEODevice()->getDeviceInfo().maxMemAllocSize + 1;
     size_t alignment = 1u;
     void *ptr = nullptr;
@@ -2881,9 +2897,12 @@ TEST_F(MemoryRelaxedSizeTests,
 
 TEST_F(MemoryRelaxedSizeTests,
        givenCallToSharedAllocWithLargerThanAllowedSizeAndDebugFlagThenAllocationIsMade) {
-    if (device->getNEODevice()->areSharedSystemAllocationsAllowed()) {
+    auto &rootDeviceEnvironment = neoDevice->getRootDeviceEnvironmentRef();
+    const auto &compilerProductHelper = rootDeviceEnvironment.getHelper<NEO::CompilerProductHelper>();
+    if (compilerProductHelper.isForceToStatelessRequired()) {
         GTEST_SKIP();
     }
+
     DebugManagerStateRestore restorer;
     debugManager.flags.AllowUnrestrictedSize.set(1);
     size_t size = device->getNEODevice()->getDeviceInfo().maxMemAllocSize + 1;
@@ -2935,7 +2954,7 @@ TEST_F(MemoryRelaxedSizeTests,
     deviceDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     ze_relaxed_allocation_limits_exp_desc_t relaxedSizeDesc = {};
     relaxedSizeDesc.stype = ZE_STRUCTURE_TYPE_RELAXED_ALLOCATION_LIMITS_EXP_DESC;
-    relaxedSizeDesc.flags = static_cast<ze_relaxed_allocation_limits_exp_flag_t>(ZE_BIT(1));
+    relaxedSizeDesc.flags = {};
     deviceDesc.pNext = &relaxedSizeDesc;
     ze_host_mem_alloc_desc_t hostDesc = {};
     ze_result_t result = context->allocSharedMem(device->toHandle(),
@@ -2956,7 +2975,7 @@ TEST_F(MemoryRelaxedSizeTests,
     deviceDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     ze_relaxed_allocation_limits_exp_desc_t relaxedSizeDesc = {};
     relaxedSizeDesc.stype = ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES;
-    relaxedSizeDesc.flags = static_cast<ze_relaxed_allocation_limits_exp_flag_t>(ZE_BIT(1));
+    relaxedSizeDesc.flags = {};
     deviceDesc.pNext = &relaxedSizeDesc;
     ze_host_mem_alloc_desc_t hostDesc = {};
     ze_result_t result = context->allocSharedMem(device->toHandle(),
@@ -3623,7 +3642,7 @@ TEST_F(MemoryExportImportWinHandleTest,
 }
 
 HWTEST2_F(MemoryTest,
-          givenCallToGetImageAllocPropertiesWithNoBackingAllocationErrorIsReturned, IsAtLeastSkl) {
+          givenCallToGetImageAllocPropertiesWithNoBackingAllocationErrorIsReturned, MatchAny) {
 
     ze_image_allocation_ext_properties_t imageProperties = {};
     imageProperties.stype = ZE_STRUCTURE_TYPE_IMAGE_ALLOCATION_EXT_PROPERTIES;
@@ -3943,7 +3962,7 @@ struct MultipleDevicePeerAllocationTest : public ::testing::Test {
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenCallToMPrepareIndirectAllocationForDestructionThenOnlyValidAllocationCountsAreUpdated,
-          IsAtLeastSkl) {
+          MatchAny) {
     MemoryManagerOpenIpcMock *fixtureMemoryManager = static_cast<MemoryManagerOpenIpcMock *>(currMemoryManager);
     fixtureMemoryManager->failOnCreateGraphicsAllocationFromSharedHandle = true;
     L0::Device *device0 = driverHandle->devices[0];
@@ -3985,7 +4004,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           whenisRemoteResourceNeededIsCalledWithDifferentCombinationsOfInputsThenExpectedOutputIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     MemoryManagerOpenIpcMock *fixtureMemoryManager = static_cast<MemoryManagerOpenIpcMock *>(currMemoryManager);
     fixtureMemoryManager->failOnCreateGraphicsAllocationFromSharedHandle = true;
     L0::Device *device0 = driverHandle->devices[0];
@@ -4035,7 +4054,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenCallToMakeIndirectAllocationsResidentThenOnlyValidAllocationsAreMadeResident,
-          IsAtLeastSkl) {
+          MatchAny) {
     MemoryManagerOpenIpcMock *fixtureMemoryManager = static_cast<MemoryManagerOpenIpcMock *>(currMemoryManager);
     fixtureMemoryManager->failOnCreateGraphicsAllocationFromSharedHandle = true;
     L0::Device *device0 = driverHandle->devices[0];
@@ -4076,7 +4095,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenCallToMakeInternalAllocationsResidentThenOnlyValidAllocationsAreMadeResident,
-          IsAtLeastSkl) {
+          MatchAny) {
     MemoryManagerOpenIpcMock *fixtureMemoryManager = static_cast<MemoryManagerOpenIpcMock *>(currMemoryManager);
     fixtureMemoryManager->failOnCreateGraphicsAllocationFromSharedHandle = true;
     L0::Device *device0 = driverHandle->devices[0];
@@ -4117,7 +4136,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           whenFreeingNotKnownPointerThenInvalidArgumentIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     void *ptr = malloc(1u);
     ze_result_t result = context->freeMem(ptr);
     EXPECT_EQ(result, ZE_RESULT_ERROR_INVALID_ARGUMENT);
@@ -4126,7 +4145,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenDeviceAllocationPassedToAppendBlitFillAndImportFdHandleFailingThenInvalidArgumentIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     MemoryManagerOpenIpcMock *fixtureMemoryManager = static_cast<MemoryManagerOpenIpcMock *>(currMemoryManager);
     fixtureMemoryManager->failOnCreateGraphicsAllocationFromSharedHandle = true;
     L0::Device *device0 = driverHandle->devices[0];
@@ -4155,7 +4174,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenDeviceAllocationPassedToAppendBlitFillUsingSameDeviceThenSuccessIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
 
     size_t size = 1024;
@@ -4181,7 +4200,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenDeviceAllocationPassedToAppendBlitFillUsingDevice1ThenSuccessIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
     L0::Device *device1 = driverHandle->devices[1];
 
@@ -4208,7 +4227,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenSubDeviceAllocationPassedToAppendBlitFillUsingDevice1ThenSuccessIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     DebugManagerStateRestore restorer;
 
     L0::Device *device0 = driverHandle->devices[0];
@@ -4239,7 +4258,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenDeviceAllocationPassedToAppendBlitFillUsingDevice0ThenSuccessIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
     L0::Device *device1 = driverHandle->devices[1];
 
@@ -4266,7 +4285,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenHostPointerAllocationPassedToAppendBlitFillUsingDevice0ThenInvalidArgumentIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
 
     size_t size = 1024;
@@ -4284,7 +4303,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenDeviceAllocationPassedToGetAllignedAllocationAndImportFdHandleFailingThenPeerAllocNotFoundReturnsTrue,
-          IsAtLeastSkl) {
+          MatchAny) {
     MemoryManagerOpenIpcMock *fixtureMemoryManager = static_cast<MemoryManagerOpenIpcMock *>(currMemoryManager);
     fixtureMemoryManager->failOnCreateGraphicsAllocationFromSharedHandle = true;
     L0::Device *device0 = driverHandle->devices[0];
@@ -4312,7 +4331,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenDeviceAllocationPassedToGetAllignedAllocationUsingDevice1ThenAlignedAllocationWithPeerAllocationIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
     L0::Device *device1 = driverHandle->devices[1];
 
@@ -4338,7 +4357,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenSharedAllocationPassedToGetAllignedAllocationUsingDevice1ThenAlignedAllocationWithPeerAllocationIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
     L0::Device *device1 = driverHandle->devices[1];
 
@@ -4366,7 +4385,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenDeviceAllocationPassedToGetAllignedAllocationUsingDevice0ThenAlignedAllocationWithPeerAllocationIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
     L0::Device *device1 = driverHandle->devices[1];
 
@@ -4392,7 +4411,7 @@ HWTEST2_F(MultipleDevicePeerAllocationTest,
 
 HWTEST2_F(MultipleDevicePeerAllocationTest,
           givenSharedAllocationPassedToGetAllignedAllocationUsingDevice0ThenAlignedAllocationWithPeerAllocationIsReturned,
-          IsAtLeastSkl) {
+          MatchAny) {
     L0::Device *device0 = driverHandle->devices[0];
     L0::Device *device1 = driverHandle->devices[1];
 
@@ -5138,11 +5157,19 @@ TEST(MemoryBitfieldTests, givenDeviceWithValidBitfieldWhenAllocatingSharedMemory
         executionEnvironment->rootDeviceEnvironments[i]->setHwInfoAndInitHelpers(defaultHwInfo.get());
         executionEnvironment->rootDeviceEnvironments[i]->initGmm();
         executionEnvironment->rootDeviceEnvironments[i]->memoryOperationsInterface = std::make_unique<MockMemoryOperations>();
+
+        UnitTestSetter::setRcsExposure(*executionEnvironment->rootDeviceEnvironments[i]);
+        UnitTestSetter::setCcsExposure(*executionEnvironment->rootDeviceEnvironments[i]);
     }
+    executionEnvironment->calculateMaxOsContextCount();
+
     auto memoryManager = new NEO::MockMemoryManager(*executionEnvironment);
     executionEnvironment->memoryManager.reset(memoryManager);
+
     NEO::Device *neoDevice0 = NEO::Device::create<RootDevice>(executionEnvironment, 0u);
     debugManager.flags.CreateMultipleSubDevices.set(4);
+
+    executionEnvironment->calculateMaxOsContextCount();
     NEO::Device *neoDevice1 = NEO::Device::create<RootDevice>(executionEnvironment, 1u);
 
     NEO::DeviceVector devices;
@@ -6133,19 +6160,21 @@ HWTEST2_F(MultipleDevicePeerImageTest,
 }
 
 TEST_F(MemoryRelaxedSizeTests, givenMultipleExtensionsPassedToCreateSharedMemThenAllExtensionsAreParsed) {
-    if (device->getNEODevice()->areSharedSystemAllocationsAllowed()) {
+    auto &rootDeviceEnvironment = neoDevice->getRootDeviceEnvironmentRef();
+    const auto &compilerProductHelper = rootDeviceEnvironment.getHelper<NEO::CompilerProductHelper>();
+    if (compilerProductHelper.isForceToStatelessRequired()) {
         GTEST_SKIP();
     }
+
     auto mockProductHelper = std::make_unique<MockProductHelper>();
     mockProductHelper->is48bResourceNeededForRayTracingResult = true;
     std::unique_ptr<ProductHelper> productHelper = std::move(mockProductHelper);
-    auto &rootDeviceEnvironment = neoDevice->getRootDeviceEnvironmentRef();
     currSvmAllocsManager->validateMemoryProperties = [](const SVMAllocsManager::UnifiedMemoryProperties &memoryProperties) -> void {
         EXPECT_TRUE(memoryProperties.allocationFlags.flags.resource48Bit);
     };
 
     std::swap(rootDeviceEnvironment.productHelper, productHelper);
-    size_t size = device->getNEODevice()->getDeviceInfo().maxMemAllocSize + 1;
+    size_t size = neoDevice->getDeviceInfo().maxMemAllocSize + 1;
     size_t alignment = 1u;
     void *ptr = nullptr;
     ze_host_mem_alloc_desc_t hostDesc = {};

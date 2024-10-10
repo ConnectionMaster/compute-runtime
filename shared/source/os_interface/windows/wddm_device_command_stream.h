@@ -9,7 +9,7 @@
 #include "shared/source/command_stream/device_command_stream.h"
 #include "shared/source/command_stream/submission_status.h"
 
-struct COMMAND_BUFFER_HEADER_REC;
+struct COMMAND_BUFFER_HEADER_REC; // NOLINT(readability-identifier-naming), forward declaration from sharedata_wrapper.h
 
 namespace NEO {
 class GmmPageTableMngr;
@@ -26,7 +26,7 @@ class WddmCommandStreamReceiver : public DeviceCommandStreamReceiver<GfxFamily> 
     ~WddmCommandStreamReceiver() override;
 
     SubmissionStatus flush(BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override;
-    SubmissionStatus processResidency(const ResidencyContainer &allocationsForResidency, uint32_t handleId) override;
+    SubmissionStatus processResidency(ResidencyContainer &allocationsForResidency, uint32_t handleId) override;
     void processEviction() override;
     bool waitForFlushStamp(FlushStamp &flushStampToWait) override;
     bool isTlbFlushRequiredForStateCacheFlush() override;
@@ -37,13 +37,19 @@ class WddmCommandStreamReceiver : public DeviceCommandStreamReceiver<GfxFamily> 
     }
     GmmPageTableMngr *createPageTableManager() override;
     void flushMonitorFence() override;
+    void setupContext(OsContext &osContext) override;
 
     using CommandStreamReceiver::pageTableManager;
 
   protected:
     void kmDafLockAllocations(ResidencyContainer &allocationsForResidency);
+    void addToEvictionContainer(GraphicsAllocation &gfxAllocation) override;
+    bool validForEnqueuePagingFence(uint64_t pagingFenceValue) const;
 
     Wddm *wddm;
     COMMAND_BUFFER_HEADER_REC *commandBufferHeader;
+
+    bool requiresBlockingResidencyHandling = true;
+    uint64_t lastEnqueuedPagingFenceValue = 0;
 };
 } // namespace NEO

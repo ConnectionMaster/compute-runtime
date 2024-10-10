@@ -552,7 +552,7 @@ void CommandContainer::fillReusableAllocationLists() {
                                                              defaultHeapAllocationAlignment,
                                                              device->getRootDeviceIndex());
             if (heapToReuse != nullptr) {
-                this->immediateCmdListCsr->makeResident(*heapToReuse);
+                this->getResidencyContainer().push_back(heapToReuse);
             }
             this->heapHelper->storeHeapAllocation(heapToReuse);
         }
@@ -569,6 +569,9 @@ void CommandContainer::storeAllocationAndFlushTagUpdate(GraphicsAllocation *allo
         this->immediateReusableAllocationList->pushTailOne(*allocation);
     } else {
         getHeapHelper()->storeHeapAllocation(allocation);
+    }
+    if (device->getProductHelper().isDcFlushMitigated()) {
+        this->immediateCmdListCsr->registerDcFlushForDcMitigation();
     }
     this->immediateCmdListCsr->flushTagUpdate();
 }

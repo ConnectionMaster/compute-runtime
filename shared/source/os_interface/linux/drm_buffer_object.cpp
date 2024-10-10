@@ -8,6 +8,7 @@
 #include "shared/source/os_interface/linux/drm_buffer_object.h"
 
 #include "shared/source/command_stream/task_count_helper.h"
+#include "shared/source/execution_environment/execution_environment.h"
 #include "shared/source/execution_environment/root_device_environment.h"
 #include "shared/source/gmm_helper/gmm_helper.h"
 #include "shared/source/helpers/aligned_memory.h"
@@ -35,7 +36,7 @@ BufferObjectHandleWrapper BufferObjectHandleWrapper::acquireSharedOwnership() {
     std::lock_guard lock{controlBlock->blockMutex};
     controlBlock->refCount++;
 
-    return BufferObjectHandleWrapper{boHandle, Ownership::strong, controlBlock};
+    return BufferObjectHandleWrapper{boHandle, rootDeviceIndex, Ownership::strong, controlBlock};
 }
 
 BufferObjectHandleWrapper BufferObjectHandleWrapper::acquireWeakOwnership() {
@@ -46,7 +47,7 @@ BufferObjectHandleWrapper BufferObjectHandleWrapper::acquireWeakOwnership() {
     std::lock_guard lock{controlBlock->blockMutex};
     controlBlock->weakRefCount++;
 
-    return BufferObjectHandleWrapper{boHandle, Ownership::weak, controlBlock};
+    return BufferObjectHandleWrapper{boHandle, rootDeviceIndex, Ownership::weak, controlBlock};
 }
 
 BufferObjectHandleWrapper::~BufferObjectHandleWrapper() {
@@ -65,6 +66,7 @@ BufferObjectHandleWrapper::~BufferObjectHandleWrapper() {
     if (controlBlock->refCount == 0 && controlBlock->weakRefCount == 0) {
         lock.unlock();
         delete controlBlock;
+        controlBlock = nullptr;
     }
 }
 
@@ -78,7 +80,7 @@ bool BufferObjectHandleWrapper::canCloseBoHandle() {
 }
 
 BufferObject::BufferObject(uint32_t rootDeviceIndex, Drm *drm, uint64_t patIndex, int handle, size_t size, size_t maxOsContextCount)
-    : BufferObject(rootDeviceIndex, drm, patIndex, BufferObjectHandleWrapper{handle}, size, maxOsContextCount) {}
+    : BufferObject(rootDeviceIndex, drm, patIndex, BufferObjectHandleWrapper{handle, rootDeviceIndex}, size, maxOsContextCount) {}
 
 BufferObject::BufferObject(uint32_t rootDeviceIndex, Drm *drm, uint64_t patIndex, BufferObjectHandleWrapper &&handle, size_t size, size_t maxOsContextCount)
     : drm(drm), handle(std::move(handle)), size(size), refCount(1), rootDeviceIndex(rootDeviceIndex) {
@@ -128,8 +130,12 @@ bool BufferObject::close() {
     int ret = ioctlHelper->ioctl(DrmIoctl::gemClose, &close);
     if (ret != 0) {
         int err = errno;
-        PRINT_DEBUG_STRING(debugManager.flags.PrintDebugMessages.get(), stderr, "ioctl(GEM_CLOSE) failed with %d. errno=%d(%s)\n", ret, err, strerror(err));
+
+        CREATE_DEBUG_STRING(str, "ioctl(GEM_CLOSE) failed with %d. errno=%d(%s)\n", ret, err, strerror(err));
+        drm->getRootDeviceEnvironment().executionEnvironment.setErrorDescription(std::string(str.get()));
+        PRINT_DEBUG_STRING(debugManager.flags.PrintDebugMessages.get(), stderr, str.get());
         DEBUG_BREAK_IF(true);
+
         return false;
     }
 

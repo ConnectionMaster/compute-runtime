@@ -376,7 +376,7 @@ TEST(Buffer, givenNullptrPassedToBufferCreateWhenNoSharedContextOrCompressedBuff
     std::unique_ptr<Buffer> buffer(Buffer::create(&ctx, flags, MemoryConstants::pageSize, nullptr, retVal));
 
     ASSERT_NE(nullptr, buffer.get());
-    if (MemoryPoolHelper::isSystemMemoryPool(buffer->getGraphicsAllocation(device->getRootDeviceIndex())->getMemoryPool())) {
+    if (MemoryPoolHelper::isSystemMemoryPool(buffer->getGraphicsAllocation(device->getRootDeviceIndex())->getMemoryPool()) && !device->getProductHelper().isNewCoherencyModelSupported()) {
         EXPECT_EQ(AllocationType::bufferHostMemory, buffer->getGraphicsAllocation(device->getRootDeviceIndex())->getAllocationType());
     } else {
         EXPECT_EQ(AllocationType::buffer, buffer->getGraphicsAllocation(device->getRootDeviceIndex())->getAllocationType());
@@ -429,7 +429,12 @@ TEST(Buffer, givenAllocHostPtrFlagPassedToBufferCreateWhenNoSharedContextOrCompr
     std::unique_ptr<Buffer> buffer(Buffer::create(&ctx, flags, MemoryConstants::pageSize, nullptr, retVal));
 
     ASSERT_NE(nullptr, buffer.get());
-    EXPECT_EQ(AllocationType::bufferHostMemory, buffer->getMultiGraphicsAllocation().getAllocationType());
+
+    if (!device->getProductHelper().isNewCoherencyModelSupported()) {
+        EXPECT_EQ(AllocationType::bufferHostMemory, buffer->getMultiGraphicsAllocation().getAllocationType());
+    } else {
+        EXPECT_EQ(AllocationType::buffer, buffer->getMultiGraphicsAllocation().getAllocationType());
+    }
 }
 
 TEST(Buffer, givenCompressedBuffersEnabledWhenAllocationTypeIsQueriedThenBufferCompressedTypeIsReturnedIn64Bit) {
@@ -750,7 +755,7 @@ TEST_F(CompressedBuffersTests, givenBufferNotCompressedAllocationAndNoHostPtrWhe
     buffer.reset(Buffer::create(context.get(), 0, bufferSize, nullptr, retVal));
     auto allocation = buffer->getGraphicsAllocation(device->getRootDeviceIndex());
     EXPECT_TRUE(buffer->isMemObjZeroCopy());
-    if (MemoryPoolHelper::isSystemMemoryPool(allocation->getMemoryPool())) {
+    if (MemoryPoolHelper::isSystemMemoryPool(allocation->getMemoryPool()) && !device->getProductHelper().isNewCoherencyModelSupported()) {
         EXPECT_EQ(allocation->getAllocationType(), AllocationType::bufferHostMemory);
     } else {
         EXPECT_EQ(allocation->getAllocationType(), AllocationType::buffer);
@@ -766,9 +771,11 @@ TEST_F(CompressedBuffersTests, givenBufferNotCompressedAllocationAndNoHostPtrWhe
         EXPECT_FALSE(buffer->isMemObjZeroCopy());
         EXPECT_EQ(allocation->getAllocationType(), AllocationType::buffer);
         EXPECT_EQ(!memoryManager->allocate32BitGraphicsMemoryImplCalled, allocation->isCompressionEnabled());
-    } else {
+    } else if (!device->getProductHelper().isNewCoherencyModelSupported()) {
         EXPECT_TRUE(buffer->isMemObjZeroCopy());
         EXPECT_EQ(allocation->getAllocationType(), AllocationType::bufferHostMemory);
+    } else {
+        EXPECT_EQ(allocation->getAllocationType(), AllocationType::buffer);
     }
 }
 
@@ -786,8 +793,10 @@ TEST_F(CompressedBuffersTests, givenDebugVariableSetWhenHwFlagIsNotSetThenSelect
     if (gfxCoreHelper.isBufferSizeSuitableForCompression(bufferSize)) {
         EXPECT_EQ(graphicsAllocation->getAllocationType(), AllocationType::buffer);
         EXPECT_EQ(!memoryManager->allocate32BitGraphicsMemoryImplCalled, graphicsAllocation->isCompressionEnabled());
-    } else {
+    } else if (!device->getProductHelper().isNewCoherencyModelSupported()) {
         EXPECT_EQ(graphicsAllocation->getAllocationType(), AllocationType::bufferHostMemory);
+    } else {
+        EXPECT_EQ(graphicsAllocation->getAllocationType(), AllocationType::buffer);
     }
 
     debugManager.flags.RenderCompressedBuffersEnabled.set(0);
@@ -849,7 +858,7 @@ TEST_F(CompressedBuffersCopyHostMemoryTests, givenCompressedBufferWhenCopyFromHo
         EXPECT_EQ(0u, mockCmdQ->writeBufferOffset);
         EXPECT_EQ(bufferSize, mockCmdQ->writeBufferSize);
         EXPECT_EQ(hostPtr, mockCmdQ->writeBufferPtr);
-    } else {
+    } else if (!context->getDevice(0)->getProductHelper().isNewCoherencyModelSupported()) {
         EXPECT_EQ(graphicsAllocation->getAllocationType(), AllocationType::bufferHostMemory);
         EXPECT_EQ(0u, mockCmdQ->writeBufferCounter);
         EXPECT_FALSE(mockCmdQ->writeBufferBlocking);
@@ -1009,7 +1018,7 @@ TEST_P(NoHostPtr, WhenGettingAllocationTypeThenCorrectBufferTypeIsReturned) {
     ASSERT_NE(nullptr, buffer);
 
     auto allocation = buffer->getGraphicsAllocation(pClDevice->getRootDeviceIndex());
-    if (MemoryPoolHelper::isSystemMemoryPool(allocation->getMemoryPool())) {
+    if (MemoryPoolHelper::isSystemMemoryPool(allocation->getMemoryPool()) && !pClDevice->getProductHelper().isNewCoherencyModelSupported()) {
         EXPECT_EQ(allocation->getAllocationType(), AllocationType::bufferHostMemory);
     } else {
         EXPECT_EQ(allocation->getAllocationType(), AllocationType::buffer);
@@ -1447,7 +1456,7 @@ class BufferTests : public ::testing::Test {
 
 typedef BufferTests BufferSetSurfaceTests;
 
-HWCMDTEST_F(IGFX_GEN8_CORE, BufferSetSurfaceTests, givenBufferSetSurfaceThatMemoryPtrAndSizeIsAlignedToCachelineThenL3CacheShouldBeOn) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, BufferSetSurfaceTests, givenBufferSetSurfaceThatMemoryPtrAndSizeIsAlignedToCachelineThenL3CacheShouldBeOn) {
 
     auto size = MemoryConstants::pageSize;
     auto ptr = (void *)alignedMalloc(size * 2, MemoryConstants::pageSize);
@@ -1754,7 +1763,7 @@ HWTEST_F(BufferSetSurfaceTests, givenAlignedCacheableReadOnlyBufferThenChoseOclB
     alignedFree(ptr);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, BufferSetSurfaceTests, givenAlignedCacheableNonReadOnlyBufferThenChooseOclBufferPolicy) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, BufferSetSurfaceTests, givenAlignedCacheableNonReadOnlyBufferThenChooseOclBufferPolicy) {
     MockContext context;
     const auto size = MemoryConstants::pageSize;
     const auto ptr = (void *)alignedMalloc(size * 2, MemoryConstants::pageSize);
@@ -1892,6 +1901,10 @@ HWTEST_F(BufferCreateTests, givenClMemCopyHostPointerPassedToBufferCreateWhenAll
     auto executionEnvironment = new MockExecutionEnvironment(defaultHwInfo.get());
     auto memoryManager = new MockMemoryManager(true, *executionEnvironment);
     executionEnvironment->memoryManager.reset(memoryManager);
+
+    if (executionEnvironment->rootDeviceEnvironments[0]->getProductHelper().isDcFlushMitigated()) {
+        debugManager.flags.AllowDcFlush.set(1);
+    }
 
     MockClDevice device(new MockDevice(executionEnvironment, mockRootDeviceIndex));
     ASSERT_TRUE(device.createEngines());
@@ -2031,16 +2044,16 @@ class BufferL3CacheTests : public ::testing::TestWithParam<uint64_t> {
     void *hostPtr;
 };
 
-HWTEST_P(BufferL3CacheTests, DISABLED_givenMisalignedAndAlignedBufferWhenClEnqueueWriteImageThenL3CacheIsOn) {
+HWTEST_P(BufferL3CacheTests, givenMisalignedAndAlignedBufferWhenClEnqueueWriteImageThenL3CacheIsOn) {
     auto device = ctx.getDevice(0);
     const auto &compilerProductHelper = device->getRootDeviceEnvironment().getHelper<CompilerProductHelper>();
     if (compilerProductHelper.isForceToStatelessRequired() || !ctx.getDevice(0)->getHardwareInfo().capabilityTable.supportsImages) {
         GTEST_SKIP();
     }
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
+    using SURFACE_TYPE = typename RENDER_SURFACE_STATE::SURFACE_TYPE;
 
-    CommandQueueHw<FamilyType> cmdQ(&ctx, ctx.getDevice(0), nullptr, false);
-    auto surfaceState = reinterpret_cast<RENDER_SURFACE_STATE *>(cmdQ.getGpgpuCommandStreamReceiver().getIndirectHeap(IndirectHeap::Type::surfaceState, 0).getSpace(0));
+    MockCommandQueueHw<FamilyType> cmdQ(&ctx, ctx.getDevice(0), nullptr, false);
 
     cl_image_format imageFormat;
     cl_image_desc imageDesc;
@@ -2060,11 +2073,21 @@ HWTEST_P(BufferL3CacheTests, DISABLED_givenMisalignedAndAlignedBufferWhenClEnque
 
     clEnqueueWriteImage(&cmdQ, image, false, origin, region, 0, 0, hostPtr, 0, nullptr, nullptr);
 
+    ASSERT_NE(0u, cmdQ.lastEnqueuedKernels.size());
+    Kernel *kernel = cmdQ.lastEnqueuedKernels[0];
+
+    auto argInfo = kernel->getKernelInfo().getArgDescriptorAt(0).template as<ArgDescPointer>();
+    ASSERT_TRUE(isValidOffset(argInfo.bindful));
+
+    auto surfaceStateAddress = ptrOffset(kernel->getSurfaceStateHeap(), argInfo.bindful);
+    ASSERT_NE(surfaceStateAddress, nullptr);
+    auto surfaceState = *reinterpret_cast<RENDER_SURFACE_STATE *>(surfaceStateAddress);
+
     auto expect = ctx.getDevice(0)->getGmmHelper()->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER);
     auto expect2 = ctx.getDevice(0)->getGmmHelper()->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CONST);
 
-    EXPECT_NE(0u, surfaceState->getMemoryObjectControlState());
-    EXPECT_TRUE(expect == surfaceState->getMemoryObjectControlState() || expect2 == surfaceState->getMemoryObjectControlState());
+    EXPECT_NE(0u, surfaceState.getMemoryObjectControlState());
+    EXPECT_TRUE(expect == surfaceState.getMemoryObjectControlState() || expect2 == surfaceState.getMemoryObjectControlState());
 
     clReleaseMemObject(image);
 }
@@ -2235,7 +2258,7 @@ TEST_F(MultiRootDeviceBufferTest, WhenBufferIsCreatedThenBufferGraphicsAllocatio
     EXPECT_EQ(expectedRootDeviceIndex, graphicsAllocation->getRootDeviceIndex());
 }
 
-HWTEST2_F(MultiRootDeviceBufferTest, WhenBufferIsCreatedThenBufferMultiGraphicsAllocationIsCreatedInLocalMemoryPool, IsAtLeastGen12lp) {
+HWTEST2_F(MultiRootDeviceBufferTest, WhenBufferIsCreatedThenBufferMultiGraphicsAllocationIsCreatedInLocalMemoryPool, MatchAny) {
     cl_int retVal = 0;
 
     std::unique_ptr<Buffer> buffer1(Buffer::create(context.get(), 0, MemoryConstants::pageSize, nullptr, retVal));
@@ -2245,7 +2268,7 @@ HWTEST2_F(MultiRootDeviceBufferTest, WhenBufferIsCreatedThenBufferMultiGraphicsA
     EXPECT_TRUE(buffer1->getMultiGraphicsAllocation().requiresMigrations());
 }
 
-HWTEST2_F(MultiRootDeviceBufferTest, givenDisableLocalMemoryWhenBufferIsCreatedThenBufferMultiGraphicsAllocationsDontNeedMigrations, IsAtLeastGen12lp) {
+HWTEST2_F(MultiRootDeviceBufferTest, givenDisableLocalMemoryWhenBufferIsCreatedThenBufferMultiGraphicsAllocationsDontNeedMigrations, MatchAny) {
     cl_int retVal = 0;
     MockDefaultContext context;
 
@@ -2257,7 +2280,7 @@ HWTEST2_F(MultiRootDeviceBufferTest, givenDisableLocalMemoryWhenBufferIsCreatedT
 }
 
 using MultiRootDeviceBufferTest2 = ::testing::Test;
-HWTEST2_F(MultiRootDeviceBufferTest2, WhenBufferIsCreatedThenSecondAndSubsequentAllocationsAreCreatedFromExisitingStorage, IsAtLeastGen12lp) {
+HWTEST2_F(MultiRootDeviceBufferTest2, WhenBufferIsCreatedThenSecondAndSubsequentAllocationsAreCreatedFromExisitingStorage, MatchAny) {
     cl_int retVal = 0;
     MockDefaultContext context;
     auto memoryManager = static_cast<MockMemoryManager *>(context.getMemoryManager());
@@ -2275,7 +2298,7 @@ HWTEST2_F(MultiRootDeviceBufferTest2, WhenBufferIsCreatedThenSecondAndSubsequent
     EXPECT_EQ(memoryManager->allocationsFromExistingStorage[1], buffer->getMultiGraphicsAllocation().getGraphicsAllocation(2u));
 }
 
-HWTEST2_F(MultiRootDeviceBufferTest2, givenHostPtrToCopyWhenBufferIsCreatedWithMultiStorageThenMemoryIsPutInFirstDeviceInContext, IsAtLeastGen12lp) {
+HWTEST2_F(MultiRootDeviceBufferTest2, givenHostPtrToCopyWhenBufferIsCreatedWithMultiStorageThenMemoryIsPutInFirstDeviceInContext, MatchAny) {
     UltClDeviceFactory deviceFactory{2, 0};
     auto memoryManager = static_cast<MockMemoryManager *>(deviceFactory.rootDevices[0]->getMemoryManager());
     for (auto &rootDeviceIndex : {0, 1}) {

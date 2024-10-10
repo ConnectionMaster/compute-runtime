@@ -104,6 +104,10 @@ PVCTEST_F(PvcProductHelper, givenPvcProductHelperWhenIsInitBuiltinAsyncSupported
     EXPECT_TRUE(productHelper->isInitBuiltinAsyncSupported(*defaultHwInfo));
 }
 
+PVCTEST_F(PvcProductHelper, givenProductHelperWhenCheckIsCopyBufferRectSplitSupportedThenReturnsFalse) {
+    EXPECT_FALSE(productHelper->isCopyBufferRectSplitSupported());
+}
+
 PVCTEST_F(PvcProductHelper, givenPvcSteppingWhenQueryIsComputeDispatchAllWalkerEnableInCfeStateRequiredThenAppropriateValueIsReturned) {
     auto hwInfo = *defaultHwInfo;
 
@@ -139,12 +143,6 @@ PVCTEST_F(PvcProductHelper, givenProductHelperWhenGetCommandsStreamPropertiesSup
 
     EXPECT_FALSE(productHelper->getPipelineSelectPropertyMediaSamplerDopClockGateSupport());
     EXPECT_TRUE(productHelper->getPipelineSelectPropertySystolicModeSupport());
-}
-
-PVCTEST_F(PvcProductHelper, givenPvcWhenCallingGetDeviceMemoryNameThenHbmIsReturned) {
-
-    auto deviceMemoryName = productHelper->getDeviceMemoryName();
-    EXPECT_TRUE(hasSubstr(deviceMemoryName, std::string("HBM")));
 }
 
 PVCTEST_F(PvcProductHelper, givenProductHelperWhenAdditionalKernelExecInfoSupportCheckedThenCorrectValueIsReturned) {
@@ -284,44 +282,6 @@ PVCTEST_F(PvcProductHelper, givenPvcProductHelperWhenIsIpSamplingSupportedThenCo
     for (const auto &deviceId : pvcXtVgDeviceIds) {
         hwInfo.platform.usDeviceID = deviceId;
         EXPECT_TRUE(productHelper->isIpSamplingSupported(hwInfo));
-    }
-}
-
-PVCTEST_F(PvcProductHelper, givenPvcProductHelperAndKernelBinaryFormatsWhenCheckingIsDetectIndirectAccessInKernelSupportedThenCorrectValueIsReturned) {
-    KernelDescriptor kernelDescriptor;
-    const uint32_t notAcceptedIndirectDetectionVersion = 2u;
-    const uint32_t acceptedIndirectDetectionVersion = 3u;
-    {
-        kernelDescriptor.kernelAttributes.binaryFormat = DeviceBinaryFormat::patchtokens;
-        kernelDescriptor.kernelAttributes.simdSize = 8u;
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, notAcceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, notAcceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, acceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, acceptedIndirectDetectionVersion));
-    }
-    {
-        kernelDescriptor.kernelAttributes.binaryFormat = DeviceBinaryFormat::patchtokens;
-        kernelDescriptor.kernelAttributes.simdSize = 1u;
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, notAcceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, notAcceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, acceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, acceptedIndirectDetectionVersion));
-    }
-    {
-        kernelDescriptor.kernelAttributes.binaryFormat = DeviceBinaryFormat::zebin;
-        kernelDescriptor.kernelAttributes.simdSize = 1u;
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, notAcceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, notAcceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, acceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, acceptedIndirectDetectionVersion));
-    }
-    {
-        kernelDescriptor.kernelAttributes.binaryFormat = DeviceBinaryFormat::zebin;
-        kernelDescriptor.kernelAttributes.simdSize = 8u;
-        EXPECT_TRUE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, notAcceptedIndirectDetectionVersion));
-        EXPECT_FALSE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, notAcceptedIndirectDetectionVersion));
-        EXPECT_TRUE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, false, acceptedIndirectDetectionVersion));
-        EXPECT_TRUE(productHelper->isDetectIndirectAccessInKernelSupported(kernelDescriptor, true, acceptedIndirectDetectionVersion));
     }
 }
 

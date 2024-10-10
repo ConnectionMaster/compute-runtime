@@ -32,7 +32,6 @@ DebuggerL0::DebuggerL0(NEO::Device *device) : device(device) {
         commandQueueCount[i] = 0;
         uuidL0CommandQueueHandle[i] = 0;
     }
-    initialize();
 }
 
 void DebuggerL0::initialize() {
@@ -92,20 +91,21 @@ void DebuggerL0::initialize() {
         debugArea.scratchBegin = sizeof(DebugAreaHeader);
         debugArea.scratchEnd = MemoryConstants::pageSize64k - sizeof(DebugAreaHeader);
 
-        NEO::MemoryOperationsHandler *memoryOperationsIface = rootDeviceEnvironment.memoryOperationsInterface.get();
-        if (memoryOperationsIface) {
-            memoryOperationsIface->makeResident(device, ArrayRef<NEO::GraphicsAllocation *>(&moduleDebugArea, 1));
-            auto numSubDevices = device->getNumSubDevices();
-            for (uint32_t i = 0; i < numSubDevices; i++) {
-                auto subDevice = device->getSubDevice(i);
-                memoryOperationsIface->makeResident(subDevice, ArrayRef<NEO::GraphicsAllocation *>(&moduleDebugArea, 1));
-            }
-        }
-
         const auto &productHelper = device->getProductHelper();
         NEO::MemoryTransferHelper::transferMemoryToAllocation(productHelper.isBlitCopyRequiredForLocalMemory(rootDeviceEnvironment, *moduleDebugArea),
                                                               *device, moduleDebugArea, 0, &debugArea,
                                                               sizeof(DebugAreaHeader));
+
+        NEO::MemoryOperationsHandler *memoryOperationsIface = rootDeviceEnvironment.memoryOperationsInterface.get();
+        if (memoryOperationsIface) {
+            memoryOperationsIface->makeResident(device, ArrayRef<NEO::GraphicsAllocation *>(&moduleDebugArea, 1), false);
+            auto numSubDevices = device->getNumSubDevices();
+            for (uint32_t i = 0; i < numSubDevices; i++) {
+                auto subDevice = device->getSubDevice(i);
+                memoryOperationsIface->makeResident(subDevice, ArrayRef<NEO::GraphicsAllocation *>(&moduleDebugArea, 1), false);
+            }
+        }
+
         if (productHelper.disableL3CacheForDebug(hwInfo)) {
             device->getGmmHelper()->forceAllResourcesUncached();
         }
@@ -142,7 +142,7 @@ void DebuggerL0::notifyModuleLoadAllocations(Device *device, const StackVec<NEO:
     NEO::MemoryOperationsHandler *memoryOperationsIface = device->getRootDeviceEnvironment().memoryOperationsInterface.get();
     if (memoryOperationsIface) {
         for (auto gfxAlloc : allocs) {
-            memoryOperationsIface->makeResident(device, ArrayRef<NEO::GraphicsAllocation *>(&gfxAlloc, 1));
+            memoryOperationsIface->makeResident(device, ArrayRef<NEO::GraphicsAllocation *>(&gfxAlloc, 1), false);
         }
     }
 }

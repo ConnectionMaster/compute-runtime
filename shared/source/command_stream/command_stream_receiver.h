@@ -126,7 +126,7 @@ class CommandStreamReceiver {
     MOCKABLE_VIRTUAL void makeResident(GraphicsAllocation &gfxAllocation);
     virtual void makeNonResident(GraphicsAllocation &gfxAllocation);
     MOCKABLE_VIRTUAL void makeSurfacePackNonResident(ResidencyContainer &allocationsForResidency, bool clearAllocations);
-    virtual SubmissionStatus processResidency(const ResidencyContainer &allocationsForResidency, uint32_t handleId);
+    virtual SubmissionStatus processResidency(ResidencyContainer &allocationsForResidency, uint32_t handleId);
     virtual void processEviction();
     void makeResidentHostPtrAllocation(GraphicsAllocation *gfxAllocation);
 
@@ -216,7 +216,13 @@ class CommandStreamReceiver {
 
         return globalFenceAllocation;
     }
-    GraphicsAllocation *getWorkPartitionAllocation() const { return workPartitionAllocation; }
+    GraphicsAllocation *getWorkPartitionAllocation() const {
+        if (primaryCsr) {
+            return primaryCsr->getWorkPartitionAllocation();
+        }
+        return workPartitionAllocation;
+    }
+
     GraphicsAllocation *getGlobalStatelessHeapAllocation() const {
         if (primaryCsr) {
             return primaryCsr->getGlobalStatelessHeapAllocation();
@@ -229,7 +235,8 @@ class CommandStreamReceiver {
     virtual WaitStatus waitForCompletionWithTimeout(const WaitParams &params, TaskCountType taskCountToWait);
     WaitStatus baseWaitFunction(volatile TagAddressType *pollAddress, const WaitParams &params, TaskCountType taskCountToWait);
     MOCKABLE_VIRTUAL bool testTaskCountReady(volatile TagAddressType *pollAddress, TaskCountType taskCountToWait);
-    virtual void downloadAllocations(){};
+    void downloadAllocations(bool blockingWait) { downloadAllocations(blockingWait, this->latestFlushedTaskCount); };
+    virtual void downloadAllocations(bool blockingWait, TaskCountType taskCount){};
     virtual void removeDownloadAllocation(GraphicsAllocation *alloc){};
 
     void setSamplerCacheFlushRequired(SamplerCacheFlushState value) { this->samplerCacheFlushRequired = value; }
@@ -264,7 +271,6 @@ class CommandStreamReceiver {
     }
 
     size_t defaultSshSize = 0u;
-    bool canUse4GbHeaps = true;
 
     AllocationsList &getTemporaryAllocations();
     AllocationsList &getAllocationsForReuse();
@@ -542,10 +548,15 @@ class CommandStreamReceiver {
         return !testTaskCountReady(getTagAddress(), this->taskCount);
     }
 
+    bool canUse4GbHeaps() const {
+        return this->use4GbHeaps;
+    }
+
     void ensurePrimaryCsrInitialized(Device &device);
 
     bool enqueueWaitForPagingFence(uint64_t pagingFenceValue);
     virtual void unblockPagingFenceSemaphore(uint64_t pagingFenceValue) {}
+    MOCKABLE_VIRTUAL void drainPagingFenceQueue();
 
   protected:
     void cleanupResources();
@@ -554,6 +565,8 @@ class CommandStreamReceiver {
     bool checkImplicitFlushForGpuIdle();
     void downloadTagAllocation(TaskCountType taskCountToWait);
     void printTagAddressContent(TaskCountType taskCountToWait, int64_t waitTimeout, bool start);
+    virtual void addToEvictionContainer(GraphicsAllocation &gfxAllocation);
+
     [[nodiscard]] MOCKABLE_VIRTUAL std::unique_lock<MutexType> obtainHostPtrSurfaceCreationLock();
 
     std::vector<void *> registeredClients;
@@ -628,7 +641,6 @@ class CommandStreamReceiver {
     DispatchMode dispatchMode = DispatchMode::immediateDispatch;
     SamplerCacheFlushState samplerCacheFlushRequired = SamplerCacheFlushState::samplerCacheFlushNotRequired;
     PreemptionMode lastPreemptionMode = PreemptionMode::Initial;
-    bool csrSurfaceProgrammingDone = false;
 
     std::chrono::microseconds gpuHangCheckPeriod{500'000};
     uint32_t lastSentL3Config = 0;
@@ -679,12 +691,13 @@ class CommandStreamReceiver {
     bool useNotifyEnableForPostSync = false;
     bool dcFlushSupport = false;
     bool forceSkipResourceCleanupRequired = false;
-    volatile bool resourcesInitialized = false;
-    volatile bool heaplessStateInitialized = false;
+    bool resourcesInitialized = false;
+    bool heaplessStateInitialized = false;
     bool doubleSbaWa = false;
     bool dshSupported = false;
     bool heaplessModeEnabled = false;
-    bool requiresBlockingResidencyHandling = true;
+    bool use4GbHeaps = true;
+    bool csrSurfaceProgrammingDone = false;
 };
 
 typedef CommandStreamReceiver *(*CommandStreamReceiverCreateFunc)(bool withAubDump,

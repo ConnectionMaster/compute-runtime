@@ -28,15 +28,12 @@ struct CommandQueueHw : public CommandQueueImp {
                                     ze_command_list_handle_t *phCommandLists,
                                     ze_fence_handle_t hFence, bool performMigration,
                                     NEO::LinearStream *parentImmediateCommandlistLinearStream) override;
-    ze_result_t executeCommands(uint32_t numCommands,
-                                void *phCommands,
-                                ze_fence_handle_t hFence) override;
 
     void programStateBaseAddress(uint64_t gsba, bool useLocalMemoryForIndirectHeap, NEO::LinearStream &commandStream, bool cachedMOCSAllowed, NEO::StreamProperties *streamProperties);
     size_t estimateStateBaseAddressCmdSize();
     MOCKABLE_VIRTUAL void programFrontEnd(uint64_t scratchAddress, uint32_t perThreadScratchSpaceSlot0Size, NEO::LinearStream &commandStream, NEO::StreamProperties &streamProperties);
 
-    MOCKABLE_VIRTUAL size_t estimateFrontEndCmdSizeForMultipleCommandLists(bool &isFrontEndStateDirty, int32_t engineInstanced, CommandList *commandList,
+    MOCKABLE_VIRTUAL size_t estimateFrontEndCmdSizeForMultipleCommandLists(bool &isFrontEndStateDirty, CommandList *commandList,
                                                                            NEO::StreamProperties &csrState,
                                                                            const NEO::StreamProperties &cmdListRequired,
                                                                            const NEO::StreamProperties &cmdListFinal,
@@ -91,11 +88,9 @@ struct CommandQueueHw : public CommandQueueImp {
         NEO::PreemptionMode statePreemption{};
         uint32_t perThreadScratchSpaceSlot0Size = 0;
         uint32_t perThreadScratchSpaceSlot1Size = 0;
-        int32_t engineInstanced = -1;
         UnifiedMemoryControls unifiedMemoryControls{};
 
         bool anyCommandListWithCooperativeKernels = false;
-        bool anyCommandListWithoutCooperativeKernels = false;
         bool anyCommandListRequiresDisabledEUFusion = false;
         bool cachedMOCSAllowed = true;
         bool containsAnyRegularCmdList = false;
@@ -121,8 +116,7 @@ struct CommandQueueHw : public CommandQueueImp {
                                                    uint32_t numCommandLists,
                                                    ze_command_list_handle_t *commandListHandles,
                                                    ze_fence_handle_t hFence,
-                                                   ze_event_handle_t hSignalEvent, uint32_t numWaitEvents,
-                                                   ze_event_handle_t *phWaitEvents);
+                                                   NEO::LinearStream *parentImmediateCommandlistLinearStream);
 
     MOCKABLE_VIRTUAL ze_result_t executeCommandListsRegular(CommandListExecutionContext &ctx,
                                                             uint32_t numCommandLists,
@@ -133,8 +127,7 @@ struct CommandQueueHw : public CommandQueueImp {
                                                    uint32_t numCommandLists,
                                                    ze_command_list_handle_t *phCommandLists,
                                                    ze_fence_handle_t hFence,
-                                                   ze_event_handle_t hSignalEvent, uint32_t numWaitEvents,
-                                                   ze_event_handle_t *phWaitEvents);
+                                                   NEO::LinearStream *parentImmediateCommandlistLinearStream);
     inline size_t computeDebuggerCmdsSize(const CommandListExecutionContext &ctx);
     inline size_t computePreemptionSizeForCommandList(CommandListExecutionContext &ctx,
                                                       CommandList *commandList,

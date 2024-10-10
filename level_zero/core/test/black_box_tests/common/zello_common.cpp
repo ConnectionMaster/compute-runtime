@@ -27,6 +27,7 @@ struct LoadedDriverExtensions {
 static LoadedDriverExtensions driverExtensions;
 
 bool verbose;
+uint32_t overrideErrorMax = 0;
 
 bool isParamEnabled(int argc, char *argv[], const char *shortName, const char *longName) {
     char **arg = &argv[1];
@@ -212,6 +213,10 @@ uint32_t getBufferLength(int argc, char *argv[], uint32_t defaultLength) {
     }
 
     return length;
+}
+
+void getErrorMax(int argc, char *argv[]) {
+    overrideErrorMax = getParamValue(argc, argv, "-em", "--errorMax", 0);
 }
 
 void printResult(bool aubMode, bool outputValidationSuccessful, const std::string &blackBoxName, const std::string &currentTest) {
@@ -755,6 +760,33 @@ bool checkExtensionIsPresent(ze_driver_handle_t &driverHandle, std::vector<ze_dr
     }
 
     return (numMatchedExtensions == extensionsToCheck.size());
+}
+
+void prepareScratchTestValues(uint32_t &arraySize, uint32_t &vectorSize, uint32_t &expectedMemorySize, uint32_t &srcAdditionalMul, uint32_t &srcMemorySize, uint32_t &idxMemorySize) {
+    uint32_t typeSize = sizeof(uint32_t);
+
+    arraySize = 32;
+    vectorSize = 16;
+    srcAdditionalMul = 3u;
+
+    expectedMemorySize = arraySize * vectorSize * typeSize * 2;
+    srcMemorySize = expectedMemorySize * srcAdditionalMul;
+    idxMemorySize = arraySize * typeSize;
+}
+
+void prepareScratchTestBuffers(void *srcBuffer, void *idxBuffer, void *expectedMemory, uint32_t arraySize, uint32_t vectorSize, uint32_t expectedMemorySize, uint32_t srcAdditionalMul) {
+    auto srcBufferLong = static_cast<uint64_t *>(srcBuffer);
+    auto expectedMemoryLong = static_cast<uint64_t *>(expectedMemory);
+
+    for (uint32_t i = 0; i < arraySize; ++i) {
+        static_cast<uint32_t *>(idxBuffer)[i] = 2;
+        for (uint32_t vecIdx = 0; vecIdx < vectorSize; ++vecIdx) {
+            for (uint32_t srcMulIdx = 0; srcMulIdx < srcAdditionalMul; ++srcMulIdx) {
+                srcBufferLong[(i * vectorSize * srcAdditionalMul) + srcMulIdx * vectorSize + vecIdx] = 1l;
+            }
+            expectedMemoryLong[i * vectorSize + vecIdx] = 2l;
+        }
+    }
 }
 
 } // namespace LevelZeroBlackBoxTests

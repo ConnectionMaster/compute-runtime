@@ -26,11 +26,6 @@ uint32_t UnitTestHelper<GfxFamily>::getAppropriateThreadArbitrationPolicy(int32_
 }
 
 template <typename GfxFamily>
-void UnitTestHelper<GfxFamily>::setExtraMidThreadPreemptionFlag(HardwareInfo &hwInfo, bool value) {
-    hwInfo.featureTable.flags.ftrGpGpuMidThreadLevelPreempt = value;
-}
-
-template <typename GfxFamily>
 bool UnitTestHelper<GfxFamily>::isAdditionalMiSemaphoreWaitRequired(const RootDeviceEnvironment &rootDeviceEnvironment) {
     return false;
 }
@@ -167,6 +162,18 @@ template <typename GfxFamily>
 uint64_t UnitTestHelper<GfxFamily>::getWalkerPartitionEstimateSpaceRequiredInCommandBuffer(bool isHeaplessEnabled, WalkerPartition::WalkerPartitionArgs &testArgs) {
     UNRECOVERABLE_IF(true);
     return 0u;
+}
+
+template <typename GfxFamily>
+void UnitTestHelper<GfxFamily>::getSpaceAndInitWalkerCmd(LinearStream &stream, bool heapless) {
+    using GPGPU_WALKER = typename GfxFamily::GPGPU_WALKER;
+    *stream.getSpaceForCmd<GPGPU_WALKER>() = GfxFamily::template getInitGpuWalker<GPGPU_WALKER>();
+}
+
+template <typename GfxFamily>
+void *UnitTestHelper<GfxFamily>::getInitWalkerCmd(bool heapless) {
+    using GPGPU_WALKER = typename GfxFamily::GPGPU_WALKER;
+    return new GPGPU_WALKER;
 }
 
 } // namespace NEO

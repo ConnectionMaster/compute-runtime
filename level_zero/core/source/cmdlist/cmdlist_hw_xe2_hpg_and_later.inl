@@ -14,8 +14,7 @@ namespace L0 {
 template <GFXCORE_FAMILY gfxCoreFamily>
 inline NEO::PreemptionMode CommandListCoreFamily<gfxCoreFamily>::obtainKernelPreemptionMode(Kernel *kernel) {
     auto kernelDescriptor = &kernel->getImmutableData()->getDescriptor();
-    bool disabledMidThreadPreemptionKernel = kernelDescriptor->kernelAttributes.flags.requiresDisabledMidThreadPreemption ||
-                                             (kernelDescriptor->kernelAttributes.flags.hasRTCalls && kernel->isMidThreadPreemptionDisallowedForRayTracingKernels());
+    bool disabledMidThreadPreemptionKernel = kernelDescriptor->kernelAttributes.flags.requiresDisabledMidThreadPreemption;
     bool debuggingEnabled = device->getNEODevice()->getDebugger();
     disabledMidThreadPreemptionKernel |= debuggingEnabled;
     disabledMidThreadPreemptionKernel |= device->getNEODevice()->getPreemptionMode() != NEO::PreemptionMode::MidThread;
@@ -43,8 +42,8 @@ void CommandListCoreFamily<gfxCoreFamily>::adjustWriteKernelTimestamp(uint64_t g
         NEO::EncodeMathMMIO<GfxFamily>::encodeBitwiseAndVal(commandContainer, RegisterOffsets::globalTimestampUn, mask, globalHighAddress, workloadPartition, globalPostSyncCmdBuffer, copyOperation);
         NEO::EncodeMathMMIO<GfxFamily>::encodeBitwiseAndVal(commandContainer, RegisterOffsets::gpThreadTimeRegAddressOffsetHigh, mask, contextHighAddress, workloadPartition, contextPostSyncCmdBuffer, copyOperation);
     } else {
-        NEO::EncodeStoreMMIO<GfxFamily>::encode(*commandContainer.getCommandStream(), RegisterOffsets::globalTimestampUn, globalHighAddress, workloadPartition, globalPostSyncCmdBuffer);
-        NEO::EncodeStoreMMIO<GfxFamily>::encode(*commandContainer.getCommandStream(), RegisterOffsets::gpThreadTimeRegAddressOffsetHigh, contextHighAddress, workloadPartition, contextPostSyncCmdBuffer);
+        NEO::EncodeStoreMMIO<GfxFamily>::encode(*commandContainer.getCommandStream(), RegisterOffsets::globalTimestampUn, globalHighAddress, workloadPartition, globalPostSyncCmdBuffer, copyOperation);
+        NEO::EncodeStoreMMIO<GfxFamily>::encode(*commandContainer.getCommandStream(), RegisterOffsets::gpThreadTimeRegAddressOffsetHigh, contextHighAddress, workloadPartition, contextPostSyncCmdBuffer, copyOperation);
     }
 
     if (outTimeStampSyncCmds != nullptr) {

@@ -31,15 +31,6 @@ if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   list(APPEND __ocloc__options__ "-D DEBUG")
 endif()
 
-function(get_bits_for_stateless core_type platform_it_lower)
-  # Force 32bits compiling on gen9lp for stateless builtins
-  if((${core_type} STREQUAL "GEN9") AND ((${platform_it_lower} STREQUAL "glk") OR (${platform_it_lower} STREQUAL "bxt")))
-    set(BITS "32" PARENT_SCOPE)
-  else()
-    set(BITS ${NEO_BITS} PARENT_SCOPE)
-  endif()
-endfunction()
-
 function(get_builtin_options core_type neo_arch mode_type)
   if("${neo_arch}" STREQUAL "x32")
     set(BUILTIN_OPTIONS "${BUILTIN_OPTIONS_STATELESS}" PARENT_SCOPE)
@@ -55,9 +46,12 @@ function(get_generated_builtins core_type mode_type)
     # Compile all builtin kernels as stateless for XeHpc
     set(generated_builtins "${GENERATED_BUILTINS};${GENERATED_BUILTINS_STATELESS}" PARENT_SCOPE)
     set(generated_builtins_images "${GENERATED_BUILTINS_IMAGES};${GENERATED_BUILTINS_IMAGES_STATELESS}" PARENT_SCOPE)
-  elseif(${mode_type} STREQUAL "stateless" OR ${mode_type} STREQUAL "stateless_heapless")
+  elseif(${mode_type} STREQUAL "stateless")
     set(generated_builtins "${GENERATED_BUILTINS_STATELESS}" PARENT_SCOPE)
     set(generated_builtins_images "${GENERATED_BUILTINS_IMAGES_STATELESS}" PARENT_SCOPE)
+  elseif(${mode_type} STREQUAL "stateless_heapless")
+    set(generated_builtins "${GENERATED_BUILTINS_STATELESS}" PARENT_SCOPE)
+    set(generated_builtins_images "${GENERATED_BUILTINS_IMAGES};${GENERATED_BUILTINS_IMAGES_STATELESS}" PARENT_SCOPE)
   else()
     set(generated_builtins "${GENERATED_BUILTINS}" PARENT_SCOPE)
     set(generated_builtins_images "${GENERATED_BUILTINS_IMAGES}" PARENT_SCOPE)
@@ -87,13 +81,13 @@ function(compile_builtin core_type platform_it builtin bits builtin_options mode
                      DEPENDS ${builtin} ocloc copy_compiler_files
   )
 
-  set(addrmode "default")
-  if(${MODE} STREQUAL "bindless")
-    set(addrmode "bindless")
-  elseif(${MODE} STREQUAL "bindful")
-    set(addrmode "bindful")
-  elseif(${MODE} STREQUAL "stateless")
-    set(addrmode "bindful")
+  set(stateful_address_mode "default")
+  if(${mode} STREQUAL "bindless")
+    set(stateful_address_mode "bindless")
+  elseif(${mode} STREQUAL "bindful")
+    set(stateful_address_mode "bindful")
+  elseif(${mode} STREQUAL "stateless")
+    set(stateful_address_mode "bindful")
   endif()
 
   set(OUTPUT_FILES_BINARIES_PREV)
@@ -113,7 +107,7 @@ function(compile_builtin core_type platform_it builtin bits builtin_options mode
       get_filename_component(absolute_filepath_spv ${OUTPUT_FILE_SPV} ABSOLUTE)
       add_custom_command(
                          OUTPUT ${OUTPUT_FILES_BINARIES}
-                         COMMAND ${ocloc_cmd_prefix} -q -file ${absolute_filepath_spv} -spirv_input -device ${RELEASE} ${builtin_options} -${bits} -stateful_address_mode ${addrmode} -output ${mode}_${BASENAME}_${RELEASE_FILENAME} -output_no_suffix -out_dir ${OUTPUTDIR} ${INTERNAL_OPTIONS} -options "$<JOIN:${__ocloc__options__}, >"
+                         COMMAND ${ocloc_cmd_prefix} -q -file ${absolute_filepath_spv} -spirv_input -device ${RELEASE} ${builtin_options} -${bits} -stateful_address_mode ${stateful_address_mode} -output ${mode}_${BASENAME}_${RELEASE_FILENAME} -output_no_suffix -out_dir ${OUTPUTDIR} ${INTERNAL_OPTIONS} -options "$<JOIN:${__ocloc__options__}, >"
                          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                          DEPENDS ${OUTPUT_FILE_SPV} ocloc copy_compiler_files ${OUTPUT_FILES_BINARIES_PREV}
       )
@@ -208,7 +202,6 @@ macro(macro_for_each_platform)
   CORE_CONTAINS_PLATFORM("SUPPORTED_AUX_TRANSLATION" ${CORE_TYPE} ${PLATFORM_IT} AUX_TRANSLATION_SUPPORT)
   CORE_CONTAINS_PLATFORM("SUPPORTED_HEAPLESS" ${CORE_TYPE} ${PLATFORM_IT} HEAPLESS_SUPPORT)
 
-  get_bits_for_stateless(${CORE_TYPE} ${PLATFORM_IT})
   set(target_name builtins_${PLATFORM_IT_LOWER})
   add_custom_target(${target_name})
   add_dependencies(builtins ${target_name})

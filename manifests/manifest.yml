@@ -3,21 +3,21 @@ components:
     branch: master
     dest_dir: aub_stream
     repository: https://github.com/intel/aubstream
-    revision: 5b88a8fdb768744d8533f007b2013236e72a6490
+    revision: aac8a199b1e90bf023ac7f7475abebb006e0d359
     type: git
   gmmlib:
     asset_name: gmmlib
     dest_dir: gmmlib
     type: git
     branch: master
-    revision: intel-gmmlib-22.5.0
+    revision: intel-gmmlib-22.5.2
     repository: https://github.com/intel/gmmlib.git
   igc:
     asset_name: igc
     dest_dir: igc
     type: git
-    branch: releases/igc-1.0.17384
-    revision: a8f626d1b851a6e5b259915c8dac2def11ff260c
+    branch: releases/igc-1.0.17791
+    revision: 710bc6a1a1452a2d1fe5f585883f903efff8fff6
     repository: https://github.com/intel/intelgraphicscompiler
   igsc:
     asset_name: igsc
@@ -26,12 +26,12 @@ components:
     branch: master
     revision: V0.9.3
     repository: https://github.com/intel/igsc.git
-    component_version: 266
+    component_version: 279
   infra:
     branch: master
     dest_dir: infra
     fetch_tags: true
-    revision: v6194
+    revision: v6430
     type: git
   internal:
     branch: master
@@ -42,7 +42,7 @@ components:
     dest_dir: kernels_bin
     type: git
     branch: kernels_bin
-    revision: 2990-2218
+    revision: 3103-2540
   kmdaf:
     branch: kmdaf
     dest_dir: kmdaf
@@ -53,7 +53,7 @@ components:
     dest_dir: level_zero
     type: git
     branch: master
-    revision: v1.17.28
+    revision: v1.18.2
     repository: https://github.com/oneapi-src/level-zero
   libva:
     asset_name: libva
@@ -67,7 +67,7 @@ components:
     dest_dir: metrics/discovery
     type: git
     branch: master
-    revision: metrics-discovery-1.13.174
+    revision: metrics-discovery-1.13.178
     repository: https://github.com/intel/metrics-discovery.git
   metrics-library:
     asset_name: metrics-library
@@ -85,11 +85,11 @@ components:
     dest_dir: wdk
     type: git
     branch: wdk
-    revision: d168833cf1fb2f22ca80339235ace3b7fc4089a7-2961
+    revision: 65d6d372547c08a274badc252c7bf4748ff85fb1-3043
   wsl:
     branch: wsl
     dest_dir: wsl
     revision: 56430997dac34ca0e9e18c177636234cac26ad54
     type: git
-converter: M-2990
+converter: M-3103
 version: '1'

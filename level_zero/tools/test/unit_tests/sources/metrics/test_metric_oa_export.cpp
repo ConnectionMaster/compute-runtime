@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Intel Corporation
+ * Copyright (C) 2023-2024 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -9,7 +9,7 @@
 
 #include "level_zero/core/source/device/device_imp.h"
 #include "level_zero/core/test/unit_tests/mocks/mock_driver.h"
-#include "level_zero/include/zet_intel_gpu_metric.h"
+#include "level_zero/include/zet_intel_gpu_metric_export.h"
 #include "level_zero/tools/source/metrics/metric_oa_source.h"
 #include "level_zero/tools/test/unit_tests/sources/metrics/mock_metric_oa.h"
 
@@ -23,8 +23,8 @@ static const char *testString = "TestString";
 class MockIEquation10 : public MetricsDiscovery::IEquation_1_0 {
   public:
     MockIEquation10() {
-        equationElement.Type = MetricsDiscovery::EQUATION_ELEM_OPERATION;
-        equationElement.Operation = MetricsDiscovery::EQUATION_OPER_RSHIFT;
+        equationElement.Type = MetricsDiscovery::EQUATION_ELEM_IMM_UINT64;
+        equationElement.ImmediateUInt64 = 0;
         equationElement.SymbolName = const_cast<char *>(equationName);
     }
 
@@ -44,7 +44,7 @@ class MetricExportDataOaTest : public Test<MetricMultiDeviceFixture> {
     template <typename T>
     T readUnaligned(T *unaligned) {
         T returnVal{};
-        memcpy(&returnVal, unaligned, sizeof(T));
+        memcpy(reinterpret_cast<uint8_t *>(&returnVal), reinterpret_cast<uint8_t *>(unaligned), sizeof(T));
         return returnVal;
     }
 
@@ -103,7 +103,7 @@ class MetricExportDataOaTest : public Test<MetricMultiDeviceFixture> {
         informationParams.InfoUnits = "infoParamsUnits";
         informationParams.LongName = "infoParamsLongName";
         informationParams.ShortName = "infoParamsShortName";
-        informationParams.SymbolName = "infoParamsSymbolName";
+        informationParams.SymbolName = "BufferOverflow";
         informationParams.IoReadEquation = &equation;
         informationParams.QueryReadEquation = &equation;
         informationParams.OverflowFunction = deltaFunction;
@@ -177,7 +177,7 @@ class MetricExportDataOaTest : public Test<MetricMultiDeviceFixture> {
         auto elementsPtr = zet_intel_metric_df_gpu_offset_to_ptr(zet_intel_metric_df_gpu_equation_element_0_1_offset_t, equation.elements, data);
         auto elementSymbolPtr = zet_intel_metric_df_gpu_offset_to_ptr(cstring_offset_t, elementsPtr->symbolName, data);
         EXPECT_STREQ(elementSymbolPtr, "EquationElement");
-        EXPECT_EQ(readUnaligned(&elementsPtr->type), ZET_INTEL_METRIC_DF_EQUATION_ELEM_OPERATION);
+        EXPECT_EQ(readUnaligned(&elementsPtr->type), ZET_INTEL_METRIC_DF_EQUATION_ELEM_IMM_UINT64);
         EXPECT_EQ(readUnaligned(&elementsPtr->operation), ZET_INTEL_METRIC_DF_EQUATION_OPER_RSHIFT);
     }
 
@@ -200,7 +200,7 @@ class MetricExportDataOaTest : public Test<MetricMultiDeviceFixture> {
         auto shortNamePtr = zet_intel_metric_df_gpu_offset_to_ptr(cstring_offset_t, infoPtr->shortName, data);
         EXPECT_STREQ(shortNamePtr, "infoParamsShortName");
         auto symbolNamePtr = zet_intel_metric_df_gpu_offset_to_ptr(cstring_offset_t, infoPtr->symbolName, data);
-        EXPECT_STREQ(symbolNamePtr, "infoParamsSymbolName");
+        EXPECT_STREQ(symbolNamePtr, "BufferOverflow");
     }
 
     void validateMetricSet(zet_intel_metric_df_gpu_export_data_format_t *data) {

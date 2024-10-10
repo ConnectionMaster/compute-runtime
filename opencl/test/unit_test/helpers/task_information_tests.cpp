@@ -27,10 +27,9 @@ using namespace NEO;
 TEST(CommandTest, GivenNoTerminateFlagWhenSubmittingMapUnmapThenCsrIsFlushed) {
     auto device = std::make_unique<MockClDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(nullptr));
     std::unique_ptr<MockCommandQueue> cmdQ(new MockCommandQueue(nullptr, device.get(), nullptr, false));
-    MockCommandStreamReceiver csr(*device->getExecutionEnvironment(), device->getRootDeviceIndex(), device->getDeviceBitfield());
-    MockBuffer buffer;
 
-    auto initialTaskCount = csr.peekTaskCount();
+    MockBuffer buffer;
+    auto initialTaskCount = 0u;
 
     MemObjSizeArray size = {{1, 1, 1}};
     MemObjOffsetArray offset = {{0, 0, 0}};
@@ -38,6 +37,9 @@ TEST(CommandTest, GivenNoTerminateFlagWhenSubmittingMapUnmapThenCsrIsFlushed) {
     CompletionStamp completionStamp = command->submit(20, false);
 
     auto expectedTaskCount = initialTaskCount + 1;
+    if (cmdQ->heaplessStateInitEnabled) {
+        expectedTaskCount++;
+    }
     EXPECT_EQ(expectedTaskCount, completionStamp.taskCount);
 }
 
@@ -64,15 +66,15 @@ TEST(CommandTest, GivenTerminateFlagWhenSubmittingMapUnmapThenFlushIsAborted) {
 TEST(CommandTest, GivenNoTerminateFlagWhenSubmittingMarkerThenCsrIsNotFlushed) {
     auto device = std::make_unique<MockClDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(nullptr));
     std::unique_ptr<MockCommandQueue> cmdQ(new MockCommandQueue(nullptr, device.get(), nullptr, false));
-    MockCommandStreamReceiver csr(*device->getExecutionEnvironment(), device->getRootDeviceIndex(), device->getDeviceBitfield());
     MockBuffer buffer;
 
-    auto initialTaskCount = csr.peekTaskCount();
+    auto heaplessStateInit = cmdQ->getHeaplessStateInitEnabled();
+    auto initialTaskCount = heaplessStateInit ? 1u : 0u;
+
     std::unique_ptr<Command> command(new CommandWithoutKernel(*cmdQ));
     CompletionStamp completionStamp = command->submit(20, false);
 
     EXPECT_EQ(initialTaskCount, completionStamp.taskCount);
-    EXPECT_EQ(initialTaskCount, csr.peekTaskCount());
 }
 
 TEST(CommandTest, GivenTerminateFlagWhenSubmittingMarkerThenFlushIsAborted) {

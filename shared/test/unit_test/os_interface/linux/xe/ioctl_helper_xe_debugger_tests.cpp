@@ -58,26 +58,20 @@ TEST(IoctlHelperXeTest, givenIoctlHelperXeWhenCallingGetIoctForDebuggerThenCorre
     verifyIoctlRequestValue(DRM_IOCTL_XE_EUDEBUG_CONNECT, DrmIoctl::debuggerOpen);
 }
 
-TEST(IoctlHelperXeTest, givenIoctlHelperXeWhenCallingGetRunaloneExtPropertyThenCorrectValueReturned) {
+TEST(IoctlHelperXeTest, givenIoctlHelperXeWhenCallingGetEudebugExtPropertyThenCorrectValueReturned) {
     auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
     executionEnvironment->setDebuggingMode(DebuggingMode::offline);
     auto drm = DrmMockXeDebug::create(*executionEnvironment->rootDeviceEnvironments[0]);
     auto xeIoctlHelper = static_cast<MockIoctlHelperXeDebug *>(drm->ioctlHelper.get());
-    EXPECT_EQ(xeIoctlHelper->getRunaloneExtProperty(), DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG);
+    EXPECT_EQ(xeIoctlHelper->getEudebugExtProperty(), DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG);
 }
 
 using IoctlHelperXeTestFixture = ::testing::Test;
-HWTEST_F(IoctlHelperXeTestFixture, GivenRunaloneModeRequiredReturnFalseWhenCreateDrmContextThenRunAloneContextIsNotRequested) {
+HWTEST_F(IoctlHelperXeTestFixture, GivenDebuggingDisabledWhenCreateDrmContextThenEuDebuggableContextIsNotRequested) {
     DebugManagerStateRestore restorer;
-    struct MockGfxCoreHelperHw : NEO::GfxCoreHelperHw<FamilyType> {
-        bool isRunaloneModeRequired(DebuggingMode debuggingMode) const override {
-            return false;
-        }
-    };
-
     auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
+    executionEnvironment->setDebuggingMode(DebuggingMode::disabled);
     auto &rootDeviceEnvironment = *executionEnvironment->rootDeviceEnvironments[0];
-    auto raiiFactory = RAIIGfxCoreHelperFactory<MockGfxCoreHelperHw>(rootDeviceEnvironment);
     rootDeviceEnvironment.osInterface = std::make_unique<OSInterface>();
     rootDeviceEnvironment.osInterface->setDriverModel(std::make_unique<DrmMockTime>(mockFd, rootDeviceEnvironment));
     auto drm = DrmMockXeDebug::create(*executionEnvironment->rootDeviceEnvironments[0]);
@@ -110,7 +104,6 @@ HWTEST_F(IoctlHelperXeTestFixture, givenDeviceIndexWhenCreatingContextThenSetCor
     drm->engineInfo = std::move(engineInfo);
 
     auto engineDescriptor = EngineDescriptorHelper::getDefaultDescriptor({aub_stream::EngineType::ENGINE_CCS, EngineUsage::regular});
-    engineDescriptor.isEngineInstanced = true;
     OsContextLinux osContext(*drm, 0, 0u, engineDescriptor);
 
     uint16_t tileId = 1u;
@@ -118,23 +111,18 @@ HWTEST_F(IoctlHelperXeTestFixture, givenDeviceIndexWhenCreatingContextThenSetCor
 
     xeIoctlHelper->createDrmContext(*drm, osContext, 0, tileId, false);
 
-    EXPECT_EQ(1u, drm->execQueueCreateParams.num_placements);
-    ASSERT_EQ(1u, drm->execQueueEngineInstances.size());
+    EXPECT_EQ(4u, drm->execQueueCreateParams.num_placements);
+    ASSERT_EQ(4u, drm->execQueueEngineInstances.size());
 
     EXPECT_EQ(expectedGtId, drm->execQueueEngineInstances[0].gt_id);
 }
 
-HWTEST_F(IoctlHelperXeTestFixture, GivenRunaloneModeRequiredReturnTrueWhenCreateDrmContextThenRunAloneContextIsRequested) {
+HWTEST_F(IoctlHelperXeTestFixture, GivenDebuggingEnabledWhenCreateDrmContextThenEuDebuggableContextIsRequested) {
     DebugManagerStateRestore restorer;
-    struct MockGfxCoreHelperHw : NEO::GfxCoreHelperHw<FamilyType> {
-        bool isRunaloneModeRequired(DebuggingMode debuggingMode) const override {
-            return true;
-        }
-    };
 
     auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
+    executionEnvironment->setDebuggingMode(DebuggingMode::online);
     auto &rootDeviceEnvironment = *executionEnvironment->rootDeviceEnvironments[0];
-    auto raiiFactory = RAIIGfxCoreHelperFactory<MockGfxCoreHelperHw>(rootDeviceEnvironment);
     rootDeviceEnvironment.osInterface = std::make_unique<OSInterface>();
     rootDeviceEnvironment.osInterface->setDriverModel(std::make_unique<DrmMockTime>(mockFd, rootDeviceEnvironment));
     auto drm = DrmMockXeDebug::create(*executionEnvironment->rootDeviceEnvironments[0]);
@@ -154,17 +142,12 @@ HWTEST_F(IoctlHelperXeTestFixture, GivenRunaloneModeRequiredReturnTrueWhenCreate
     EXPECT_EQ(ext.value, 1ULL);
 }
 
-HWTEST_F(IoctlHelperXeTestFixture, GivenContextCreatedForCopyEngineWhenCreateDrmContextThenRunAloneContextIsNotRequested) {
+HWTEST_F(IoctlHelperXeTestFixture, GivenContextCreatedForCopyEngineWhenCreateDrmContextThenEuDebuggableContextIsNotRequested) {
     DebugManagerStateRestore restorer;
-    struct MockGfxCoreHelperHw : NEO::GfxCoreHelperHw<FamilyType> {
-        bool isRunaloneModeRequired(DebuggingMode debuggingMode) const override {
-            return true;
-        }
-    };
 
     auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
+    executionEnvironment->setDebuggingMode(DebuggingMode::online);
     auto &rootDeviceEnvironment = *executionEnvironment->rootDeviceEnvironments[0];
-    auto raiiFactory = RAIIGfxCoreHelperFactory<MockGfxCoreHelperHw>(rootDeviceEnvironment);
     rootDeviceEnvironment.osInterface = std::make_unique<OSInterface>();
     rootDeviceEnvironment.osInterface->setDriverModel(std::make_unique<DrmMockTime>(mockFd, rootDeviceEnvironment));
     auto drm = DrmMockXeDebug::create(*executionEnvironment->rootDeviceEnvironments[0]);

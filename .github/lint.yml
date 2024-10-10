@@ -71,6 +71,7 @@ lint:
         - ocldev@intel.com
 
   commit_message_subject:
+    validate: true
     types:
       - feature
       - fix
@@ -80,6 +81,56 @@ lint:
       - ci
       - performance
       - test
+    mapping:
+      files:
+        '*/l0_blackbox_runner_configs.yml':
+        - ci
+        'manifests/ci.yml':
+        - ci
+        '.lint-revision':
+        - ci
+        '.clang-tidy':
+        - ci
+        '*/.clang-tidy':
+        - ci
+        '*.md':
+        - documentation
+      directory_0:
+        '.github':
+        - ci
+      directory:
+        test:
+        - test
+        source:
+        - feature
+        - fix
+        - refactor
+        - performance
+        - build
+      manifest:
+        infra:
+        - ci
+        i915_kmd:
+        - ci
+        xe_kmd:
+        - ci
+        ze_raytracing:
+        - ci
+        kernels_bin:
+        - feature
+        - fix
+        - build
+        - performance
+        _default:
+        - build
+    strict:
+    - feature
+    priority:
+      0:
+      - test
+      - documentation
+      1:
+      - ci
     scope:
       values:
         - usm

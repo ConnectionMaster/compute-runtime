@@ -39,8 +39,8 @@ void populateFactoryTable<CommandStreamReceiverHw<Family>>() {
 template <>
 void CommandStreamReceiverHw<Family>::programEnginePrologue(LinearStream &csr) {
     if (!this->isEnginePrologueSent) {
-        if (globalFenceAllocation) {
-            EncodeMemoryFence<Family>::encodeSystemMemoryFence(csr, globalFenceAllocation);
+        if (getGlobalFenceAllocation()) {
+            EncodeMemoryFence<Family>::encodeSystemMemoryFence(csr, getGlobalFenceAllocation());
         }
         this->isEnginePrologueSent = true;
     }
@@ -49,7 +49,7 @@ void CommandStreamReceiverHw<Family>::programEnginePrologue(LinearStream &csr) {
 template <>
 size_t CommandStreamReceiverHw<Family>::getCmdSizeForPrologue() const {
     if (!this->isEnginePrologueSent) {
-        if (globalFenceAllocation) {
+        if (getGlobalFenceAllocation()) {
             return EncodeMemoryFence<Family>::getSystemMemoryFenceSize();
         }
     }
@@ -144,13 +144,13 @@ uint32_t BlitCommandsHelper<Family>::getAvailableBytesPerPixel(size_t copySize, 
 }
 
 template <>
-void BlitCommandsHelper<Family>::appendBlitCommandsMemCopy(const BlitProperties &blitProperites, typename Family::XY_COPY_BLT &blitCmd,
+void BlitCommandsHelper<Family>::appendBlitCommandsMemCopy(const BlitProperties &blitProperties, typename Family::XY_COPY_BLT &blitCmd,
                                                            const RootDeviceEnvironment &rootDeviceEnvironment) {
     using MEM_COPY = typename Family::MEM_COPY;
     using COMPRESSION_FORMAT30 = typename MEM_COPY::COMPRESSION_FORMAT30;
 
-    auto dstAllocation = blitProperites.dstAllocation;
-    auto srcAllocation = blitProperites.srcAllocation;
+    auto dstAllocation = blitProperties.dstAllocation;
+    auto srcAllocation = blitProperties.srcAllocation;
 
     if (blitCmd.getDestinationY2CoordinateBottom() > 1) {
         blitCmd.setCopyType(MEM_COPY::COPY_TYPE::COPY_TYPE_MATRIX_COPY);
@@ -183,7 +183,7 @@ void BlitCommandsHelper<Family>::appendBlitCommandsMemCopy(const BlitProperties 
 
     blitCmd.setCompressionFormat(static_cast<COMPRESSION_FORMAT30>(compressionFormat));
 
-    DEBUG_BREAK_IF(AuxTranslationDirection::none != blitProperites.auxTranslationDirection);
+    DEBUG_BREAK_IF(AuxTranslationDirection::none != blitProperties.auxTranslationDirection);
 }
 
 template <>
@@ -247,11 +247,11 @@ void BlitCommandsHelper<Family>::encodeProfilingStartMmios(LinearStream &cmdStre
     auto timestampContextStartGpuAddress = TimestampPacketHelper::getContextStartGpuAddress(timestampPacketNode);
     auto timestampGlobalStartAddress = TimestampPacketHelper::getGlobalStartGpuAddress(timestampPacketNode);
 
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetHigh, timestampContextStartGpuAddress + sizeof(uint32_t), false, nullptr);
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampUn, timestampGlobalStartAddress + sizeof(uint32_t), false, nullptr);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetHigh, timestampContextStartGpuAddress + sizeof(uint32_t), false, nullptr, true);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampUn, timestampGlobalStartAddress + sizeof(uint32_t), false, nullptr, true);
 
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextStartGpuAddress, false, nullptr);
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampLdw, timestampGlobalStartAddress, false, nullptr);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextStartGpuAddress, false, nullptr, true);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampLdw, timestampGlobalStartAddress, false, nullptr, true);
 }
 
 template <>
@@ -259,11 +259,11 @@ void BlitCommandsHelper<Family>::encodeProfilingEndMmios(LinearStream &cmdStream
     auto timestampContextEndGpuAddress = TimestampPacketHelper::getContextEndGpuAddress(timestampPacketNode);
     auto timestampGlobalEndAddress = TimestampPacketHelper::getGlobalEndGpuAddress(timestampPacketNode);
 
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetHigh, timestampContextEndGpuAddress + sizeof(uint32_t), false, nullptr);
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampUn, timestampGlobalEndAddress + sizeof(uint32_t), false, nullptr);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetHigh, timestampContextEndGpuAddress + sizeof(uint32_t), false, nullptr, true);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampUn, timestampGlobalEndAddress + sizeof(uint32_t), false, nullptr, true);
 
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextEndGpuAddress, false, nullptr);
-    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampLdw, timestampGlobalEndAddress, false, nullptr);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextEndGpuAddress, false, nullptr, true);
+    EncodeStoreMMIO<Family>::encode(cmdStream, RegisterOffsets::globalTimestampLdw, timestampGlobalEndAddress, false, nullptr, true);
 }
 
 template <>

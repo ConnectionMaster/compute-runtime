@@ -862,7 +862,7 @@ HWTEST_F(DispatchWalkerTest, GivenMultipleKernelsWhenDispatchingWalkerThenWorkDi
     }
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatchingWalkerThenInterfaceDescriptorsAreProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatchingWalkerThenInterfaceDescriptorsAreProgrammedCorrectly) {
     using INTERFACE_DESCRIPTOR_DATA = typename FamilyType::INTERFACE_DESCRIPTOR_DATA;
 
     auto memoryManager = this->pDevice->getMemoryManager();
@@ -957,7 +957,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatch
     memoryManager->freeGraphicsMemory(kernelIsaWithSamplerAllocation);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatchingWalkerThenGpgpuWalkerIdOffsetIsProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatchingWalkerThenGpgpuWalkerIdOffsetIsProgrammedCorrectly) {
     using GPGPU_WALKER = typename FamilyType::GPGPU_WALKER;
 
     MockKernel kernel1(program.get(), kernelInfo, *pClDevice);
@@ -997,7 +997,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatch
     }
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatchingWalkerThenThreadGroupIdStartingCoordinatesAreProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatchingWalkerThenThreadGroupIdStartingCoordinatesAreProgrammedCorrectly) {
     using GPGPU_WALKER = typename FamilyType::GPGPU_WALKER;
 
     MockKernel kernel1(program.get(), kernelInfo, *pClDevice);
@@ -1041,7 +1041,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, DispatchWalkerTest, GivenMultipleKernelsWhenDispatch
     }
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, DispatchWalkerTest, GivenMultipleDispatchInfoAndSameKernelWhenDispatchingWalkerThenGpgpuWalkerThreadGroupIdStartingCoordinatesAreCorrectlyProgrammed) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, DispatchWalkerTest, GivenMultipleDispatchInfoAndSameKernelWhenDispatchingWalkerThenGpgpuWalkerThreadGroupIdStartingCoordinatesAreCorrectlyProgrammed) {
     using GPGPU_WALKER = typename FamilyType::GPGPU_WALKER;
 
     MockKernel kernel(program.get(), kernelInfo, *pClDevice);
@@ -1147,8 +1147,7 @@ HWTEST_P(DispatchWalkerTestForAuxTranslation, givenKernelWhenAuxToNonAuxWhenTran
     EXPECT_TRUE(beginPipeControl->getCommandStreamerStallEnable());
 
     auto endPipeControl = genCmdCast<typename FamilyType::PIPE_CONTROL *>(*(pipeControls[1]));
-    bool dcFlushRequired = (pClDevice->getHardwareInfo().platform.eRenderCoreFamily == IGFX_GEN8_CORE);
-    EXPECT_EQ(dcFlushRequired, endPipeControl->getDcFlushEnable());
+    EXPECT_FALSE(endPipeControl->getDcFlushEnable());
     EXPECT_TRUE(endPipeControl->getCommandStreamerStallEnable());
 }
 
@@ -1191,14 +1190,12 @@ HWTEST_P(DispatchWalkerTestForAuxTranslation, givenKernelWhenNonAuxToAuxWhenTran
 
     ASSERT_EQ(2u, pipeControls.size());
 
-    bool dcFlushRequired = (pClDevice->getHardwareInfo().platform.eRenderCoreFamily == IGFX_GEN8_CORE);
-
     auto beginPipeControl = genCmdCast<typename FamilyType::PIPE_CONTROL *>(*(pipeControls[0]));
     EXPECT_EQ(MemorySynchronizationCommands<FamilyType>::getDcFlushEnable(true, pClDevice->getRootDeviceEnvironment()), beginPipeControl->getDcFlushEnable());
     EXPECT_TRUE(beginPipeControl->getCommandStreamerStallEnable());
 
     auto endPipeControl = genCmdCast<typename FamilyType::PIPE_CONTROL *>(*(pipeControls[1]));
-    EXPECT_EQ(dcFlushRequired, endPipeControl->getDcFlushEnable());
+    EXPECT_FALSE(endPipeControl->getDcFlushEnable());
     EXPECT_TRUE(endPipeControl->getCommandStreamerStallEnable());
 }
 
@@ -1211,7 +1208,7 @@ struct ProfilingCommandsTest : public DispatchWalkerTest, ::testing::WithParamIn
     }
 };
 
-HWCMDTEST_F(IGFX_GEN8_CORE, ProfilingCommandsTest, givenKernelWhenProfilingCommandStartIsTakenThenTimeStampAddressIsProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, ProfilingCommandsTest, givenKernelWhenProfilingCommandStartIsTakenThenTimeStampAddressIsProgrammedCorrectly) {
     using MI_STORE_REGISTER_MEM = typename FamilyType::MI_STORE_REGISTER_MEM;
     using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
 
@@ -1284,7 +1281,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, ProfilingCommandsTest, givenKernelWhenProfilingComma
     EXPECT_EQ(expectedAddress, gpuAddress);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, ProfilingCommandsTest, givenKernelWhenProfilingCommandStartIsNotTakenThenTimeStampAddressIsProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, ProfilingCommandsTest, givenKernelWhenProfilingCommandStartIsNotTakenThenTimeStampAddressIsProgrammedCorrectly) {
     using MI_STORE_REGISTER_MEM = typename FamilyType::MI_STORE_REGISTER_MEM;
     using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
 

@@ -20,6 +20,7 @@
 #include "shared/source/utilities/stackvec.h"
 
 #include "level_zero/core/source/cmdlist/cmdlist_launch_params.h"
+#include "level_zero/core/source/helpers/api_handle_helper.h"
 #include <level_zero/ze_api.h>
 #include <level_zero/zet_api.h>
 
@@ -28,7 +29,10 @@
 #include <unordered_map>
 #include <vector>
 
-struct _ze_command_list_handle_t {};
+struct _ze_command_list_handle_t {
+    const uint64_t objMagic = objMagicValue;
+    static const zel_handle_type_t handleType = ZEL_HANDLE_COMMAND_LIST;
+};
 
 namespace NEO {
 class ScratchSpaceController;
@@ -131,7 +135,7 @@ struct CommandList : _ze_command_list_handle_t {
     virtual ze_result_t appendMemoryPrefetch(const void *ptr, size_t count) = 0;
     virtual ze_result_t appendSignalEvent(ze_event_handle_t hEvent) = 0;
     virtual ze_result_t appendWaitOnEvents(uint32_t numEvents, ze_event_handle_t *phEvent, CommandToPatchContainer *outWaitCmds,
-                                           bool relaxedOrderingAllowed, bool trackDependencies, bool apiRequest, bool skipAddingWaitEventsToResidency, bool skipFlush) = 0;
+                                           bool relaxedOrderingAllowed, bool trackDependencies, bool apiRequest, bool skipAddingWaitEventsToResidency, bool skipFlush, bool copyOffloadOperation) = 0;
     virtual ze_result_t appendWriteGlobalTimestamp(uint64_t *dstptr, ze_event_handle_t hSignalEvent,
                                                    uint32_t numWaitEvents, ze_event_handle_t *phWaitEvents) = 0;
     virtual ze_result_t appendMemoryCopyFromContext(void *dstptr, ze_context_handle_t hContextSrc,
@@ -196,6 +200,8 @@ struct CommandList : _ze_command_list_handle_t {
         return commandListPerThreadScratchSize[slotId];
     }
 
+    void forceDcFlushForDcFlushMitigation();
+
     void setOrdinal(uint32_t ord) { ordinal = ord; }
     void setCommandListPerThreadScratchSize(uint32_t slotId, uint32_t size) {
         UNRECOVERABLE_IF(slotId > 1);
@@ -248,9 +254,11 @@ struct CommandList : _ze_command_list_handle_t {
     void removeMemoryPrefetchAllocations();
     void eraseDeallocationContainerEntry(NEO::GraphicsAllocation *allocation);
     void eraseResidencyContainerEntry(NEO::GraphicsAllocation *allocation);
-    bool isCopyOnly() const {
-        return NEO::EngineHelper::isCopyOnlyEngineType(engineGroupType);
+    bool isCopyOnly(bool copyOffloadOperation) const {
+        return NEO::EngineHelper::isCopyOnlyEngineType(engineGroupType) || (copyOffloadOperation && this->isCopyOffloadEnabled());
     }
+    bool isCopyOffloadEnabled() const { return copyOperationOffloadEnabled; }
+
     bool isInternal() const {
         return internalUsage;
     }
@@ -261,7 +269,7 @@ struct CommandList : _ze_command_list_handle_t {
         return performMemoryPrefetch;
     }
     bool storeExternalPtrAsTemporary() const {
-        return isImmediateType() && (this->isFlushTaskSubmissionEnabled || isCopyOnly());
+        return isImmediateType() && (this->isFlushTaskSubmissionEnabled || isCopyOnly(false));
     }
     bool isWaitForEventsFromHostEnabled();
 
@@ -384,15 +392,15 @@ struct CommandList : _ze_command_list_handle_t {
         return statelessBuiltinsEnabled;
     }
 
-    bool isLastAppendedKernelBindlessMode() const {
-        return lastAppendedKernelBindlessMode;
-    }
-
-    void setIsLastAppendedKernelBindlessMode(bool isBindlessKernel) {
-        lastAppendedKernelBindlessMode = isBindlessKernel;
-    }
-
     void registerCsrDcFlushForDcMitigation(NEO::CommandStreamReceiver &csr);
+
+    NEO::EngineGroupType getEngineGroupType() const {
+        return engineGroupType;
+    }
+
+    bool getLocalDispatchSupport() const {
+        return localDispatchSupport;
+    }
 
   protected:
     NEO::GraphicsAllocation *getAllocationFromHostPtrMap(const void *buffer, uint64_t bufferSize, bool copyOffload);
@@ -484,7 +492,8 @@ struct CommandList : _ze_command_list_handle_t {
     bool taskCountUpdateFenceRequired = false;
     bool requiresDcFlushForDcMitigation = false;
     bool statelessBuiltinsEnabled = false;
-    bool lastAppendedKernelBindlessMode = false;
+    bool localDispatchSupport = false;
+    bool copyOperationOffloadEnabled = false;
 };
 
 using CommandListAllocatorFn = CommandList *(*)(uint32_t);

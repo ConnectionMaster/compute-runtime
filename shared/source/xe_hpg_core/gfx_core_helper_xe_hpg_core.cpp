@@ -108,32 +108,12 @@ bool GfxCoreHelperHw<Family>::isBufferSizeSuitableForCompression(const size_t si
 }
 
 template <>
-uint32_t GfxCoreHelperHw<Family>::computeSlmValues(const HardwareInfo &hwInfo, uint32_t slmSize) const {
-    using SHARED_LOCAL_MEMORY_SIZE = typename Family::INTERFACE_DESCRIPTOR_DATA::SHARED_LOCAL_MEMORY_SIZE;
-
-    auto slmValue = std::max(slmSize, 1024u);
-    slmValue = Math::nextPowerOfTwo(slmValue);
-    slmValue = Math::getMinLsbSet(slmValue);
-    slmValue = slmValue - 9;
-    DEBUG_BREAK_IF(slmValue > 7);
-    slmValue *= !!slmSize;
-    return slmValue;
-}
-
-template <>
 bool GfxCoreHelperHw<Family>::copyThroughLockedPtrEnabled(const HardwareInfo &hwInfo, const ProductHelper &productHelper) const {
     if (debugManager.flags.ExperimentalCopyThroughLock.get() != -1) {
         return debugManager.flags.ExperimentalCopyThroughLock.get() == 1;
     }
 
     return this->isLocalMemoryEnabled(hwInfo) && !productHelper.isUnlockingLockedPtrNecessary(hwInfo);
-}
-template <>
-uint32_t GfxCoreHelperHw<Family>::calculateAvailableThreadCount(const HardwareInfo &hwInfo, uint32_t grfCount) const {
-    if (grfCount > GrfConfig::defaultGrfNumber) {
-        return hwInfo.gtSystemInfo.ThreadCount / 2u;
-    }
-    return hwInfo.gtSystemInfo.ThreadCount;
 }
 
 template <>

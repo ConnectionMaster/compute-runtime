@@ -13,8 +13,11 @@
 #include "shared/source/execution_environment/execution_environment.h"
 #include "shared/source/execution_environment/root_device_environment.h"
 #include "shared/test/common/helpers/default_hw_info.h"
+#include "shared/test/common/helpers/unit_test_helper.h"
 #include "shared/test/common/helpers/variable_backup.h"
 #include "shared/test/common/mocks/mock_memory_operations_handler.h"
+
+#include "gtest/gtest.h"
 
 namespace NEO {
 class CommandStreamReceiver;
@@ -30,11 +33,13 @@ extern CommandStreamReceiver *createCommandStream(ExecutionEnvironment &executio
 struct MockSubDevice : public SubDevice {
     using Device::allEngines;
     using Device::createEngines;
-    using Device::engineInstancedType;
-    using SubDevice::engineInstanced;
     using SubDevice::getDeviceBitfield;
     using SubDevice::getGlobalMemorySize;
     using SubDevice::SubDevice;
+
+    ~MockSubDevice() override {
+        EXPECT_EQ(nullptr, this->getDebugSurface());
+    }
 
     std::unique_ptr<CommandStreamReceiver> createCommandStreamReceiver() const override {
         return std::unique_ptr<CommandStreamReceiver>(createCommandStreamReceiverFunc(*executionEnvironment, getRootDeviceIndex(), getDeviceBitfield()));
@@ -49,14 +54,13 @@ class MockDevice : public RootDevice {
   public:
     using Device::addEngineToEngineGroup;
     using Device::allEngines;
+    using Device::allocateDebugSurface;
     using Device::commandStreamReceivers;
     using Device::createDeviceInternals;
     using Device::createEngine;
     using Device::createSubDevices;
     using Device::deviceBitfield;
     using Device::deviceInfo;
-    using Device::engineInstanced;
-    using Device::engineInstancedType;
     using Device::executionEnvironment;
     using Device::generateUuidFromPciBusInfo;
     using Device::getGlobalMemorySize;
@@ -64,6 +68,7 @@ class MockDevice : public RootDevice {
     using Device::preemptionMode;
     using Device::regularEngineGroups;
     using Device::rootCsrCreated;
+    using Device::rtDispatchGlobalsInfos;
     using Device::rtMemoryBackedBuffer;
     using Device::secondaryCsrs;
     using Device::secondaryEngines;
@@ -120,9 +125,14 @@ class MockDevice : public RootDevice {
     static T *createWithExecutionEnvironment(const HardwareInfo *pHwInfo, ExecutionEnvironment *executionEnvironment, uint32_t rootDeviceIndex) {
         pHwInfo = pHwInfo ? pHwInfo : defaultHwInfo.get();
         executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->setHwInfoAndInitHelpers(pHwInfo);
+        UnitTestSetter::setRcsExposure(*executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]);
+        UnitTestSetter::setCcsExposure(*executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]);
+
         if (!executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->memoryOperationsInterface) {
             executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->memoryOperationsInterface = std::make_unique<MockMemoryOperations>();
         }
+
+        executionEnvironment->calculateMaxOsContextCount();
         T *device = new T(executionEnvironment, rootDeviceIndex);
         return createDeviceInternals(device);
     }
@@ -139,10 +149,6 @@ class MockDevice : public RootDevice {
         return Device::create<MockSubDevice>(executionEnvironment, subDeviceIndex, *this);
     }
 
-    SubDevice *createEngineInstancedSubDevice(uint32_t subDeviceIndex, aub_stream::EngineType engineType) override {
-        return Device::create<MockSubDevice>(executionEnvironment, subDeviceIndex, *this, engineType);
-    }
-
     std::unique_ptr<CommandStreamReceiver> createCommandStreamReceiver() const override {
         return std::unique_ptr<CommandStreamReceiver>(createCommandStreamReceiverFunc(*executionEnvironment, getRootDeviceIndex(), getDeviceBitfield()));
     }
@@ -150,6 +156,9 @@ class MockDevice : public RootDevice {
     bool verifyAdapterLuid() override;
 
     void finalizeRayTracing();
+
+    ReleaseHelper *getReleaseHelper() const override;
+    AILConfiguration *getAilConfigurationHelper() const override;
 
     void setRTDispatchGlobalsForceAllocation() {
         rtDispatchGlobalsForceAllocation = true;
@@ -168,6 +177,8 @@ class MockDevice : public RootDevice {
     size_t maxParameterSizeFromIGC = 0u;
     bool rtDispatchGlobalsForceAllocation = true;
     bool stopDirectSubmissionCalled = false;
+    ReleaseHelper *mockReleaseHelper = nullptr;
+    AILConfiguration *mockAilConfigurationHelper = nullptr;
 };
 
 template <>

@@ -22,10 +22,10 @@ using CompilerProductHelperFixture = Test<DeviceFixture>;
 
 HWTEST_F(CompilerProductHelperFixture, WhenIsMidThreadPreemptionIsSupportedIsCalledThenCorrectResultIsReturned) {
     auto &hwInfo = *pDevice->getRootDeviceEnvironment().getMutableHardwareInfo();
-    UnitTestHelper<FamilyType>::setExtraMidThreadPreemptionFlag(hwInfo, false);
+    hwInfo.featureTable.flags.ftrWalkerMTP = false;
     auto &compilerProductHelper = pDevice->getCompilerProductHelper();
     EXPECT_FALSE(compilerProductHelper.isMidThreadPreemptionSupported(hwInfo));
-    UnitTestHelper<FamilyType>::setExtraMidThreadPreemptionFlag(hwInfo, true);
+    hwInfo.featureTable.flags.ftrWalkerMTP = true;
     EXPECT_TRUE(compilerProductHelper.isMidThreadPreemptionSupported(hwInfo));
 }
 
@@ -54,16 +54,10 @@ HWTEST2_F(CompilerProductHelperFixture, GivenXeHpcAndLaterWhenIsForceToStateless
     EXPECT_FALSE(compilerProductHelper.isForceToStatelessRequired());
 }
 
-HWTEST2_F(CompilerProductHelperFixture, GivenGen11AndLaterThenSubgroupLocalBlockIoIsSupported, IsAtLeastGen11) {
+HWTEST2_F(CompilerProductHelperFixture, GivenGen11AndLaterThenSubgroupLocalBlockIoIsSupported, MatchAny) {
     auto &compilerProductHelper = pDevice->getCompilerProductHelper();
 
     EXPECT_TRUE(compilerProductHelper.isSubgroupLocalBlockIoSupported());
-}
-
-HWTEST2_F(CompilerProductHelperFixture, GivenGen9OrBeforeThenSubgroupLocalBlockIoIsNotSupported, IsAtMostGen9) {
-    auto &compilerProductHelper = pDevice->getCompilerProductHelper();
-
-    EXPECT_FALSE(compilerProductHelper.isSubgroupLocalBlockIoSupported());
 }
 
 HWTEST2_F(CompilerProductHelperFixture, GivenXeHpAndLaterThenDotAccumulateIsSupported, IsAtLeastXeHpCore) {
@@ -72,7 +66,7 @@ HWTEST2_F(CompilerProductHelperFixture, GivenXeHpAndLaterThenDotAccumulateIsSupp
     EXPECT_TRUE(compilerProductHelper.isDotAccumulateSupported());
 }
 
-HWTEST2_F(CompilerProductHelperFixture, GivenPreXeHpThenDotAccumulateIsNotSupported, IsAtMostGen12lp) {
+HWTEST2_F(CompilerProductHelperFixture, GivenPreXeHpThenDotAccumulateIsNotSupported, IsGen12LP) {
     auto &compilerProductHelper = pDevice->getCompilerProductHelper();
 
     EXPECT_FALSE(compilerProductHelper.isDotAccumulateSupported());
@@ -84,7 +78,7 @@ HWTEST2_F(CompilerProductHelperFixture, GivenXeHpAndLaterThenCreateBufferWithPro
     EXPECT_TRUE(compilerProductHelper.isCreateBufferWithPropertiesSupported());
 }
 
-HWTEST2_F(CompilerProductHelperFixture, GivenPreXeHpThenCreateBufferWithPropertiesIsNotSupported, IsAtMostGen12lp) {
+HWTEST2_F(CompilerProductHelperFixture, GivenPreXeHpThenCreateBufferWithPropertiesIsNotSupported, IsGen12LP) {
     auto &compilerProductHelper = pDevice->getCompilerProductHelper();
 
     EXPECT_FALSE(compilerProductHelper.isCreateBufferWithPropertiesSupported());
@@ -357,13 +351,7 @@ TEST_F(CompilerProductHelperFixture, givenHwInfoWithCLVersion30ThenReportsClKhrE
     EXPECT_FALSE(hasSubstr(extensions, std::string("cl_khr_external_memory")));
 }
 
-HWTEST2_F(CompilerProductHelperFixture, GivenAtMostGen11DeviceWhenCheckingIfIntegerDotExtensionIsSupportedThenFalseReturned, IsAtMostGen11) {
-    auto &compilerProductHelper = pDevice->getCompilerProductHelper();
-
-    EXPECT_FALSE(compilerProductHelper.isDotIntegerProductExtensionSupported());
-}
-
-HWTEST2_F(CompilerProductHelperFixture, GivenAtLeastGen12lpDeviceWhenCheckingIfIntegerDotExtensionIsSupportedThenTrueReturned, IsAtLeastGen12lp) {
+HWTEST2_F(CompilerProductHelperFixture, GivenAtLeastGen12lpDeviceWhenCheckingIfIntegerDotExtensionIsSupportedThenTrueReturned, MatchAny) {
     auto &compilerProductHelper = pDevice->getCompilerProductHelper();
 
     EXPECT_TRUE(compilerProductHelper.isDotIntegerProductExtensionSupported());

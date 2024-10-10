@@ -22,9 +22,15 @@ namespace L0 {
 namespace ult {
 
 struct InOrderCmdListFixture : public ::Test<ModuleFixture> {
+    class WhiteboxInOrderExecInfo : public InOrderExecInfo {
+      public:
+        using InOrderExecInfo::tempTimestampNodes;
+    };
+
     struct FixtureMockEvent : public EventImp<uint32_t> {
         using EventImp<uint32_t>::Event::counterBasedMode;
         using EventImp<uint32_t>::Event::counterBasedFlags;
+        using EventImp<uint32_t>::eventPoolAllocation;
         using EventImp<uint32_t>::maxPacketCount;
         using EventImp<uint32_t>::inOrderExecInfo;
         using EventImp<uint32_t>::inOrderExecSignalValue;
@@ -36,16 +42,24 @@ struct InOrderCmdListFixture : public ::Test<ModuleFixture> {
         using EventImp<uint32_t>::latestUsedCmdQueue;
         using EventImp<uint32_t>::inOrderTimestampNode;
 
-        void makeCounterBasedInitiallyDisabled() {
+        void makeCounterBasedInitiallyDisabled(MultiGraphicsAllocation &poolAllocation) {
+            resetInOrderTimestampNode(nullptr);
             counterBasedMode = CounterBasedMode::initiallyDisabled;
             resetCompletionStatus();
             counterBasedFlags = 0;
+            this->eventPoolAllocation = &poolAllocation;
+            this->hostAddressFromPool = ptrOffset(eventPoolAllocation->getGraphicsAllocation(0)->getUnderlyingBuffer(), eventPoolOffset);
+            reset();
         }
 
-        void makeCounterBasedImplicitlyDisabled() {
+        void makeCounterBasedImplicitlyDisabled(MultiGraphicsAllocation &poolAllocation) {
+            resetInOrderTimestampNode(nullptr);
             counterBasedMode = CounterBasedMode::implicitlyDisabled;
             resetCompletionStatus();
             counterBasedFlags = 0;
+            this->eventPoolAllocation = &poolAllocation;
+            this->hostAddressFromPool = ptrOffset(eventPoolAllocation->getGraphicsAllocation(0)->getUnderlyingBuffer(), eventPoolOffset);
+            reset();
         }
     };
 
@@ -273,5 +287,42 @@ bool InOrderCmdListFixture::verifyInOrderDependency(GenCmdList::iterator &cmd, u
     cmd++;
     return true;
 }
+
+struct MultiTileInOrderCmdListFixture : public InOrderCmdListFixture {
+    void SetUp() override {
+        NEO::debugManager.flags.CreateMultipleSubDevices.set(partitionCount);
+        NEO::debugManager.flags.EnableImplicitScaling.set(4);
+
+        InOrderCmdListFixture::SetUp();
+    }
+
+    template <GFXCORE_FAMILY gfxCoreFamily>
+    DestroyableZeUniquePtr<WhiteBox<L0::CommandListCoreFamilyImmediate<gfxCoreFamily>>> createMultiTileImmCmdList() {
+        auto cmdList = createImmCmdList<gfxCoreFamily>();
+
+        cmdList->partitionCount = partitionCount;
+
+        return cmdList;
+    }
+
+    template <GFXCORE_FAMILY gfxCoreFamily>
+    DestroyableZeUniquePtr<WhiteBox<L0::CommandListCoreFamily<gfxCoreFamily>>> createMultiTileRegularCmdList(bool copyOnly) {
+        auto cmdList = createRegularCmdList<gfxCoreFamily>(copyOnly);
+
+        cmdList->partitionCount = partitionCount;
+
+        return cmdList;
+    }
+
+    const uint32_t partitionCount = 2;
+};
+
+struct MultiTileSynchronizedDispatchFixture : public MultiTileInOrderCmdListFixture {
+    void SetUp() override {
+        NEO::debugManager.flags.ForceSynchronizedDispatchMode.set(1);
+        MultiTileInOrderCmdListFixture::SetUp();
+    }
+};
+
 } // namespace ult
 } // namespace L0

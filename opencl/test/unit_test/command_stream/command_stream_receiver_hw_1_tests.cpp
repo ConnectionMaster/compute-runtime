@@ -37,14 +37,14 @@
 
 using namespace NEO;
 
-HWCMDTEST_F(IGFX_GEN8_CORE, UltCommandStreamReceiverTest, givenPreambleSentAndThreadArbitrationPolicyNotChangedWhenEstimatingPreambleCmdSizeThenReturnItsValue) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, UltCommandStreamReceiverTest, givenPreambleSentAndThreadArbitrationPolicyNotChangedWhenEstimatingPreambleCmdSizeThenReturnItsValue) {
     auto &commandStreamReceiver = pDevice->getUltCommandStreamReceiver<FamilyType>();
     commandStreamReceiver.isPreambleSent = true;
     auto expectedCmdSize = sizeof(typename FamilyType::PIPE_CONTROL) + sizeof(typename FamilyType::MEDIA_VFE_STATE);
     EXPECT_EQ(expectedCmdSize, commandStreamReceiver.getRequiredCmdSizeForPreamble(*pDevice));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, UltCommandStreamReceiverTest, givenNotSentStateSipWhenFirstTaskIsFlushedThenStateSipCmdIsAddedAndIsStateSipSentSetToTrue) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, UltCommandStreamReceiverTest, givenNotSentStateSipWhenFirstTaskIsFlushedThenStateSipCmdIsAddedAndIsStateSipSentSetToTrue) {
     using STATE_SIP = typename FamilyType::STATE_SIP;
 
     auto mockDevice = std::make_unique<MockClDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(nullptr));
@@ -148,7 +148,7 @@ HWTEST_F(UltCommandStreamReceiverTest, givenPreambleSentAndThreadArbitrationPoli
     EXPECT_EQ(expectedDifference, actualDifferenceForFlush);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, UltCommandStreamReceiverTest, givenMediaVfeStateDirtyEstimatingPreambleCmdSizeThenResultDependsVfeStateProgrammingCmdSize) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, UltCommandStreamReceiverTest, givenMediaVfeStateDirtyEstimatingPreambleCmdSizeThenResultDependsVfeStateProgrammingCmdSize) {
     typedef typename FamilyType::MEDIA_VFE_STATE MEDIA_VFE_STATE;
     typedef typename FamilyType::PIPE_CONTROL PIPE_CONTROL;
 
@@ -167,6 +167,9 @@ HWCMDTEST_F(IGFX_GEN8_CORE, UltCommandStreamReceiverTest, givenMediaVfeStateDirt
 
 HWTEST_F(UltCommandStreamReceiverTest, givenCommandStreamReceiverInInitialStateWhenHeapsAreAskedForDirtyStatusThenTrueIsReturned) {
     auto &commandStreamReceiver = pDevice->getUltCommandStreamReceiver<FamilyType>();
+    if (commandStreamReceiver.heaplessStateInitialized) {
+        GTEST_SKIP();
+    }
 
     EXPECT_EQ(0u, commandStreamReceiver.peekTaskCount());
     EXPECT_EQ(0u, commandStreamReceiver.peekTaskLevel());
@@ -471,7 +474,7 @@ HWTEST_F(CommandStreamReceiverHwTest, givenCsrHwWhenTypeIsCheckedThenCsrHwIsRetu
     EXPECT_EQ(CommandStreamReceiverType::hardware, csr->getType());
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverHwTest, WhenCommandStreamReceiverHwIsCreatedThenDefaultSshSizeIs64KB) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverHwTest, WhenCommandStreamReceiverHwIsCreatedThenDefaultSshSizeIs64KB) {
     auto &commandStreamReceiver = pDevice->getGpgpuCommandStreamReceiver();
     EXPECT_EQ(64 * MemoryConstants::kiloByte, commandStreamReceiver.defaultSshSize);
 }
@@ -683,7 +686,7 @@ HWTEST_F(BcsTests, whenAskingForCmdSizeForMiFlushDwWithMemoryWriteThenReturnCorr
     EXPECT_EQ(miFlushDwSize + additionalSize, totalSize);
 }
 
-HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenEstimatingCommandsSizeThenCalculateForAllAttachedProperites) {
+HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenEstimatingCommandsSizeThenCalculateForAllAttachedProperties) {
     const auto max2DBlitSize = BlitterConstants::maxBlitWidth * BlitterConstants::maxBlitHeight;
     const uint32_t numberOfBlts = 3;
     const size_t bltSize = (3 * max2DBlitSize);
@@ -726,7 +729,7 @@ HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenEstimatingCommandsSizeThenCal
     EXPECT_EQ(expectedAlignedSize, alignedEstimatedSize);
 }
 
-HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenDirectsubmissionEnabledEstimatingCommandsSizeThenCalculateForAllAttachedProperites) {
+HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenDirectsubmissionEnabledEstimatingCommandsSizeThenCalculateForAllAttachedProperties) {
     const auto max2DBlitSize = BlitterConstants::maxBlitWidth * BlitterConstants::maxBlitHeight;
     const uint32_t numberOfBlts = 3;
     const size_t bltSize = (3 * max2DBlitSize);
@@ -768,7 +771,7 @@ HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenDirectsubmissionEnabledEstima
     EXPECT_EQ(expectedAlignedSize, alignedEstimatedSize);
 }
 
-HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenEstimatingCommandsSizeForWriteReadBufferRectThenCalculateForAllAttachedProperites) {
+HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenEstimatingCommandsSizeForWriteReadBufferRectThenCalculateForAllAttachedProperties) {
     constexpr auto max2DBlitSize = BlitterConstants::maxBlitWidth * BlitterConstants::maxBlitHeight;
     const Vec3<size_t> bltSize = {(3 * max2DBlitSize), 4, 2};
     const size_t numberOfBlts = 3 * bltSize.y * bltSize.z;
@@ -809,7 +812,7 @@ HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenEstimatingCommandsSizeForWrit
     EXPECT_EQ(expectedAlignedSize, alignedEstimatedSize);
 }
 
-HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenDirectSubmissionEnabledEstimatingCommandsSizeForWriteReadBufferRectThenCalculateForAllAttachedProperites) {
+HWTEST_F(BcsTests, givenBlitPropertiesContainerWhenDirectSubmissionEnabledEstimatingCommandsSizeForWriteReadBufferRectThenCalculateForAllAttachedProperties) {
     constexpr auto max2DBlitSize = BlitterConstants::maxBlitWidth * BlitterConstants::maxBlitHeight;
     const Vec3<size_t> bltSize = {(3 * max2DBlitSize), 4, 2};
     const size_t numberOfBlts = 3 * bltSize.y * bltSize.z;
@@ -1049,8 +1052,14 @@ HWTEST2_F(RelaxedOrderingBcsTests, givenDependenciesWhenFlushingThenProgramCorre
 
     // First submission with global state
     flushBcsTask(&csr, blitProperties, false, *pDevice);
-    EXPECT_TRUE(csr.latestFlushedBatchBuffer.hasStallingCmds);
-    EXPECT_FALSE(csr.latestFlushedBatchBuffer.hasRelaxedOrderingDependencies);
+
+    if (csr.heaplessStateInitialized) {
+        EXPECT_FALSE(csr.latestFlushedBatchBuffer.hasStallingCmds);
+        EXPECT_TRUE(csr.latestFlushedBatchBuffer.hasRelaxedOrderingDependencies);
+    } else {
+        EXPECT_TRUE(csr.latestFlushedBatchBuffer.hasStallingCmds);
+        EXPECT_FALSE(csr.latestFlushedBatchBuffer.hasRelaxedOrderingDependencies);
+    }
 
     auto cmdsOffset = csr.commandStream.getUsed();
 
@@ -1059,12 +1068,12 @@ HWTEST2_F(RelaxedOrderingBcsTests, givenDependenciesWhenFlushingThenProgramCorre
     EXPECT_TRUE(csr.latestFlushedBatchBuffer.hasRelaxedOrderingDependencies);
 
     auto lrrCmd = reinterpret_cast<MI_LOAD_REGISTER_REG *>(ptrOffset(csr.commandStream.getCpuBase(), cmdsOffset));
-    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::csGprR4);
-    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::csGprR0);
+    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR4);
+    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR0);
 
     lrrCmd++;
-    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::csGprR4 + 4);
-    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::csGprR0 + 4);
+    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR4 + 4);
+    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR0 + 4);
 
     auto eventNode = timestamp.peekNodes()[0];
     auto compareAddress = eventNode->getGpuAddress() + eventNode->getContextEndOffset();
@@ -1133,8 +1142,14 @@ HWTEST2_F(RelaxedOrderingBcsTests, givenTagUpdateWhenFlushingThenDisableRelaxedO
 
     // First submission with global state
     flushBcsTask(&csr, blitProperties, false, *pDevice);
-    EXPECT_TRUE(csr.latestFlushedBatchBuffer.hasStallingCmds);
-    EXPECT_FALSE(csr.latestFlushedBatchBuffer.hasRelaxedOrderingDependencies);
+
+    if (csr.heaplessStateInitialized) {
+        EXPECT_FALSE(csr.latestFlushedBatchBuffer.hasStallingCmds);
+        EXPECT_TRUE(csr.latestFlushedBatchBuffer.hasRelaxedOrderingDependencies);
+    } else {
+        EXPECT_TRUE(csr.latestFlushedBatchBuffer.hasStallingCmds);
+        EXPECT_FALSE(csr.latestFlushedBatchBuffer.hasRelaxedOrderingDependencies);
+    }
 
     debugManager.flags.UpdateTaskCountFromWait.set(0);
 
@@ -1170,6 +1185,10 @@ HWTEST_F(BcsTests, givenBltSizeWithLeftoverWhenDispatchedThenProgramAllRequiredC
     uint32_t newTaskCount = 19;
     csr.taskCount = newTaskCount - 1;
     uint32_t expectedResursiveLockCount = csr.resourcesInitialized ? 1u : 0u;
+    if (csr.heaplessStateInitialized) {
+        expectedResursiveLockCount++;
+    }
+
     EXPECT_EQ(expectedResursiveLockCount, csr.recursiveLockCounter.load());
     auto bufferGpuVa = ptrOffset(buffer->getGraphicsAllocation(pDevice->getRootDeviceIndex())->getGpuAddress(), buffer->getOffset());
     auto blitProperties = BlitProperties::constructPropertiesForReadWrite(BlitterConstants::BlitDirection::hostPtrToBuffer,
@@ -1236,7 +1255,7 @@ HWTEST_F(BcsTests, givenBltSizeWithLeftoverWhenDispatchedThenProgramAllRequiredC
             auto miSemaphoreWaitCmd = genCmdCast<MI_SEMAPHORE_WAIT *>(*(cmdIterator++));
             EXPECT_NE(nullptr, miSemaphoreWaitCmd);
             EXPECT_TRUE(UnitTestHelper<FamilyType>::isAdditionalMiSemaphoreWait(*miSemaphoreWaitCmd));
-        } else {
+        } else if (MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(pDevice->getRootDeviceEnvironment()) > 0) {
             cmdIterator++;
         }
     }
@@ -1267,7 +1286,7 @@ HWTEST_F(BcsTests, givenBltSizeWithLeftoverWhenDispatchedThenProgramAllRequiredC
             auto miSemaphoreWaitCmd = genCmdCast<MI_SEMAPHORE_WAIT *>(*(cmdIterator++));
             EXPECT_NE(nullptr, miSemaphoreWaitCmd);
             EXPECT_TRUE(UnitTestHelper<FamilyType>::isAdditionalMiSemaphoreWait(*miSemaphoreWaitCmd));
-        } else {
+        } else if (MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(pDevice->getRootDeviceEnvironment()) > 0) {
             cmdIterator++;
         }
     }
@@ -1670,7 +1689,7 @@ INSTANTIATE_TEST_SUITE_P(BcsDetaliedTest,
                              ::testing::ValuesIn(blitterProperties),
                              ::testing::Values(BlitterConstants::BlitDirection::hostPtrToBuffer, BlitterConstants::BlitDirection::bufferToHostPtr)));
 
-HWCMDTEST_F(IGFX_GEN8_CORE, UltCommandStreamReceiverTest, WhenProgrammingActivePartitionsThenExpectNoAction) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, UltCommandStreamReceiverTest, WhenProgrammingActivePartitionsThenExpectNoAction) {
     auto &commandStreamReceiver = pDevice->getUltCommandStreamReceiver<FamilyType>();
     size_t expectedCmdSize = 0;
     EXPECT_EQ(expectedCmdSize, commandStreamReceiver.getCmdSizeForActivePartitionConfig());
@@ -1680,7 +1699,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, UltCommandStreamReceiverTest, WhenProgrammingActiveP
     EXPECT_EQ(usedBefore, usedAfter);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, UltCommandStreamReceiverTest, givenBarrierNodeSetWhenProgrammingBarrierCommandThenExpectPostSyncPipeControl) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, UltCommandStreamReceiverTest, givenBarrierNodeSetWhenProgrammingBarrierCommandThenExpectPostSyncPipeControl) {
     using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
 
     auto &rootDeviceEnvironment = pDevice->getRootDeviceEnvironment();

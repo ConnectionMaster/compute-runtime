@@ -66,6 +66,7 @@ struct EncodeDispatchKernelArgs {
     uint32_t additionalSizeParam = NEO::additionalKernelLaunchSizeParamNotSet;
     uint32_t partitionCount = 0u;
     uint32_t reserveExtraPayloadSpace = 0;
+    uint32_t maxWgCountPerTile = 0;
     int32_t defaultPipelinedThreadArbitrationPolicy = NEO::ThreadArbitrationPolicy::NotPresent;
     bool isIndirect = false;
     bool isPredicate = false;
@@ -128,8 +129,11 @@ struct EncodeDispatchKernel {
     static void encodeAdditionalWalkerFields(const RootDeviceEnvironment &rootDeviceEnvironment, WalkerType &walkerCmd, const EncodeWalkerArgs &walkerArgs);
 
     template <typename InterfaceDescriptorType>
-    static void appendAdditionalIDDFields(InterfaceDescriptorType *pInterfaceDescriptor, const RootDeviceEnvironment &rootDeviceEnvironment,
-                                          const uint32_t threadsPerThreadGroup, uint32_t slmTotalSize, SlmPolicy slmPolicy);
+    static void setupPreferredSlmSize(InterfaceDescriptorType *pInterfaceDescriptor, const RootDeviceEnvironment &rootDeviceEnvironment,
+                                      const uint32_t threadsPerThreadGroup, uint32_t slmTotalSize, SlmPolicy slmPolicy);
+
+    static uint32_t getThreadCountPerSubslice(const HardwareInfo &hwInfo);
+    static uint32_t alignPreferredSlmSize(uint32_t slmSize);
 
     template <typename InterfaceDescriptorType>
     static void encodeEuSchedulingPolicy(InterfaceDescriptorType *pInterfaceDescriptor, const KernelDescriptor &kernelDesc, int32_t defaultPipelinedThreadArbitrationPolicy);
@@ -182,6 +186,9 @@ struct EncodeDispatchKernel {
     static void setupPostSyncForRegularEvent(WalkerType &walkerCmd, const EncodeDispatchKernelArgs &args);
 
     template <typename WalkerType>
+    static void setWalkerRegionSettings(WalkerType &walkerCmd, const HardwareInfo &hwInfo, uint32_t partitionCount, uint32_t workgroupSize, uint32_t maxWgCountPerTile, bool requiredWalkOrder);
+
+    template <typename WalkerType>
     static void setupPostSyncForInOrderExec(WalkerType &walkerCmd, const EncodeDispatchKernelArgs &args);
 
     template <typename WalkerType>
@@ -215,6 +222,14 @@ struct EncodeDispatchKernel {
 
     template <typename WalkerType>
     static void forceComputeWalkerPostSyncFlushWithWrite(WalkerType &walkerCmd);
+
+    static uint32_t alignSlmSize(uint32_t slmSize);
+    static uint32_t computeSlmValues(const HardwareInfo &hwInfo, uint32_t slmSize);
+
+    static bool singleTileExecImplicitScalingRequired(bool cooperativeKernel);
+
+    template <typename WalkerType, typename InterfaceDescriptorType>
+    static void overrideDefaultValues(WalkerType &walkerCmd, InterfaceDescriptorType &interfaceDescriptor);
 };
 
 template <typename GfxFamily>
@@ -353,12 +368,12 @@ struct EncodeSetMMIO {
     static const size_t sizeREG = sizeof(MI_LOAD_REGISTER_REG);
 
     static void encodeIMM(CommandContainer &container, uint32_t offset, uint32_t data, bool remap, bool isBcs);
-    static void encodeMEM(CommandContainer &container, uint32_t offset, uint64_t address);
-    static void encodeREG(CommandContainer &container, uint32_t dstOffset, uint32_t srcOffset);
+    static void encodeMEM(CommandContainer &container, uint32_t offset, uint64_t address, bool isBcs);
+    static void encodeREG(CommandContainer &container, uint32_t dstOffset, uint32_t srcOffset, bool isBcs);
 
     static void encodeIMM(LinearStream &cmdStream, uint32_t offset, uint32_t data, bool remap, bool isBcs);
-    static void encodeMEM(LinearStream &cmdStream, uint32_t offset, uint64_t address);
-    static void encodeREG(LinearStream &cmdStream, uint32_t dstOffset, uint32_t srcOffset);
+    static void encodeMEM(LinearStream &cmdStream, uint32_t offset, uint64_t address, bool isBcs);
+    static void encodeREG(LinearStream &cmdStream, uint32_t dstOffset, uint32_t srcOffset, bool isBcs);
 
     static bool isRemapApplicable(uint32_t offset);
     static void remapOffset(MI_LOAD_REGISTER_MEM *pMiLoadReg);
@@ -414,8 +429,8 @@ struct EncodeStoreMMIO {
     using MI_STORE_REGISTER_MEM = typename GfxFamily::MI_STORE_REGISTER_MEM;
 
     static const size_t size = sizeof(MI_STORE_REGISTER_MEM);
-    static void encode(LinearStream &csr, uint32_t offset, uint64_t address, bool workloadPartition, void **outCmdBuffer);
-    static void encode(MI_STORE_REGISTER_MEM *cmdBuffer, uint32_t offset, uint64_t address, bool workloadPartition);
+    static void encode(LinearStream &csr, uint32_t offset, uint64_t address, bool workloadPartition, void **outCmdBuffer, bool isBcs);
+    static void encode(MI_STORE_REGISTER_MEM *cmdBuffer, uint32_t offset, uint64_t address, bool workloadPartition, bool isBcs);
     static void appendFlags(MI_STORE_REGISTER_MEM *storeRegMem, bool workloadPartition);
 };
 
@@ -513,7 +528,7 @@ struct EncodeBatchBufferStartOrEnd {
 
     static void programConditionalDataMemBatchBufferStart(LinearStream &commandStream, uint64_t startAddress, uint64_t compareAddress, uint64_t compareData, CompareOperation compareOperation, bool indirect, bool useQwordData, bool isBcs);
     static void programConditionalDataRegBatchBufferStart(LinearStream &commandStream, uint64_t startAddress, uint32_t compareReg, uint64_t compareData, CompareOperation compareOperation, bool indirect, bool useQwordData, bool isBcs);
-    static void programConditionalRegRegBatchBufferStart(LinearStream &commandStream, uint64_t startAddress, AluRegisters compareReg0, AluRegisters compareReg1, CompareOperation compareOperation, bool indirect);
+    static void programConditionalRegRegBatchBufferStart(LinearStream &commandStream, uint64_t startAddress, AluRegisters compareReg0, AluRegisters compareReg1, CompareOperation compareOperation, bool indirect, bool isBcs);
     static void programConditionalRegMemBatchBufferStart(LinearStream &commandStream, uint64_t startAddress, uint64_t compareAddress, uint32_t compareReg, CompareOperation compareOperation, bool indirect, bool isBcs);
 
     static size_t constexpr getCmdSizeConditionalDataMemBatchBufferStart(bool useQwordData) {
@@ -540,7 +555,7 @@ struct EncodeBatchBufferStartOrEnd {
 
   protected:
     static void appendBatchBufferStart(MI_BATCH_BUFFER_START &cmd, bool indirect, bool predicate);
-    static void programConditionalBatchBufferStartBase(LinearStream &commandStream, uint64_t startAddress, AluRegisters regA, AluRegisters regB, CompareOperation compareOperation, bool indirect);
+    static void programConditionalBatchBufferStartBase(LinearStream &commandStream, uint64_t startAddress, AluRegisters regA, AluRegisters regB, CompareOperation compareOperation, bool indirect, bool isBcs);
 
     static size_t constexpr getCmdSizeConditionalBufferStartBase() {
         return (EncodeAluHelper<GfxFamily, 4>::getCmdsSize() + sizeof(typename GfxFamily::MI_LOAD_REGISTER_REG) +

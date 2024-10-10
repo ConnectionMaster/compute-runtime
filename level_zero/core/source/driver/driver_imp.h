@@ -9,6 +9,7 @@
 
 #include "level_zero/core/source/driver/driver.h"
 
+#include <atomic>
 #include <mutex>
 #include <string>
 
@@ -22,11 +23,14 @@ class DriverImp : public Driver {
     unsigned int getPid() const override {
         return pid;
     }
+    void tryInitGtpin() override;
 
   protected:
     uint32_t pid = 0;
     std::once_flag initDriverOnce;
     static ze_result_t initStatus;
+    std::atomic<bool> gtPinInitializationNeeded{false};
+    std::mutex gtpinInitMtx;
 };
 
 struct L0EnvVariables {

@@ -18,13 +18,14 @@ class MockAILConfiguration : public AILConfiguration {
     }
     void modifyKernelIfRequired(std::string &kernel) override {}
 
-    bool isFallbackToPatchtokensRequired(const std::string &kernelSources) override {
-        return false;
-    }
-
     bool contextSyncFlagReturn = false;
     bool isContextSyncFlagRequired() override {
         return contextSyncFlagReturn;
+    }
+
+    bool prefetchDisableRequiredReturn = false;
+    bool is256BPrefetchDisableRequired() override {
+        return prefetchDisableRequiredReturn;
     }
 
     bool isBufferPoolEnabledReturn = true;
@@ -48,6 +49,14 @@ class MockAILConfiguration : public AILConfiguration {
         handleDivergentBarriersValue = val;
     }
     bool handleDivergentBarriersValue = false;
+
+    bool disableBindlessAddressing() override {
+        return disableBindlessAddressingValue;
+    }
+    void setDisableBindlessAddressing(bool val) override {
+        disableBindlessAddressingValue = val;
+    }
+    bool disableBindlessAddressingValue = false;
 
   protected:
     void applyExt(RuntimeCapabilityTable &runtimeCapabilityTable) override {}

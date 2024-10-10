@@ -9,7 +9,7 @@
 #include "shared/source/execution_environment/execution_environment.h"
 #include "shared/source/execution_environment/root_device_environment.h"
 #include "shared/source/gmm_helper/gmm_helper.h"
-#include "shared/source/helpers/compiler_product_helper_base.inl"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/helpers/hw_info.h"
 #include "shared/source/os_interface/device_factory.h"
@@ -32,7 +32,7 @@ const DeviceDescriptor deviceDescriptorTable[] = {
     {0, nullptr, nullptr, ""}};
 
 Drm *Drm::create(std::unique_ptr<HwDeviceIdDrm> &&hwDeviceId, RootDeviceEnvironment &rootDeviceEnvironment) {
-    auto drm = std::unique_ptr<Drm>(new Drm(std::move(hwDeviceId), rootDeviceEnvironment));
+    std::unique_ptr<Drm> drm{new Drm(std::move(hwDeviceId), rootDeviceEnvironment)};
 
     if (!drm->queryDeviceIdAndRevision()) {
         return nullptr;

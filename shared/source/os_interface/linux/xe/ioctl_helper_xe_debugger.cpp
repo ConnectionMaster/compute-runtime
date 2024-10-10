@@ -57,14 +57,14 @@ int IoctlHelperXe::debuggerMetadataDestroyIoctl(DrmIoctl request, void *arg) {
     return ret;
 }
 
-int IoctlHelperXe::getRunaloneExtProperty() {
+int IoctlHelperXe::getEudebugExtProperty() {
     return DRM_XE_EXEC_QUEUE_SET_PROPERTY_EUDEBUG;
 }
 
 int IoctlHelperXe::getEuDebugSysFsEnable() {
     char enabledEuDebug = '0';
     std::string sysFsPciPath = drm.getSysFsPciPath();
-    std::string euDebugPath = sysFsPciPath + "/device/enable_eudebug";
+    std::string euDebugPath = sysFsPciPath + sysFsXeEuDebugFile;
 
     FILE *fileDescriptor = IoFunctions::fopenPtr(euDebugPath.c_str(), "r");
     if (fileDescriptor) {

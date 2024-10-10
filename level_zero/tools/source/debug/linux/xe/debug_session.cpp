@@ -484,7 +484,6 @@ void DebugSessionLinuxXe::handleVmBind(VmBindData &vmBindData) {
         debugEvent.info.module.moduleEnd = reinterpret_cast<uint64_t>(elfMetadata.data.get()) + elfMetadata.metadata.len;
         debugEvent.flags = ZET_DEBUG_EVENT_FLAG_NEED_ACK;
 
-        pushApiEvent(debugEvent, metaDataEntry.metadata.metadata_handle);
         {
             std::lock_guard<std::mutex> lock(asyncThreadMutex);
             if (vmBindData.vmBind.flags & DRM_XE_EUDEBUG_EVENT_VM_BIND_FLAG_UFENCE) {
@@ -495,6 +494,7 @@ void DebugSessionLinuxXe::handleVmBind(VmBindData &vmBindData) {
                 }
             }
         }
+        pushApiEvent(debugEvent, metaDataEntry.metadata.metadata_handle);
     }
 
     if (shouldAckEvent && (vmBindData.vmBindUfence.base.flags & DRM_XE_EUDEBUG_EVENT_NEED_ACK)) {
@@ -718,7 +718,6 @@ int DebugSessionLinuxXe::threadControlResume(const std::vector<EuThread::ThreadI
     euControl.client_handle = clientHandle;
     euControl.bitmask_size = 0;
     euControl.bitmask_ptr = 0;
-    euControl.cmd = DRM_XE_EUDEBUG_EU_CONTROL_CMD_RESUME;
 
     std::unique_ptr<uint8_t[]> bitmask;
     size_t bitmaskSize = 0;
@@ -733,15 +732,23 @@ int DebugSessionLinuxXe::threadControlResume(const std::vector<EuThread::ThreadI
     euControl.exec_queue_handle = execQueueHandle;
     euControl.lrc_handle = lrcHandle;
 
-    euControlRetVal = ioctl(DRM_XE_EUDEBUG_IOCTL_EU_CONTROL, &euControl);
-    if (euControlRetVal != 0) {
-        PRINT_DEBUGGER_ERROR_LOG("DRM_XE_EUDEBUG_IOCTL_EU_CONTROL failed: retCode: %d errno = %d command = %d, execQueueHandle = %llu lrcHandle = %llu\n",
-                                 euControlRetVal, errno, static_cast<uint32_t>(euControl.cmd), static_cast<uint64_t>(euControl.exec_queue_handle),
-                                 static_cast<uint64_t>(euControl.lrc_handle));
-    } else {
-        PRINT_DEBUGGER_INFO_LOG("DRM_XE_EUDEBUG_IOCTL_EU_CONTROL: seqno = %llu command = %u\n", static_cast<uint64_t>(euControl.seqno), static_cast<uint32_t>(euControl.cmd));
+    auto invokeIoctl = [&](int cmd) {
+        euControl.cmd = cmd;
+        euControlRetVal = ioctl(DRM_XE_EUDEBUG_IOCTL_EU_CONTROL, &euControl);
+        if (euControlRetVal != 0) {
+            PRINT_DEBUGGER_ERROR_LOG("DRM_XE_EUDEBUG_IOCTL_EU_CONTROL failed: retCode: %d errno = %d command = %d, execQueueHandle = %llu lrcHandle = %llu\n",
+                                     euControlRetVal, errno, static_cast<uint32_t>(euControl.cmd), static_cast<uint64_t>(euControl.exec_queue_handle),
+                                     static_cast<uint64_t>(euControl.lrc_handle));
+        } else {
+            PRINT_DEBUGGER_INFO_LOG("DRM_XE_EUDEBUG_IOCTL_EU_CONTROL: seqno = %llu command = %u\n", static_cast<uint64_t>(euControl.seqno), static_cast<uint32_t>(euControl.cmd));
+        }
+    };
+
+    if (l0GfxCoreHelper.threadResumeRequiresUnlock()) {
+        invokeIoctl(getEuControlCmdUnlock());
     }
 
+    invokeIoctl(DRM_XE_EUDEBUG_EU_CONTROL_CMD_RESUME);
     return euControlRetVal;
 }
 

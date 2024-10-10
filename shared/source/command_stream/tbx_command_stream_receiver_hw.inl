@@ -532,7 +532,7 @@ void TbxCommandStreamReceiverHw<GfxFamily>::processEviction() {
 }
 
 template <typename GfxFamily>
-SubmissionStatus TbxCommandStreamReceiverHw<GfxFamily>::processResidency(const ResidencyContainer &allocationsForResidency, uint32_t handleId) {
+SubmissionStatus TbxCommandStreamReceiverHw<GfxFamily>::processResidency(ResidencyContainer &allocationsForResidency, uint32_t handleId) {
     for (auto &gfxAllocation : allocationsForResidency) {
         if (dumpTbxNonWritable) {
             this->setTbxWritable(true, *gfxAllocation);
@@ -576,19 +576,46 @@ void TbxCommandStreamReceiverHw<GfxFamily>::downloadAllocationTbx(GraphicsAlloca
 }
 
 template <typename GfxFamily>
-void TbxCommandStreamReceiverHw<GfxFamily>::downloadAllocations() {
+void TbxCommandStreamReceiverHw<GfxFamily>::downloadAllocations(bool blockingWait, TaskCountType taskCount) {
     volatile TagAddressType *pollAddress = this->getTagAddress();
+
+    auto waitTaskCount = std::min(taskCount, this->latestFlushedTaskCount.load());
+
     for (uint32_t i = 0; i < this->activePartitions; i++) {
-        while (*pollAddress < this->latestFlushedTaskCount) {
+        if (*pollAddress < waitTaskCount) {
             this->downloadAllocation(*this->getTagAllocation());
+
+            auto startTime = std::chrono::high_resolution_clock::now();
+            uint64_t timeDiff = 0;
+
+            while (*pollAddress < waitTaskCount) {
+                if (!blockingWait) {
+                    // Additional delay to reach PC in case of Event wait
+                    timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
+                    if (timeDiff > getNonBlockingDownloadTimeoutMs()) {
+                        return;
+                    }
+                }
+                this->downloadAllocation(*this->getTagAllocation());
+            }
         }
+
         pollAddress = ptrOffset(pollAddress, this->immWritePostSyncWriteOffset);
     }
     auto lockCSR = this->obtainUniqueOwnership();
+
+    std::vector<GraphicsAllocation *> notReadyAllocations;
+
     for (GraphicsAllocation *graphicsAllocation : this->allocationsForDownload) {
         this->downloadAllocation(*graphicsAllocation);
+
+        // Used again while waiting for completion. Another download will be needed.
+        if (graphicsAllocation->getTaskCount(this->osContext->getContextId()) > taskCount) {
+            notReadyAllocations.push_back(graphicsAllocation);
+        }
     }
     this->allocationsForDownload.clear();
+    this->allocationsForDownload = std::set<GraphicsAllocation *>(notReadyAllocations.begin(), notReadyAllocations.end());
 }
 
 template <typename GfxFamily>

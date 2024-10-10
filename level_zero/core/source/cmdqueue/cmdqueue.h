@@ -11,13 +11,15 @@
 #include "shared/source/helpers/definitions/engine_group_types.h"
 #include "shared/source/helpers/heap_base_address_model.h"
 
+#include "level_zero/core/source/helpers/api_handle_helper.h"
 #include <level_zero/ze_api.h>
 
 #include <atomic>
 #include <mutex>
 #include <vector>
 
-struct _ze_command_queue_handle_t {};
+struct _ze_command_queue_handle_t {
+};
 
 namespace NEO {
 class CommandStreamReceiver;
@@ -54,9 +56,6 @@ struct CommandQueue : _ze_command_queue_handle_t {
                                             ze_command_list_handle_t *phCommandLists,
                                             ze_fence_handle_t hFence, bool performMigration,
                                             NEO::LinearStream *parentImmediateCommandlistLinearStream) = 0;
-    virtual ze_result_t executeCommands(uint32_t numCommands,
-                                        void *phCommands,
-                                        ze_fence_handle_t hFence) = 0;
     virtual ze_result_t synchronize(uint64_t timeout) = 0;
     virtual ze_result_t getOrdinal(uint32_t *pOrdinal) = 0;
     virtual ze_result_t getIndex(uint32_t *pIndex) = 0;

@@ -901,7 +901,7 @@ TEST(GfxCoreHelperCacheFlushTest, givenEnableCacheFlushFlagIsReadPlatformSetting
     EXPECT_TRUE(GfxCoreHelper::cacheFlushAfterWalkerSupported(device->getHardwareInfo()));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, givenGfxCoreHelperWhenGettingGlobalTimeStampBitsThenCorrectValueIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, givenGfxCoreHelperWhenGettingGlobalTimeStampBitsThenCorrectValueIsReturned) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     EXPECT_EQ(gfxCoreHelper.getGlobalTimeStampBits(), 36U);
 }
@@ -935,7 +935,7 @@ TEST_F(GfxCoreHelperTest, givenAUBDumpForceAllToLocalMemoryDebugVarWhenSetThenGe
     EXPECT_TRUE(gfxCoreHelper.getEnableLocalMemory(hardwareInfo));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, givenVariousCachesRequestThenCorrectMocsIndexesAreReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, givenVariousCachesRequestThenCorrectMocsIndexesAreReturned) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     auto gmmHelper = this->pDevice->getGmmHelper();
     auto expectedMocsForL3off = gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED) >> 1;
@@ -1007,19 +1007,19 @@ HWTEST_F(GfxCoreHelperTest, WhenIsBankOverrideRequiredIsCalledThenFalseIsReturne
     EXPECT_FALSE(gfxCoreHelper.isBankOverrideRequired(hardwareInfo, productHelper));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, GivenBarrierEncodingWhenCallingGetBarriersCountFromHasBarrierThenNumberOfBarriersIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, GivenBarrierEncodingWhenCallingGetBarriersCountFromHasBarrierThenNumberOfBarriersIsReturned) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     EXPECT_EQ(0u, gfxCoreHelper.getBarriersCountFromHasBarriers(0u));
     EXPECT_EQ(1u, gfxCoreHelper.getBarriersCountFromHasBarriers(1u));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, GivenVariousValuesWhenCallingCalculateAvailableThreadCountThenCorrectValueIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, GivenVariousValuesWhenCallingCalculateAvailableThreadCountThenCorrectValueIsReturned) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     auto result = gfxCoreHelper.calculateAvailableThreadCount(hardwareInfo, 0);
     EXPECT_EQ(hardwareInfo.gtSystemInfo.ThreadCount, result);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, GivenModifiedGtSystemInfoWhenCallingCalculateAvailableThreadCountThenCorrectValueIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, GivenModifiedGtSystemInfoWhenCallingCalculateAvailableThreadCountThenCorrectValueIsReturned) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     auto hwInfo = hardwareInfo;
     for (auto threadCount : {1u, 5u, 9u}) {
@@ -1045,7 +1045,7 @@ HWTEST_F(GfxCoreHelperTest, givenDefaultGfxCoreHelperHwWhenIsForceDefaultRCSEngi
     EXPECT_FALSE(GfxCoreHelperHw<FamilyType>::isForceDefaultRCSEngineWARequired(hardwareInfo));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, givenDefaultGfxCoreHelperHwWhenIsWorkaroundRequiredCalledThenFalseIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, givenDefaultGfxCoreHelperHwWhenIsWorkaroundRequiredCalledThenFalseIsReturned) {
     if (hardwareInfo.platform.eRenderCoreFamily == IGFX_GEN12LP_CORE) {
         GTEST_SKIP();
     }
@@ -1063,7 +1063,7 @@ HWTEST_F(GfxCoreHelperTest, givenDefaultGfxCoreHelperHwWhenMinimalGrfSizeIsQueri
     EXPECT_EQ(128u, gfxCoreHelper.getMinimalGrfSize());
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, WhenIsFusedEuDispatchEnabledIsCalledThenFalseIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, WhenIsFusedEuDispatchEnabledIsCalledThenFalseIsReturned) {
     if (hardwareInfo.platform.eRenderCoreFamily == IGFX_GEN12LP_CORE) {
         GTEST_SKIP();
     }
@@ -1119,7 +1119,7 @@ HWTEST_F(PipeControlHelperTests, WhenProgrammingInstructionCacheFlushThenExpectI
 
 using ProductHelperCommonTest = Test<DeviceFixture>;
 
-HWTEST2_F(ProductHelperCommonTest, givenBlitterPreferenceWhenEnablingBlitterOperationsSupportThenHonorThePreference, IsAtLeastGen12lp) {
+HWTEST2_F(ProductHelperCommonTest, givenBlitterPreferenceWhenEnablingBlitterOperationsSupportThenHonorThePreference, MatchAny) {
     HardwareInfo hardwareInfo = *defaultHwInfo;
     auto &productHelper = getHelper<ProductHelper>();
     productHelper.configureHardwareCustom(&hardwareInfo, nullptr);
@@ -1157,7 +1157,7 @@ TEST_F(GfxCoreHelperTest, givenInvalidEngineTypeWhenGettingEngineGroupTypeThenTh
     EXPECT_ANY_THROW(gfxCoreHelper.getEngineGroupType(aub_stream::EngineType::ENGINE_VECS, EngineUsage::regular, hardwareInfo));
 }
 
-HWTEST2_F(ProductHelperCommonTest, givenDebugFlagSetWhenEnablingBlitterOperationsSupportThenHonorTheFlag, IsAtLeastGen12lp) {
+HWTEST2_F(ProductHelperCommonTest, givenDebugFlagSetWhenEnablingBlitterOperationsSupportThenHonorTheFlag, MatchAny) {
     DebugManagerStateRestore restore{};
     HardwareInfo hardwareInfo = *defaultHwInfo;
     auto &productHelper = getHelper<ProductHelper>();
@@ -1171,87 +1171,43 @@ HWTEST2_F(ProductHelperCommonTest, givenDebugFlagSetWhenEnablingBlitterOperation
     EXPECT_FALSE(hardwareInfo.capabilityTable.blitterOperationsSupported);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, GivenVariousValuesWhenAlignSlmSizeIsCalledThenCorrectValueIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, GivenVariousValuesWhenAlignSlmSizeIsCalledThenCorrectValueIsReturned) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
-    if (::renderCoreFamily == IGFX_GEN8_CORE) {
-        EXPECT_EQ(0u, gfxCoreHelper.alignSlmSize(0));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(1));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(1024));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(1025));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(2048));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(2049));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(4096));
-        EXPECT_EQ(8192u, gfxCoreHelper.alignSlmSize(4097));
-        EXPECT_EQ(8192u, gfxCoreHelper.alignSlmSize(8192));
-        EXPECT_EQ(16384u, gfxCoreHelper.alignSlmSize(8193));
-        EXPECT_EQ(16384u, gfxCoreHelper.alignSlmSize(12288));
-        EXPECT_EQ(16384u, gfxCoreHelper.alignSlmSize(16384));
-        EXPECT_EQ(32768u, gfxCoreHelper.alignSlmSize(16385));
-        EXPECT_EQ(32768u, gfxCoreHelper.alignSlmSize(24576));
-        EXPECT_EQ(32768u, gfxCoreHelper.alignSlmSize(32768));
-        EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(32769));
-        EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(49152));
-        EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(65535));
-        EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(65536));
-    } else {
-        EXPECT_EQ(0u, gfxCoreHelper.alignSlmSize(0));
-        EXPECT_EQ(1024u, gfxCoreHelper.alignSlmSize(1));
-        EXPECT_EQ(1024u, gfxCoreHelper.alignSlmSize(1024));
-        EXPECT_EQ(2048u, gfxCoreHelper.alignSlmSize(1025));
-        EXPECT_EQ(2048u, gfxCoreHelper.alignSlmSize(2048));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(2049));
-        EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(4096));
-        EXPECT_EQ(8192u, gfxCoreHelper.alignSlmSize(4097));
-        EXPECT_EQ(8192u, gfxCoreHelper.alignSlmSize(8192));
-        EXPECT_EQ(16384u, gfxCoreHelper.alignSlmSize(8193));
-        EXPECT_EQ(16384u, gfxCoreHelper.alignSlmSize(16384));
-        EXPECT_EQ(32768u, gfxCoreHelper.alignSlmSize(16385));
-        EXPECT_EQ(32768u, gfxCoreHelper.alignSlmSize(32768));
-        EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(32769));
-        EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(65536));
-    }
+    EXPECT_EQ(0u, gfxCoreHelper.alignSlmSize(0));
+    EXPECT_EQ(1024u, gfxCoreHelper.alignSlmSize(1));
+    EXPECT_EQ(1024u, gfxCoreHelper.alignSlmSize(1024));
+    EXPECT_EQ(2048u, gfxCoreHelper.alignSlmSize(1025));
+    EXPECT_EQ(2048u, gfxCoreHelper.alignSlmSize(2048));
+    EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(2049));
+    EXPECT_EQ(4096u, gfxCoreHelper.alignSlmSize(4096));
+    EXPECT_EQ(8192u, gfxCoreHelper.alignSlmSize(4097));
+    EXPECT_EQ(8192u, gfxCoreHelper.alignSlmSize(8192));
+    EXPECT_EQ(16384u, gfxCoreHelper.alignSlmSize(8193));
+    EXPECT_EQ(16384u, gfxCoreHelper.alignSlmSize(16384));
+    EXPECT_EQ(32768u, gfxCoreHelper.alignSlmSize(16385));
+    EXPECT_EQ(32768u, gfxCoreHelper.alignSlmSize(32768));
+    EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(32769));
+    EXPECT_EQ(65536u, gfxCoreHelper.alignSlmSize(65536));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, GivenVariousValuesWhenComputeSlmSizeIsCalledThenCorrectValueIsReturned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, GivenVariousValuesWhenComputeSlmSizeIsCalledThenCorrectValueIsReturned) {
     auto hwInfo = *defaultHwInfo;
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
-    if (::renderCoreFamily == IGFX_GEN8_CORE) {
-        EXPECT_EQ(0u, gfxCoreHelper.computeSlmValues(hwInfo, 0));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 1));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 1024));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 1025));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 2048));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 2049));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 4096));
-        EXPECT_EQ(2u, gfxCoreHelper.computeSlmValues(hwInfo, 4097));
-        EXPECT_EQ(2u, gfxCoreHelper.computeSlmValues(hwInfo, 8192));
-        EXPECT_EQ(4u, gfxCoreHelper.computeSlmValues(hwInfo, 8193));
-        EXPECT_EQ(4u, gfxCoreHelper.computeSlmValues(hwInfo, 12288));
-        EXPECT_EQ(4u, gfxCoreHelper.computeSlmValues(hwInfo, 16384));
-        EXPECT_EQ(8u, gfxCoreHelper.computeSlmValues(hwInfo, 16385));
-        EXPECT_EQ(8u, gfxCoreHelper.computeSlmValues(hwInfo, 24576));
-        EXPECT_EQ(8u, gfxCoreHelper.computeSlmValues(hwInfo, 32768));
-        EXPECT_EQ(16u, gfxCoreHelper.computeSlmValues(hwInfo, 32769));
-        EXPECT_EQ(16u, gfxCoreHelper.computeSlmValues(hwInfo, 49152));
-        EXPECT_EQ(16u, gfxCoreHelper.computeSlmValues(hwInfo, 65535));
-        EXPECT_EQ(16u, gfxCoreHelper.computeSlmValues(hwInfo, 65536));
-    } else {
-        EXPECT_EQ(0u, gfxCoreHelper.computeSlmValues(hwInfo, 0));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 1));
-        EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 1024));
-        EXPECT_EQ(2u, gfxCoreHelper.computeSlmValues(hwInfo, 1025));
-        EXPECT_EQ(2u, gfxCoreHelper.computeSlmValues(hwInfo, 2048));
-        EXPECT_EQ(3u, gfxCoreHelper.computeSlmValues(hwInfo, 2049));
-        EXPECT_EQ(3u, gfxCoreHelper.computeSlmValues(hwInfo, 4096));
-        EXPECT_EQ(4u, gfxCoreHelper.computeSlmValues(hwInfo, 4097));
-        EXPECT_EQ(4u, gfxCoreHelper.computeSlmValues(hwInfo, 8192));
-        EXPECT_EQ(5u, gfxCoreHelper.computeSlmValues(hwInfo, 8193));
-        EXPECT_EQ(5u, gfxCoreHelper.computeSlmValues(hwInfo, 16384));
-        EXPECT_EQ(6u, gfxCoreHelper.computeSlmValues(hwInfo, 16385));
-        EXPECT_EQ(6u, gfxCoreHelper.computeSlmValues(hwInfo, 32768));
-        EXPECT_EQ(7u, gfxCoreHelper.computeSlmValues(hwInfo, 32769));
-        EXPECT_EQ(7u, gfxCoreHelper.computeSlmValues(hwInfo, 65536));
-    }
+    EXPECT_EQ(0u, gfxCoreHelper.computeSlmValues(hwInfo, 0));
+    EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 1));
+    EXPECT_EQ(1u, gfxCoreHelper.computeSlmValues(hwInfo, 1024));
+    EXPECT_EQ(2u, gfxCoreHelper.computeSlmValues(hwInfo, 1025));
+    EXPECT_EQ(2u, gfxCoreHelper.computeSlmValues(hwInfo, 2048));
+    EXPECT_EQ(3u, gfxCoreHelper.computeSlmValues(hwInfo, 2049));
+    EXPECT_EQ(3u, gfxCoreHelper.computeSlmValues(hwInfo, 4096));
+    EXPECT_EQ(4u, gfxCoreHelper.computeSlmValues(hwInfo, 4097));
+    EXPECT_EQ(4u, gfxCoreHelper.computeSlmValues(hwInfo, 8192));
+    EXPECT_EQ(5u, gfxCoreHelper.computeSlmValues(hwInfo, 8193));
+    EXPECT_EQ(5u, gfxCoreHelper.computeSlmValues(hwInfo, 16384));
+    EXPECT_EQ(6u, gfxCoreHelper.computeSlmValues(hwInfo, 16385));
+    EXPECT_EQ(6u, gfxCoreHelper.computeSlmValues(hwInfo, 32768));
+    EXPECT_EQ(7u, gfxCoreHelper.computeSlmValues(hwInfo, 32769));
+    EXPECT_EQ(7u, gfxCoreHelper.computeSlmValues(hwInfo, 65536));
 }
 
 HWTEST_F(GfxCoreHelperTest, GivenZeroSlmSizeWhenComputeSlmSizeIsCalledThenCorrectValueIsReturned) {
@@ -1262,7 +1218,7 @@ HWTEST_F(GfxCoreHelperTest, GivenZeroSlmSizeWhenComputeSlmSizeIsCalledThenCorrec
     EXPECT_EQ(SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_0K, receivedSlmSize);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, GfxCoreHelperTest, givenGfxCoreHelperWhenGettingPlanarYuvHeightThenHelperReturnsCorrectValue) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, GfxCoreHelperTest, givenGfxCoreHelperWhenGettingPlanarYuvHeightThenHelperReturnsCorrectValue) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     EXPECT_EQ(gfxCoreHelper.getPlanarYuvMaxHeight(), 16352u);
 }
@@ -1271,14 +1227,6 @@ TEST_F(GfxCoreHelperTest, WhenGettingIsCpuImageTransferPreferredThenFalseIsRetur
     REQUIRE_IMAGES_OR_SKIP(defaultHwInfo);
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     EXPECT_FALSE(gfxCoreHelper.isCpuImageTransferPreferred(*defaultHwInfo));
-}
-
-TEST_F(GfxCoreHelperTest, whenFtrGpGpuMidThreadLevelPreemptFeatureDisabledThenFalseIsReturned) {
-    auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
-    FeatureTable featureTable = {};
-    featureTable.flags.ftrGpGpuMidThreadLevelPreempt = false;
-    bool result = gfxCoreHelper.isAdditionalFeatureFlagRequired(&featureTable);
-    EXPECT_FALSE(result);
 }
 
 HWTEST_F(GfxCoreHelperTest, whenSetCompressedFlagThenProperFlagSet) {
@@ -1328,7 +1276,7 @@ HWTEST2_F(GfxCoreHelperTest, givenXeHPAndBelowPlatformPlatformWhenCheckingIfEngi
     EXPECT_FALSE(gfxCoreHelper.isEngineTypeRemappingToHwSpecificRequired());
 }
 
-HWTEST2_F(GfxCoreHelperTest, givenAtMostGen12lpPlatformiWhenCheckingIfScratchSpaceSurfaceStateAccessibleThenFalseIsReturned, IsAtMostGen12lp) {
+HWTEST2_F(GfxCoreHelperTest, givenAtMostGen12lpPlatformiWhenCheckingIfScratchSpaceSurfaceStateAccessibleThenFalseIsReturned, IsGen12LP) {
     const auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     EXPECT_FALSE(gfxCoreHelper.isScratchSpaceSurfaceStateAccessible());
 }
@@ -1450,34 +1398,7 @@ HWTEST2_F(GfxCoreHelperTest, givenGfxCoreHelperWhenFlagSetAndCallGetAmountOfAllo
     EXPECT_EQ(gfxCoreHelper.getAmountOfAllocationsToFill(), 1u);
 }
 
-HWTEST2_F(GfxCoreHelperTest, GivenVariousValuesAndXeHpOrXeHpgCoreWhenCallingCalculateAvailableThreadCountThenCorrectValueIsReturned, IsXeHpOrXeHpgCore) {
-    std::array<std::pair<uint32_t, uint32_t>, 3> grfTestInputs = {{{64, 8},
-                                                                   {128, 8},
-                                                                   {256, 4}}};
-
-    const auto &hwInfo = *defaultHwInfo;
-    const auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
-    for (const auto &[grfCount, expectedThreadCountPerEu] : grfTestInputs) {
-        auto expected = expectedThreadCountPerEu * hwInfo.gtSystemInfo.EUCount;
-        auto result = gfxCoreHelper.calculateAvailableThreadCount(hwInfo, grfCount);
-        EXPECT_EQ(expected, result);
-    }
-}
-
-HWTEST2_F(GfxCoreHelperTest, GivenModifiedGtSystemInfoAndXeHpOrXeHpgCoreWhenCallingCalculateAvailableThreadCountThenCorrectValueIsReturned, IsXeHpOrXeHpgCore) {
-    std::array<std::tuple<uint32_t, uint32_t, uint32_t>, 3> testInputs = {{{1, 64, 1},
-                                                                           {5, 128, 5},
-                                                                           {8, 256, 4}}};
-    const auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
-    auto hwInfo = hardwareInfo;
-    for (const auto &[threadCount, grfCount, expectedThreadCount] : testInputs) {
-        hwInfo.gtSystemInfo.ThreadCount = threadCount;
-        auto result = gfxCoreHelper.calculateAvailableThreadCount(hwInfo, grfCount);
-        EXPECT_EQ(expectedThreadCount, result);
-    }
-}
-
-HWTEST2_F(GfxCoreHelperTest, givenAtMostGen12lpPlatformWhenGettingMinimalScratchSpaceSizeThen1024IsReturned, IsAtMostGen12lp) {
+HWTEST2_F(GfxCoreHelperTest, givenAtMostGen12lpPlatformWhenGettingMinimalScratchSpaceSizeThen1024IsReturned, IsGen12LP) {
     const auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     EXPECT_EQ(1024U, gfxCoreHelper.getMinimalScratchSpaceSize());
 }
@@ -1595,7 +1516,7 @@ TEST_F(GfxCoreHelperTest, givenNoMaxDualSubSlicesSupportedAndNoSubSliceInfoThenM
     EXPECT_EQ(maxSubSliceEnabled, GfxCoreHelper::getHighestEnabledDualSubSlice(hwInfo));
 }
 
-HWTEST2_F(GfxCoreHelperTest, givenLargeGrfIsNotSupportedWhenCalculatingMaxWorkGroupSizeThenAlwaysReturnDeviceDefault, IsAtMostGen12lp) {
+HWTEST2_F(GfxCoreHelperTest, givenLargeGrfIsNotSupportedWhenCalculatingMaxWorkGroupSizeThenAlwaysReturnDeviceDefault, IsGen12LP) {
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     auto defaultMaxGroupSize = 42u;
 
@@ -1682,33 +1603,30 @@ HWTEST_F(GfxCoreHelperTest, GivenCooperativeEngineSupportedAndNotUsedWhenAdjustM
         }
         hwInfo.platform.usRevId = hwRevId;
 
-        for (auto isEngineInstanced : ::testing::Bool()) {
-            for (auto isRcsEnabled : ::testing::Bool()) {
-                hwInfo.featureTable.flags.ftrRcsNode = isRcsEnabled;
-                for (auto engineGroupType : {EngineGroupType::renderCompute, EngineGroupType::compute, EngineGroupType::cooperativeCompute}) {
-                    if (productHelper.isCooperativeEngineSupported(hwInfo)) {
-                        bool disallowDispatch = (engineGroupType == EngineGroupType::renderCompute) ||
-                                                ((engineGroupType == EngineGroupType::compute) && isRcsEnabled);
-                        bool applyLimitation = !isEngineInstanced &&
-                                               (engineGroupType != EngineGroupType::cooperativeCompute);
-                        if (disallowDispatch) {
-                            EXPECT_EQ(1u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                            EXPECT_EQ(1u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                        } else if (applyLimitation) {
-                            hwInfo.gtSystemInfo.CCSInfo.NumberOfCCSEnabled = 4;
-                            EXPECT_EQ(1u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                            EXPECT_EQ(256u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                            hwInfo.gtSystemInfo.CCSInfo.NumberOfCCSEnabled = 2;
-                            EXPECT_EQ(2u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                            EXPECT_EQ(512u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                        } else {
-                            EXPECT_EQ(4u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                            EXPECT_EQ(1024u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                        }
+        for (auto isRcsEnabled : ::testing::Bool()) {
+            hwInfo.featureTable.flags.ftrRcsNode = isRcsEnabled;
+            for (auto engineGroupType : {EngineGroupType::renderCompute, EngineGroupType::compute, EngineGroupType::cooperativeCompute}) {
+                if (productHelper.isCooperativeEngineSupported(hwInfo)) {
+                    bool disallowDispatch = (engineGroupType == EngineGroupType::renderCompute) ||
+                                            ((engineGroupType == EngineGroupType::compute) && isRcsEnabled);
+                    bool applyLimitation = engineGroupType != EngineGroupType::cooperativeCompute;
+                    if (disallowDispatch) {
+                        EXPECT_EQ(1u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment));
+                        EXPECT_EQ(1u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment));
+                    } else if (applyLimitation) {
+                        hwInfo.gtSystemInfo.CCSInfo.NumberOfCCSEnabled = 4;
+                        EXPECT_EQ(1u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment));
+                        EXPECT_EQ(256u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment));
+                        hwInfo.gtSystemInfo.CCSInfo.NumberOfCCSEnabled = 2;
+                        EXPECT_EQ(2u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment));
+                        EXPECT_EQ(512u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment));
                     } else {
-                        EXPECT_EQ(4u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
-                        EXPECT_EQ(1024u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment, isEngineInstanced));
+                        EXPECT_EQ(4u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment));
+                        EXPECT_EQ(1024u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment));
                     }
+                } else {
+                    EXPECT_EQ(4u, gfxCoreHelper.adjustMaxWorkGroupCount(4u, engineGroupType, rootDeviceEnvironment));
+                    EXPECT_EQ(1024u, gfxCoreHelper.adjustMaxWorkGroupCount(1024u, engineGroupType, rootDeviceEnvironment));
                 }
             }
         }
@@ -1754,12 +1672,6 @@ HWTEST2_F(GfxCoreHelperTest, givenParamsWhenCalculateNumThreadsPerThreadGroupThe
     }
 }
 
-HWTEST2_F(GfxCoreHelperTest, givenDebugModeWhenCheckingIfRunaloneModeRequiredThenMethodReturnFalseValue, IsAtMostXeHpcCore) {
-    auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
-    EXPECT_FALSE(gfxCoreHelper.isRunaloneModeRequired(DebuggingMode::offline));
-    EXPECT_FALSE(gfxCoreHelper.isRunaloneModeRequired(DebuggingMode::online));
-}
-
 HWTEST_F(GfxCoreHelperTest, givenFlagRemoveRestrictionsOnNumberOfThreadsInGpgpuThreadGroupWhenCalculateNumThreadsPerThreadGroupThenMethodReturnProperValue) {
     DebugManagerStateRestore dbgRestore;
     debugManager.flags.RemoveRestrictionsOnNumberOfThreadsInGpgpuThreadGroup.set(1);
@@ -1800,6 +1712,8 @@ TEST_F(GfxCoreHelperTest, givenContextGroupEnabledWithDebugKeyWhenContextGroupCo
     auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
     EXPECT_EQ(8u, gfxCoreHelper.getContextGroupContextsCount());
     EXPECT_TRUE(gfxCoreHelper.areSecondaryContextsSupported());
+    EXPECT_EQ(4u, gfxCoreHelper.getContextGroupHpContextsCount(EngineGroupType::copy, false));
+    EXPECT_EQ(0u, gfxCoreHelper.getContextGroupHpContextsCount(EngineGroupType::copy, true));
 
     debugManager.flags.ContextGroupSize.set(1);
     EXPECT_EQ(1u, gfxCoreHelper.getContextGroupContextsCount());
@@ -1808,6 +1722,8 @@ TEST_F(GfxCoreHelperTest, givenContextGroupEnabledWithDebugKeyWhenContextGroupCo
     debugManager.flags.ContextGroupSize.set(2);
     EXPECT_EQ(2u, gfxCoreHelper.getContextGroupContextsCount());
     EXPECT_TRUE(gfxCoreHelper.areSecondaryContextsSupported());
+    EXPECT_EQ(1u, gfxCoreHelper.getContextGroupHpContextsCount(EngineGroupType::copy, false));
+    EXPECT_EQ(0u, gfxCoreHelper.getContextGroupHpContextsCount(EngineGroupType::copy, true));
 }
 
 HWTEST_F(GfxCoreHelperTest, whenAskingIf48bResourceNeededForCmdBufferThenReturnTrue) {
@@ -1898,10 +1814,52 @@ HWTEST_F(GfxCoreHelperTest, whenEncodeAdditionalTimestampOffsetsThenNothingEncod
     LinearStream stream(streamBuffer, bufferSize);
     uint64_t fstAddress = 0;
     uint64_t sndAddress = 0;
-    MemorySynchronizationCommands<FamilyType>::encodeAdditionalTimestampOffsets(stream, fstAddress, sndAddress);
+    MemorySynchronizationCommands<FamilyType>::encodeAdditionalTimestampOffsets(stream, fstAddress, sndAddress, false);
 
     HardwareParse hwParser;
     hwParser.parseCommands<FamilyType>(stream, 0);
     GenCmdList storeRegMemList = hwParser.getCommandsList<MI_STORE_REGISTER_MEM>();
     EXPECT_EQ(0u, storeRegMemList.size());
+}
+
+HWTEST2_F(GfxCoreHelperTest, GivenVariousValuesWhenCallingCalculateAvailableThreadCountAndThreadCountAvailableIsBiggerThenCorrectValueIsReturned, IsAtMostXe2HpgCore) {
+    std::array<std::pair<uint32_t, uint32_t>, 2> grfTestInputs = {{{128, 8},
+                                                                   {256, 4}}};
+    auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
+    for (const auto &[grfCount, expectedThreadCountPerEu] : grfTestInputs) {
+        auto expected = expectedThreadCountPerEu * hardwareInfo.gtSystemInfo.EUCount;
+        // force allways bigger Thread Count available
+        hardwareInfo.gtSystemInfo.ThreadCount = 2 * expected;
+        auto result = gfxCoreHelper.calculateAvailableThreadCount(hardwareInfo, grfCount);
+        EXPECT_EQ(expected, result);
+    }
+}
+
+HWTEST2_F(GfxCoreHelperTest, GivenVariousValuesWhenCallingCalculateAvailableThreadCountAndThreadCountAvailableIsSmallerThenThreadCountIsReturned, IsAtMostXe2HpgCore) {
+    std::array<std::pair<uint32_t, uint32_t>, 2> grfTestInputs = {{
+        {128, 8},
+        {256, 4},
+    }};
+    auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
+    for (const auto &[grfCount, expectedThreadCountPerEu] : grfTestInputs) {
+        auto calculatedThreadCount = expectedThreadCountPerEu * hardwareInfo.gtSystemInfo.EUCount;
+        // force thread count smaller than calculation
+        hardwareInfo.gtSystemInfo.ThreadCount = calculatedThreadCount / 2;
+        auto result = gfxCoreHelper.calculateAvailableThreadCount(hardwareInfo, grfCount);
+        EXPECT_EQ(hardwareInfo.gtSystemInfo.ThreadCount, result);
+    }
+}
+
+HWTEST2_F(GfxCoreHelperTest, GivenModifiedGtSystemInfoWhenCallingCalculateAvailableThreadCountThenCorrectValueIsReturned, IsAtMostXe2HpgCore) {
+    std::array<std::pair<uint32_t, uint32_t>, 2> testInputs = {{{64, 256},
+                                                                {128, 512}}};
+    auto &gfxCoreHelper = getHelper<GfxCoreHelper>();
+    auto hwInfo = hardwareInfo;
+    for (const auto &[euCount, expectedThreadCount] : testInputs) {
+        // force thread count bigger than expected
+        hwInfo.gtSystemInfo.ThreadCount = 1024;
+        hwInfo.gtSystemInfo.EUCount = euCount;
+        auto result = gfxCoreHelper.calculateAvailableThreadCount(hwInfo, 256);
+        EXPECT_EQ(expectedThreadCount, result);
+    }
 }

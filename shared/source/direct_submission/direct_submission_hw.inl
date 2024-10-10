@@ -18,6 +18,7 @@
 #include "shared/source/gmm_helper/gmm_helper.h"
 #include "shared/source/gmm_helper/gmm_lib.h"
 #include "shared/source/helpers/aligned_memory.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/definitions/command_encoder_args.h"
 #include "shared/source/helpers/flush_stamp.h"
 #include "shared/source/helpers/gfx_core_helper.h"
@@ -48,6 +49,7 @@ DirectSubmissionHw<GfxFamily, Dispatcher>::DirectSubmissionHw(const DirectSubmis
     memoryOperationHandler = inputParams.rootDeviceEnvironment.memoryOperationsInterface.get();
 
     auto &productHelper = inputParams.rootDeviceEnvironment.getHelper<ProductHelper>();
+    auto &compilerProductHelper = inputParams.rootDeviceEnvironment.getHelper<CompilerProductHelper>();
 
     disableCacheFlush = UllsDefaults::defaultDisableCacheFlush;
     disableMonitorFence = UllsDefaults::defaultDisableMonitorFence;
@@ -76,6 +78,11 @@ DirectSubmissionHw<GfxFamily, Dispatcher>::DirectSubmissionHw(const DirectSubmis
     if (debugManager.flags.DirectSubmissionInsertExtraMiMemFenceCommands.get() != -1) {
         miMemFenceRequired = debugManager.flags.DirectSubmissionInsertExtraMiMemFenceCommands.get();
     }
+
+    if (miMemFenceRequired && compilerProductHelper.isHeaplessStateInitEnabled(compilerProductHelper.isHeaplessModeEnabled())) {
+        this->systemMemoryFenceAddressSet = true;
+    }
+
     if (debugManager.flags.DirectSubmissionInsertSfenceInstructionPriorToSubmission.get() != -1) {
         sfenceMode = static_cast<DirectSubmissionSfenceMode>(debugManager.flags.DirectSubmissionInsertSfenceInstructionPriorToSubmission.get());
     }
@@ -109,7 +116,7 @@ DirectSubmissionHw<GfxFamily, Dispatcher>::DirectSubmissionHw(const DirectSubmis
         relaxedOrderingEnabled = (debugManager.flags.DirectSubmissionRelaxedOrdering.get() == 1);
     }
 
-    if (EngineHelpers::isBcs(this->osContext.getEngineType()) && relaxedOrderingEnabled) {
+    if (Dispatcher::isCopy() && relaxedOrderingEnabled) {
         relaxedOrderingEnabled = (debugManager.flags.DirectSubmissionRelaxedOrderingForBcs.get() != 0);
     }
 }
@@ -124,27 +131,27 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchStaticRelaxedOrderingSch
 
     const uint32_t miMathMocs = this->rootDeviceEnvironment.getGmmHelper()->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER);
 
-    bool isBcsEngine = EngineHelpers::isBcs(this->osContext.getEngineType());
+    constexpr bool isBcs = Dispatcher::isCopy();
 
     // 1. Init section
     {
         EncodeMiPredicate<GfxFamily>::encode(schedulerCmdStream, MiPredicateType::disable);
 
-        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0, RegisterOffsets::csGprR9);
-        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0 + 4, RegisterOffsets::csGprR9 + 4);
+        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0, RegisterOffsets::csGprR9, isBcs);
+        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0 + 4, RegisterOffsets::csGprR9 + 4, isBcs);
 
-        EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalDataRegBatchBufferStart(schedulerCmdStream, 0, RegisterOffsets::csGprR1, 0, CompareOperation::equal, true, false, isBcsEngine);
+        EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalDataRegBatchBufferStart(schedulerCmdStream, 0, RegisterOffsets::csGprR1, 0, CompareOperation::equal, true, false, isBcs);
 
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2, 0, true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2 + 4, 0, true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2, 0, true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2 + 4, 0, true, isBcs);
 
         uint64_t removeTaskVa = schedulerStartAddress + RelaxedOrderingHelper::StaticSchedulerSizeAndOffsetSection<GfxFamily>::removeTaskSectionStart;
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR3, static_cast<uint32_t>(removeTaskVa & 0xFFFF'FFFFULL), true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR3 + 4, static_cast<uint32_t>(removeTaskVa >> 32), true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR3, static_cast<uint32_t>(removeTaskVa & 0xFFFF'FFFFULL), true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR3 + 4, static_cast<uint32_t>(removeTaskVa >> 32), true, isBcs);
 
         uint64_t walkersLoopConditionCheckVa = schedulerStartAddress + RelaxedOrderingHelper::StaticSchedulerSizeAndOffsetSection<GfxFamily>::tasksListLoopCheckSectionStart;
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR4, static_cast<uint32_t>(walkersLoopConditionCheckVa & 0xFFFF'FFFFULL), true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR4 + 4, static_cast<uint32_t>(walkersLoopConditionCheckVa >> 32), true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR4, static_cast<uint32_t>(walkersLoopConditionCheckVa & 0xFFFF'FFFFULL), true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR4 + 4, static_cast<uint32_t>(walkersLoopConditionCheckVa >> 32), true, isBcs);
     }
 
     // 2. Dispatch task section (loop start)
@@ -153,11 +160,11 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchStaticRelaxedOrderingSch
 
         EncodeMiPredicate<GfxFamily>::encode(schedulerCmdStream, MiPredicateType::disable);
 
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR6, 8, true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR6 + 4, 0, true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR6, 8, true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR6 + 4, 0, true, isBcs);
 
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8, static_cast<uint32_t>(deferredTasksListGpuVa & 0xFFFF'FFFFULL), true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8 + 4, static_cast<uint32_t>(deferredTasksListGpuVa >> 32), true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8, static_cast<uint32_t>(deferredTasksListGpuVa & 0xFFFF'FFFFULL), true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8 + 4, static_cast<uint32_t>(deferredTasksListGpuVa >> 32), true, isBcs);
 
         EncodeAluHelper<GfxFamily, 10> aluHelper;
         aluHelper.setMocs(miMathMocs);
@@ -183,19 +190,19 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchStaticRelaxedOrderingSch
 
         EncodeMiPredicate<GfxFamily>::encode(schedulerCmdStream, MiPredicateType::disable);
 
-        EncodeMathMMIO<GfxFamily>::encodeDecrement(schedulerCmdStream, AluRegisters::gpr1, isBcsEngine);
-        EncodeMathMMIO<GfxFamily>::encodeDecrement(schedulerCmdStream, AluRegisters::gpr2, isBcsEngine);
+        EncodeMathMMIO<GfxFamily>::encodeDecrement(schedulerCmdStream, AluRegisters::gpr1, isBcs);
+        EncodeMathMMIO<GfxFamily>::encodeDecrement(schedulerCmdStream, AluRegisters::gpr2, isBcs);
 
-        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0, RegisterOffsets::csGprR9);
-        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0 + 4, RegisterOffsets::csGprR9 + 4);
+        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0, RegisterOffsets::csGprR9, isBcs);
+        EncodeSetMMIO<GfxFamily>::encodeREG(schedulerCmdStream, RegisterOffsets::csGprR0 + 4, RegisterOffsets::csGprR9 + 4, isBcs);
 
-        EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalDataRegBatchBufferStart(schedulerCmdStream, 0, RegisterOffsets::csGprR1, 0, CompareOperation::equal, true, false, isBcsEngine);
+        EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalDataRegBatchBufferStart(schedulerCmdStream, 0, RegisterOffsets::csGprR1, 0, CompareOperation::equal, true, false, isBcs);
 
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR7, 8, true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR7 + 4, 0, true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR7, 8, true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR7 + 4, 0, true, isBcs);
 
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8, static_cast<uint32_t>(deferredTasksListGpuVa & 0xFFFF'FFFFULL), true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8 + 4, static_cast<uint32_t>(deferredTasksListGpuVa >> 32), true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8, static_cast<uint32_t>(deferredTasksListGpuVa & 0xFFFF'FFFFULL), true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR8 + 4, static_cast<uint32_t>(deferredTasksListGpuVa >> 32), true, isBcs);
 
         EncodeAluHelper<GfxFamily, 14> aluHelper;
         aluHelper.setMocs(miMathMocs);
@@ -223,15 +230,15 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchStaticRelaxedOrderingSch
 
         EncodeMiPredicate<GfxFamily>::encode(schedulerCmdStream, MiPredicateType::disable);
 
-        EncodeMathMMIO<GfxFamily>::encodeIncrement(schedulerCmdStream, AluRegisters::gpr2, isBcsEngine);
+        EncodeMathMMIO<GfxFamily>::encodeIncrement(schedulerCmdStream, AluRegisters::gpr2, isBcs);
 
         EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalRegRegBatchBufferStart(
             schedulerCmdStream,
             loopSectionStartAddress,
-            AluRegisters::gpr1, AluRegisters::gpr2, CompareOperation::notEqual, false);
+            AluRegisters::gpr1, AluRegisters::gpr2, CompareOperation::notEqual, false, isBcs);
 
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2, 0, true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2 + 4, 0, true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2, 0, true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR2 + 4, 0, true, isBcs);
     }
 
     // 5. Drain request section
@@ -251,20 +258,20 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchStaticRelaxedOrderingSch
         EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalDataRegBatchBufferStart(
             schedulerCmdStream,
             loopSectionStartAddress,
-            RegisterOffsets::csGprR1, currentRelaxedOrderingQueueSize, CompareOperation::greaterOrEqual, false, false, isBcsEngine);
+            RegisterOffsets::csGprR1, currentRelaxedOrderingQueueSize, CompareOperation::greaterOrEqual, false, false, isBcs);
 
         EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalDataRegBatchBufferStart(
             schedulerCmdStream,
             loopSectionStartAddress,
-            RegisterOffsets::csGprR5, 1, CompareOperation::equal, false, false, isBcsEngine);
+            RegisterOffsets::csGprR5, 1, CompareOperation::equal, false, false, isBcs);
     }
 
     // 6. Scheduler loop check section
     {
         UNRECOVERABLE_IF(schedulerCmdStream.getUsed() != RelaxedOrderingHelper::StaticSchedulerSizeAndOffsetSection<GfxFamily>::schedulerLoopCheckSectionStart);
 
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR10, static_cast<uint32_t>(RelaxedOrderingHelper::DynamicSchedulerSizeAndOffsetSection<GfxFamily>::semaphoreSectionSize), true, isBcsEngine);
-        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR10 + 4, 0, true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR10, static_cast<uint32_t>(RelaxedOrderingHelper::DynamicSchedulerSizeAndOffsetSection<GfxFamily>::semaphoreSectionSize), true, isBcs);
+        LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR10 + 4, 0, true, isBcs);
 
         EncodeAluHelper<GfxFamily, 4> aluHelper;
         aluHelper.setMocs(miMathMocs);
@@ -274,7 +281,7 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchStaticRelaxedOrderingSch
         aluHelper.setNextAlu(AluRegisters::opcodeStore, AluRegisters::gpr0, AluRegisters::accu);
         aluHelper.copyToCmdStream(schedulerCmdStream);
 
-        EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalRegMemBatchBufferStart(schedulerCmdStream, 0, semaphoreGpuVa, RegisterOffsets::csGprR11, CompareOperation::greaterOrEqual, true, isBcsEngine);
+        EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalRegMemBatchBufferStart(schedulerCmdStream, 0, semaphoreGpuVa, RegisterOffsets::csGprR11, CompareOperation::greaterOrEqual, true, isBcs);
 
         EncodeBatchBufferStartOrEnd<GfxFamily>::programBatchBufferStart(&schedulerCmdStream, schedulerStartAddress + RelaxedOrderingHelper::StaticSchedulerSizeAndOffsetSection<GfxFamily>::loopStartSectionStart,
                                                                         false, false, false);
@@ -293,10 +300,10 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchRelaxedOrderingScheduler
 
     uint64_t semaphoreSectionVa = schedulerStartVa + RelaxedOrderingHelper::DynamicSchedulerSizeAndOffsetSection<GfxFamily>::semaphoreSectionStart;
 
-    bool isBcsEngine = EngineHelpers::isBcs(this->osContext.getEngineType());
-    LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR11, value, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR9, static_cast<uint32_t>(semaphoreSectionVa & 0xFFFF'FFFFULL), true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR9 + 4, static_cast<uint32_t>(semaphoreSectionVa >> 32), true, isBcsEngine);
+    constexpr bool isBcs = Dispatcher::isCopy();
+    LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR11, value, true, isBcs);
+    LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR9, static_cast<uint32_t>(semaphoreSectionVa & 0xFFFF'FFFFULL), true, isBcs);
+    LriHelper<GfxFamily>::program(&schedulerCmdStream, RegisterOffsets::csGprR9 + 4, static_cast<uint32_t>(semaphoreSectionVa >> 32), true, isBcs);
 
     schedulerCmdStream.getSpace(sizeof(typename GfxFamily::MI_BATCH_BUFFER_START)); // skip patching
 
@@ -477,7 +484,7 @@ bool DirectSubmissionHw<GfxFamily, Dispatcher>::initialize(bool submitOnInit, bo
 
             this->partitionConfigSet = true;
         }
-        if (this->miMemFenceRequired) {
+        if (this->miMemFenceRequired && !this->systemMemoryFenceAddressSet) {
             startBufferSize += getSizeSystemMemoryFenceAddress();
             dispatchSystemMemoryFenceAddress();
 
@@ -560,10 +567,16 @@ inline void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchSemaphoreSection(
     if (this->relaxedOrderingEnabled && this->relaxedOrderingSchedulerRequired) {
         dispatchRelaxedOrderingSchedulerSection(value);
     } else {
+        bool switchOnUnsuccessful = false;
+
+        if (debugManager.flags.DirectSubmissionSwitchSemaphoreMode.get() != -1) {
+            switchOnUnsuccessful = !!debugManager.flags.DirectSubmissionSwitchSemaphoreMode.get();
+        }
+
         EncodeSemaphore<GfxFamily>::addMiSemaphoreWaitCommand(ringCommandStream,
                                                               semaphoreGpuVa,
                                                               value,
-                                                              COMPARE_OPERATION::COMPARE_OPERATION_SAD_GREATER_THAN_OR_EQUAL_SDD, false, false, false, false, nullptr);
+                                                              COMPARE_OPERATION::COMPARE_OPERATION_SAD_GREATER_THAN_OR_EQUAL_SDD, false, false, false, switchOnUnsuccessful, nullptr);
     }
 
     if (miMemFenceRequired) {
@@ -701,7 +714,7 @@ void *DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchWorkloadSection(BatchBu
                copyCmdBuffer);
     }
 
-    if (!batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling) {
+    if (batchBuffer.pagingFenceSemInfo.requiresProgrammingSemaphore()) {
         dispatchSemaphoreForPagingFence(batchBuffer.pagingFenceSemInfo.pagingFenceValue);
     }
 
@@ -769,13 +782,13 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchRelaxedOrderingQueueStal
     LinearStream bbStartStream(ringCommandStream.getSpace(EncodeBatchBufferStartOrEnd<GfxFamily>::getCmdSizeConditionalDataRegBatchBufferStart(false)),
                                EncodeBatchBufferStartOrEnd<GfxFamily>::getCmdSizeConditionalDataRegBatchBufferStart(false));
 
-    bool isBcsEngine = EngineHelpers::isBcs(this->osContext.getEngineType());
-    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR5, 1, true, isBcsEngine);
+    constexpr bool isBcs = Dispatcher::isCopy();
+    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR5, 1, true, isBcs);
     dispatchSemaphoreSection(currentQueueWorkCount);
 
     // patch conditional bb_start with current GPU address
     EncodeBatchBufferStartOrEnd<GfxFamily>::programConditionalDataRegBatchBufferStart(bbStartStream, ringCommandStream.getCurrentGpuAddressPosition(),
-                                                                                      RegisterOffsets::csGprR1, 0, CompareOperation::equal, false, false, isBcsEngine);
+                                                                                      RegisterOffsets::csGprR1, 0, CompareOperation::equal, false, false, isBcs);
 
     relaxedOrderingSchedulerRequired = false;
 }
@@ -789,26 +802,26 @@ size_t DirectSubmissionHw<GfxFamily, Dispatcher>::getSizeDispatchRelaxedOrdering
 template <typename GfxFamily, typename Dispatcher>
 void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchRelaxedOrderingReturnPtrRegs(LinearStream &cmdStream, uint64_t returnPtr) {
 
-    bool isBcsEngine = EngineHelpers::isBcs(this->osContext.getEngineType());
-    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR4, static_cast<uint32_t>(returnPtr & 0xFFFF'FFFFULL), true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR4 + 4, static_cast<uint32_t>(returnPtr >> 32), true, isBcsEngine);
+    constexpr bool isBcs = Dispatcher::isCopy();
+    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR4, static_cast<uint32_t>(returnPtr & 0xFFFF'FFFFULL), true, isBcs);
+    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR4 + 4, static_cast<uint32_t>(returnPtr >> 32), true, isBcs);
 
     uint64_t returnPtrAfterTaskStoreSection = returnPtr;
 
     returnPtrAfterTaskStoreSection += RelaxedOrderingHelper::getSizeTaskStoreSection<GfxFamily>();
 
-    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR3, static_cast<uint32_t>(returnPtrAfterTaskStoreSection & 0xFFFF'FFFFULL), true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR3 + 4, static_cast<uint32_t>(returnPtrAfterTaskStoreSection >> 32), true, isBcsEngine);
+    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR3, static_cast<uint32_t>(returnPtrAfterTaskStoreSection & 0xFFFF'FFFFULL), true, isBcs);
+    LriHelper<GfxFamily>::program(&cmdStream, RegisterOffsets::csGprR3 + 4, static_cast<uint32_t>(returnPtrAfterTaskStoreSection >> 32), true, isBcs);
 }
 
 template <typename GfxFamily, typename Dispatcher>
 void DirectSubmissionHw<GfxFamily, Dispatcher>::initRelaxedOrderingRegisters() {
 
-    bool isBcsEngine = EngineHelpers::isBcs(this->osContext.getEngineType());
-    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR1, 0, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR1 + 4, 0, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR5, 0, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR5 + 4, 0, true, isBcsEngine);
+    constexpr bool isBcs = Dispatcher::isCopy();
+    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR1, 0, true, isBcs);
+    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR1 + 4, 0, true, isBcs);
+    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR5, 0, true, isBcs);
+    LriHelper<GfxFamily>::program(&ringCommandStream, RegisterOffsets::csGprR5 + 4, 0, true, isBcs);
 }
 
 template <typename GfxFamily, typename Dispatcher>
@@ -822,17 +835,17 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::preinitializeRelaxedOrderingSect
 
     uint64_t deferredTasksListGpuVa = deferredTasksListAllocation->getGpuAddress();
 
-    bool isBcsEngine = EngineHelpers::isBcs(this->osContext.getEngineType());
-    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR6, static_cast<uint32_t>(deferredTasksListGpuVa & 0xFFFF'FFFFULL), true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR6 + 4, static_cast<uint32_t>(deferredTasksListGpuVa >> 32), true, isBcsEngine);
+    constexpr bool isBcs = Dispatcher::isCopy();
+    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR6, static_cast<uint32_t>(deferredTasksListGpuVa & 0xFFFF'FFFFULL), true, isBcs);
+    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR6 + 4, static_cast<uint32_t>(deferredTasksListGpuVa >> 32), true, isBcs);
 
     // Task start VA
-    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR7, 0, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR7 + 4, 0, true, isBcsEngine);
+    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR7, 0, true, isBcs);
+    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR7 + 4, 0, true, isBcs);
 
     // Shift by 8 = multiply by 256. Address must by 64b aligned (shift by 6), but SHL accepts only 1, 2, 4, 8, 16 and 32
-    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR8, 8, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR8 + 4, 0, true, isBcsEngine);
+    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR8, 8, true, isBcs);
+    LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR8 + 4, 0, true, isBcs);
 
     const uint32_t miMathMocs = this->rootDeviceEnvironment.getGmmHelper()->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER);
 
@@ -850,7 +863,7 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::preinitializeRelaxedOrderingSect
 
     aluHelper.copyToCmdStream(stream);
 
-    EncodeMathMMIO<GfxFamily>::encodeIncrement(stream, AluRegisters::gpr1, isBcsEngine);
+    EncodeMathMMIO<GfxFamily>::encodeIncrement(stream, AluRegisters::gpr1, isBcs);
 
     UNRECOVERABLE_IF(stream.getUsed() != RelaxedOrderingHelper::getSizeTaskStoreSection<GfxFamily>());
 
@@ -861,9 +874,9 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::preinitializeRelaxedOrderingSect
     uint64_t schedulerStartAddress = relaxedOrderingSchedulerAllocation->getGpuAddress();
 
     // 1. Init section
-    LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR11, 0, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR9, 0, true, isBcsEngine);
-    LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR9 + 4, 0, true, isBcsEngine);
+    LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR11, 0, true, isBcs);
+    LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR9, 0, true, isBcs);
+    LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR9 + 4, 0, true, isBcs);
     EncodeBatchBufferStartOrEnd<GfxFamily>::programBatchBufferStart(&schedulerStream, schedulerStartAddress, false, false, false);
 
     // 2. Semaphore section
@@ -879,7 +892,7 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::preinitializeRelaxedOrderingSect
     {
         EncodeMiPredicate<GfxFamily>::encode(schedulerStream, MiPredicateType::disable);
 
-        LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR5, 0, true, isBcsEngine);
+        LriHelper<GfxFamily>::program(&schedulerStream, RegisterOffsets::csGprR5, 0, true, isBcs);
     }
 
     UNRECOVERABLE_IF(schedulerStream.getUsed() != RelaxedOrderingHelper::DynamicSchedulerSizeAndOffsetSection<GfxFamily>::totalSize);
@@ -966,14 +979,13 @@ bool DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchCommandBuffer(BatchBuffe
         inputRequiredMonitorFence = batchBuffer.hasStallingCmds;
     }
     bool dispatchMonitorFence = this->dispatchMonitorFenceRequired(inputRequiredMonitorFence);
-    auto requiresBlockingResidencyHandling = batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling;
 
     size_t dispatchSize = this->getUllsStateSize() + getSizeDispatch(relaxedOrderingSchedulerWillBeNeeded, batchBuffer.hasRelaxedOrderingDependencies, dispatchMonitorFence);
 
     if (this->copyCommandBufferIntoRing(batchBuffer)) {
         dispatchSize += (batchBuffer.stream->getUsed() - batchBuffer.startOffset) - 2 * getSizeStartSection();
     }
-    if (!requiresBlockingResidencyHandling) {
+    if (batchBuffer.pagingFenceSemInfo.requiresProgrammingSemaphore()) {
         dispatchSize += getSizeSemaphoreForPagingFence();
     }
 
@@ -1010,6 +1022,7 @@ bool DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchCommandBuffer(BatchBuffe
 
     cpuCachelineFlush(currentPosition, dispatchSize);
 
+    auto requiresBlockingResidencyHandling = batchBuffer.pagingFenceSemInfo.requiresBlockingResidencyHandling;
     if (!this->submitCommandBufferToGpu(needStart, startVA, requiredMinimalSize, requiresBlockingResidencyHandling)) {
         return false;
     }

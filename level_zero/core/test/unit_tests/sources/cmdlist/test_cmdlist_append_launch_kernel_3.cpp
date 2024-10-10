@@ -17,6 +17,7 @@
 #include "shared/test/common/helpers/unit_test_helper.h"
 #include "shared/test/common/libult/ult_command_stream_receiver.h"
 #include "shared/test/common/mocks/mock_device.h"
+#include "shared/test/common/mocks/mock_sync_buffer_handler.h"
 #include "shared/test/common/test_macros/hw_test.h"
 
 #include "level_zero/core/source/event/event.h"
@@ -33,7 +34,7 @@ namespace ult {
 
 using CommandListAppendLaunchKernel = Test<ModuleFixture>;
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenFunctionWhenBindingTablePrefetchAllowedThenProgramBindingTableEntryCount) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandListAppendLaunchKernel, givenFunctionWhenBindingTablePrefetchAllowedThenProgramBindingTableEntryCount) {
     using MEDIA_INTERFACE_DESCRIPTOR_LOAD = typename FamilyType::MEDIA_INTERFACE_DESCRIPTOR_LOAD;
     using INTERFACE_DESCRIPTOR_DATA = typename FamilyType::INTERFACE_DESCRIPTOR_DATA;
 
@@ -72,12 +73,16 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenFunctionWhenBind
     }
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenEventsWhenAppendingKernelThenPostSyncToEventIsGenerated) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandListAppendLaunchKernel, givenEventsWhenAppendingKernelThenPostSyncToEventIsGenerated) {
     using GPGPU_WALKER = typename FamilyType::GPGPU_WALKER;
     using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
     using POST_SYNC_OPERATION = typename PIPE_CONTROL::POST_SYNC_OPERATION;
 
+    std::unique_ptr<L0::ult::Module> mockModule = std::make_unique<L0::ult::Module>(device, nullptr, ModuleType::builtin);
+
     Mock<::L0::KernelImp> kernel;
+    kernel.module = mockModule.get();
+
     ze_result_t returnValue;
     std::unique_ptr<L0::CommandList> commandList(L0::CommandList::create(productFamily, device, NEO::EngineGroupType::renderCompute, 0u, returnValue, false));
     auto usedSpaceBefore = commandList->getCmdContainer().getCommandStream()->getUsed();
@@ -127,12 +132,12 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenEventsWhenAppend
     {
         auto itorEvent = std::find(std::begin(commandList->getCmdContainer().getResidencyContainer()),
                                    std::end(commandList->getCmdContainer().getResidencyContainer()),
-                                   event->getPoolAllocation(device));
+                                   event->getAllocation(device));
         EXPECT_NE(itorEvent, std::end(commandList->getCmdContainer().getResidencyContainer()));
     }
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenAppendLaunchMultipleKernelsIndirectThenEnablesPredicate) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandListAppendLaunchKernel, givenAppendLaunchMultipleKernelsIndirectThenEnablesPredicate) {
     createKernel();
 
     using GPGPU_WALKER = typename FamilyType::GPGPU_WALKER;
@@ -160,7 +165,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenAppendLaunchMult
     context->freeMem(reinterpret_cast<void *>(numLaunchArgs));
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenAppendLaunchMultipleKernelsThenUsesMathAndWalker) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandListAppendLaunchKernel, givenAppendLaunchMultipleKernelsThenUsesMathAndWalker) {
     createKernel();
 
     using GPGPU_WALKER = typename FamilyType::GPGPU_WALKER;
@@ -198,7 +203,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandListAppendLaunchKernel, givenAppendLaunchMult
     context->freeMem(reinterpret_cast<void *>(numLaunchArgs));
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelThenKernelIsExecutedOnImmediateCmdQ, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelThenKernelIsExecutedOnImmediateCmdQ, MatchAny) {
     createKernel();
 
     const ze_command_queue_desc_t desc = {};
@@ -226,7 +231,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingL
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelWithInvalidEventThenInvalidArgumentErrorIsReturned, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelWithInvalidEventThenInvalidArgumentErrorIsReturned, MatchAny) {
     createKernel();
 
     const ze_command_queue_desc_t desc = {};
@@ -254,7 +259,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingL
     ASSERT_EQ(ZE_RESULT_ERROR_INVALID_ARGUMENT, result);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenNonemptyAllocPrintfBufferKernelWhenAppendingLaunchKernelIndirectThenKernelIsStoredOnEvent, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenNonemptyAllocPrintfBufferKernelWhenAppendingLaunchKernelIndirectThenKernelIsStoredOnEvent, MatchAny) {
     Mock<Module> module(this->device, nullptr);
     auto kernel = new Mock<::L0::KernelImp>{};
     static_cast<ModuleImp *>(&module)->getPrintfKernelContainer().push_back(std::shared_ptr<Mock<::L0::KernelImp>>{kernel});
@@ -283,7 +288,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenNonemptyAllocPrintfBufferKernelWhe
     ASSERT_FALSE(event->getKernelForPrintf().expired());
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenEmptyAllocPrintfBufferKernelWhenAppendingLaunchKernelIndirectThenKernelIsNotStoredOnEvent, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenEmptyAllocPrintfBufferKernelWhenAppendingLaunchKernelIndirectThenKernelIsNotStoredOnEvent, MatchAny) {
     Mock<Module> module(this->device, nullptr);
     auto kernel = new Mock<::L0::KernelImp>{};
     static_cast<ModuleImp *>(&module)->getPrintfKernelContainer().push_back(std::shared_ptr<Mock<::L0::KernelImp>>{kernel});
@@ -311,7 +316,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenEmptyAllocPrintfBufferKernelWhenAp
     ASSERT_EQ(nullptr, event->getKernelForPrintf().lock().get());
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenNonemptyAllocPrintfBufferKernelWhenAppendingLaunchKernelWithParamThenKernelIsStoredOnEvent, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenNonemptyAllocPrintfBufferKernelWhenAppendingLaunchKernelWithParamThenKernelIsStoredOnEvent, MatchAny) {
     Mock<Module> module(this->device, nullptr);
     auto kernel = new Mock<::L0::KernelImp>{};
     static_cast<ModuleImp *>(&module)->getPrintfKernelContainer().push_back(std::shared_ptr<Mock<::L0::KernelImp>>{kernel});
@@ -345,7 +350,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenNonemptyAllocPrintfBufferKernelWhe
     ASSERT_FALSE(event->getKernelForPrintf().expired());
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenEmptyAllocPrintfBufferKernelWhenAppendingLaunchKernelWithParamThenKernelIsNotStoredOnEvent, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenEmptyAllocPrintfBufferKernelWhenAppendingLaunchKernelWithParamThenKernelIsNotStoredOnEvent, MatchAny) {
     Mock<Module> module(this->device, nullptr);
     auto kernel = new Mock<::L0::KernelImp>{};
     static_cast<ModuleImp *>(&module)->getPrintfKernelContainer().push_back(std::shared_ptr<Mock<::L0::KernelImp>>{kernel});
@@ -378,7 +383,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenEmptyAllocPrintfBufferKernelWhenAp
     ASSERT_EQ(nullptr, event->getKernelForPrintf().lock().get());
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelIndirectThenKernelIsExecutedOnImmediateCmdQ, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelIndirectThenKernelIsExecutedOnImmediateCmdQ, MatchAny) {
     createKernel();
     const ze_command_queue_desc_t desc = {};
     bool internalEngine = true;
@@ -404,7 +409,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingL
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelIndirectWithInvalidEventThenInvalidArgumentErrorIsReturned, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingLaunchKernelIndirectWithInvalidEventThenInvalidArgumentErrorIsReturned, MatchAny) {
     createKernel();
 
     const ze_command_queue_desc_t desc = {};
@@ -431,10 +436,11 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendingL
     ASSERT_EQ(ZE_RESULT_ERROR_INVALID_ARGUMENT, result);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenKernelUsingSyncBufferWhenAppendLaunchCooperativeKernelIsCalledThenCorrectValueIsReturned, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenKernelUsingSyncBufferWhenAppendLaunchCooperativeKernelIsCalledThenCorrectValueIsReturned, MatchAny) {
     Mock<::L0::KernelImp> kernel;
     auto pMockModule = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
     kernel.module = pMockModule.get();
+    EXPECT_EQ(std::numeric_limits<size_t>::max(), kernel.syncBufferIndex);
 
     kernel.setGroupSize(4, 1, 1);
     ze_group_count_t groupCount{8, 1, 1};
@@ -458,12 +464,29 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenKernelUsingSyncBufferWhenAppendLau
     auto result = pCommandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, cooperativeParams, false);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
+    auto mockSyncBufferHandler = reinterpret_cast<MockSyncBufferHandler *>(device->getNEODevice()->syncBufferHandler.get());
+    auto syncBufferAllocation = mockSyncBufferHandler->graphicsAllocation;
+
+    EXPECT_NE(std::numeric_limits<size_t>::max(), kernel.syncBufferIndex);
+    auto syncBufferAllocationIt = std::find(kernel.internalResidencyContainer.begin(), kernel.internalResidencyContainer.end(), syncBufferAllocation);
+    ASSERT_NE(kernel.internalResidencyContainer.end(), syncBufferAllocationIt);
+    auto expectedIndex = static_cast<size_t>(std::distance(kernel.internalResidencyContainer.begin(), syncBufferAllocationIt));
+    EXPECT_EQ(expectedIndex, kernel.syncBufferIndex);
+
     pCommandList = std::make_unique<WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>>();
     pCommandList->initialize(device, engineGroupType, 0u);
     CmdListKernelLaunchParams launchParams = {};
     launchParams.isCooperative = true;
     result = pCommandList->appendLaunchKernelWithParams(&kernel, groupCount, nullptr, launchParams);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+
+    // sync buffer index once set should not change
+    EXPECT_EQ(expectedIndex, kernel.syncBufferIndex);
+    syncBufferAllocationIt = std::find(kernel.internalResidencyContainer.begin(), kernel.internalResidencyContainer.end(), syncBufferAllocation);
+    ASSERT_NE(kernel.internalResidencyContainer.end(), syncBufferAllocationIt);
+    // verify syncBufferAllocation is added only once
+    auto notFoundIt = std::find(syncBufferAllocationIt + 1, kernel.internalResidencyContainer.end(), syncBufferAllocation);
+    EXPECT_EQ(kernel.internalResidencyContainer.end(), notFoundIt);
 
     {
         VariableBackup<std::array<bool, 4>> usesSyncBuffer{&kernelAttributes.flags.packed};
@@ -475,8 +498,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenKernelUsingSyncBufferWhenAppendLau
     }
     {
         VariableBackup<uint32_t> groupCountX{&groupCount.groupCountX};
-        uint32_t maximalNumberOfWorkgroupsAllowed;
-        kernel.suggestMaxCooperativeGroupCount(&maximalNumberOfWorkgroupsAllowed, engineGroupType, false);
+        uint32_t maximalNumberOfWorkgroupsAllowed = kernel.suggestMaxCooperativeGroupCount(engineGroupType, false);
         groupCountX = maximalNumberOfWorkgroupsAllowed + 1;
         pCommandList = std::make_unique<WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>>();
         pCommandList->initialize(device, engineGroupType, 0u);
@@ -498,6 +520,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenKernelUsingRegionGroupBarrierWhenA
     Mock<::L0::KernelImp> kernel;
     auto pMockModule = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
     kernel.module = pMockModule.get();
+    EXPECT_EQ(std::numeric_limits<size_t>::max(), kernel.regionGroupBarrierIndex);
 
     kernel.crossThreadData = std::make_unique<uint8_t[]>(64);
     kernel.crossThreadDataSize = 64;
@@ -528,8 +551,22 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenKernelUsingRegionGroupBarrierWhenA
         return element.first->getGpuAddressToPatch() == patchPtr;
     });
     ASSERT_NE(ultCsr->makeResidentAllocations.end(), allocIter);
+    auto regionGroupBarrierAllocation = allocIter->first;
+
+    auto regionGroupBarrierAllocIt = std::find(kernel.internalResidencyContainer.begin(), kernel.internalResidencyContainer.end(), regionGroupBarrierAllocation);
+    ASSERT_NE(kernel.internalResidencyContainer.end(), regionGroupBarrierAllocIt);
+    auto expectedIndex = static_cast<size_t>(std::distance(kernel.internalResidencyContainer.begin(), regionGroupBarrierAllocIt));
+    EXPECT_EQ(expectedIndex, kernel.regionGroupBarrierIndex);
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, cmdList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false));
+
+    // region group barrier index once set should not change
+    EXPECT_EQ(expectedIndex, kernel.regionGroupBarrierIndex);
+    regionGroupBarrierAllocIt = std::find(kernel.internalResidencyContainer.begin(), kernel.internalResidencyContainer.end(), regionGroupBarrierAllocation);
+    ASSERT_NE(kernel.internalResidencyContainer.end(), regionGroupBarrierAllocIt);
+    // verify regionGroupBarrierAllocation is added only once
+    auto notFoundIt = std::find(regionGroupBarrierAllocIt + 1, kernel.internalResidencyContainer.end(), regionGroupBarrierAllocation);
+    EXPECT_EQ(kernel.internalResidencyContainer.end(), notFoundIt);
 
     auto patchPtr2 = *reinterpret_cast<uint64_t *>(ptrOffset(kernel.crossThreadData.get(), regionGroupBarrier.stateless));
 
@@ -540,7 +577,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenKernelUsingRegionGroupBarrierWhenA
     EXPECT_EQ(patchPtr2, patchPtr + offset);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, whenAppendLaunchCooperativeKernelAndQueryKernelTimestampsToTheSameCmdlistThenFronEndStateIsNotChanged, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, whenAppendLaunchCooperativeKernelAndQueryKernelTimestampsToTheSameCmdlistThenFronEndStateIsNotChanged, MatchAny) {
     Mock<::L0::KernelImp> kernel;
     auto pMockModule = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
     kernel.module = pMockModule.get();
@@ -560,6 +597,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, whenAppendLaunchCooperativeKernelAndQue
         engineGroupType = gfxCoreHelper.getEngineGroupType(aub_stream::EngineType::ENGINE_CCS, EngineUsage::cooperative, *defaultHwInfo);
     }
     pCommandList->initialize(device, engineGroupType, 0u);
+    pCommandList->isFlushTaskSubmissionEnabled = true;
 
     ze_event_pool_desc_t eventPoolDesc = {};
     eventPoolDesc.flags = ZE_EVENT_POOL_FLAG_KERNEL_TIMESTAMP;
@@ -610,7 +648,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, whenAppendLaunchCooperativeKernelAndQue
     context->freeMem(alloc);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenDisableOverdispatchPropertyWhenUpdateStreamPropertiesIsCalledThenRequiredStateAndFinalStateAreCorrectlySet, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenDisableOverdispatchPropertyWhenUpdateStreamPropertiesIsCalledThenRequiredStateAndFinalStateAreCorrectlySet, MatchAny) {
     Mock<::L0::KernelImp> kernel;
     auto pMockModule = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
     kernel.module = pMockModule.get();
@@ -635,7 +673,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenDisableOverdispatchPropertyWhenUpd
     EXPECT_EQ(expectedDisableOverdispatch, pCommandList->finalStreamState.frontEndState.disableOverdispatch.value);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenCooperativeKernelWhenAppendLaunchCooperativeKernelIsCalledThenCommandListTypeIsProperlySet, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenCooperativeKernelWhenAppendLaunchCooperativeKernelIsCalledThenCommandListTypeIsProperlySet, MatchAny) {
     createKernel();
     kernel->setGroupSize(4, 1, 1);
     ze_group_count_t groupCount{8, 1, 1};
@@ -658,9 +696,9 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenCooperativeKernelWhenAppendLaunchC
     EXPECT_TRUE(pCommandList->containsCooperativeKernelsFlag);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenAnyCooperativeKernelAndMixingAllowedWhenAppendLaunchCooperativeKernelIsCalledThenCommandListTypeIsProperlySet, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenAnyCooperativeKernelAndMixingAllowedWhenAppendLaunchCooperativeKernelIsCalledThenCommandListTypeIsProperlySet, MatchAny) {
     DebugManagerStateRestore restorer;
-    debugManager.flags.AllowMixingRegularAndCooperativeKernels.set(1);
+
     createKernel();
     kernel->setGroupSize(4, 1, 1);
     ze_group_count_t groupCount{8, 1, 1};
@@ -687,9 +725,9 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenAnyCooperativeKernelAndMixingAllow
     EXPECT_TRUE(pCommandList->containsCooperativeKernelsFlag);
 }
 
-HWTEST2_F(CommandListAppendLaunchKernel, givenCooperativeAndNonCooperativeKernelsAndAllowMixingWhenAppendLaunchCooperativeKernelIsCalledThenReturnSuccess, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendLaunchKernel, givenCooperativeAndNonCooperativeKernelsAndAllowMixingWhenAppendLaunchCooperativeKernelIsCalledThenReturnSuccess, MatchAny) {
     DebugManagerStateRestore restorer;
-    debugManager.flags.AllowMixingRegularAndCooperativeKernels.set(1);
+
     Mock<::L0::KernelImp> kernel;
     auto pMockModule = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
     kernel.module = pMockModule.get();
@@ -760,6 +798,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenNotEnoughSpaceInCommandStreamWhenA
         NEO::additionalKernelLaunchSizeParamNotSet, // additionalSizeParam
         0,                                          // partitionCount
         0,                                          // reserveExtraPayloadSpace
+        1,                                          // maxWgCountPerTile
         NEO::ThreadArbitrationPolicy::NotPresent,   // defaultPipelinedThreadArbitrationPolicy
         false,                                      // isIndirect
         false,                                      // isPredicate

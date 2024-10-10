@@ -23,8 +23,7 @@ template <typename GfxFamily>
 void PreemptionHelper::programCsrBaseAddress(LinearStream &preambleCmdStream, Device &device, const GraphicsAllocation *preemptionCsr) {
     bool debuggingEnabled = device.getDebugger() != nullptr;
     bool isMidThreadPreemption = device.getPreemptionMode() == PreemptionMode::MidThread;
-    if (isMidThreadPreemption || debuggingEnabled) {
-        UNRECOVERABLE_IF(nullptr == preemptionCsr);
+    if (isMidThreadPreemption && !debuggingEnabled) {
 
         programCsrBaseAddressCmd<GfxFamily>(preambleCmdStream, preemptionCsr);
     }
@@ -120,27 +119,8 @@ size_t PreemptionHelper::getRequiredStateSipCmdSize(Device &device, bool isRcs) 
     return size;
 }
 
-template <typename GfxFamily>
-size_t PreemptionHelper::getPreemptionWaCsSize(const Device &device) {
-    return 0u;
-}
-template <typename GfxFamily>
-void PreemptionHelper::applyPreemptionWaCmdsBegin(LinearStream *pCommandStream, const Device &device) {
-}
-
-template <typename GfxFamily>
-void PreemptionHelper::applyPreemptionWaCmdsEnd(LinearStream *pCommandStream, const Device &device) {
-}
-
 template <typename GfxFamily, typename InterfaceDescriptorType>
-void PreemptionHelper::programInterfaceDescriptorDataPreemption(InterfaceDescriptorType *idd, PreemptionMode preemptionMode) {
-    using INTERFACE_DESCRIPTOR_DATA = typename GfxFamily::INTERFACE_DESCRIPTOR_DATA;
-    if (preemptionMode == PreemptionMode::MidThread) {
-        idd->setThreadPreemptionDisable(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_DISABLE);
-    } else {
-        idd->setThreadPreemptionDisable(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_ENABLE);
-    }
-}
+void PreemptionHelper::programInterfaceDescriptorDataPreemption(InterfaceDescriptorType *idd, PreemptionMode preemptionMode) {}
 
 template <typename GfxFamily>
 constexpr uint32_t PreemptionConfig<GfxFamily>::mmioAddress = 0x2580;

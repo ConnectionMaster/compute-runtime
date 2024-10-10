@@ -190,7 +190,7 @@ bool MetricsLibrary::load() {
     }
 
     if (contextCreateFunction == nullptr || contextDeleteFunction == nullptr) {
-        PRINT_DEBUG_STRING(NEO::debugManager.flags.PrintDebugMessages.get(), stderr, "cannot load %s exported functions\n", MetricsLibrary::getFilename());
+        METRICS_LOG_ERR("cannot load %s exported functions", MetricsLibrary::getFilename());
         return false;
     }
 
@@ -626,9 +626,9 @@ bool OaMetricQueryPoolImp::allocateGpuMemory() {
 
 bool OaMetricQueryPoolImp::createMetricQueryPool() {
     // Validate metric group query - only event based is supported.
-    zet_metric_group_properties_t metricGroupProperites = {ZET_STRUCTURE_TYPE_METRIC_GROUP_PROPERTIES, nullptr};
-    OaMetricGroupImp::getProperties(hMetricGroup, &metricGroupProperites);
-    const bool validMetricGroup = metricGroupProperites.samplingType == ZET_METRIC_GROUP_SAMPLING_TYPE_FLAG_EVENT_BASED;
+    zet_metric_group_properties_t metricGroupProperties = {ZET_STRUCTURE_TYPE_METRIC_GROUP_PROPERTIES, nullptr};
+    OaMetricGroupImp::getProperties(hMetricGroup, &metricGroupProperties);
+    const bool validMetricGroup = metricGroupProperties.samplingType == ZET_METRIC_GROUP_SAMPLING_TYPE_FLAG_EVENT_BASED;
 
     if (!validMetricGroup) {
         return false;
@@ -819,7 +819,7 @@ ze_result_t OaMetricQueryImp::writeMetricQuery(CommandList &commandList, ze_even
     commandList.getCmdContainer().addToResidencyContainer(pool.pAllocation);
 
     // Wait for events before executing query.
-    commandList.appendWaitOnEvents(numWaitEvents, phWaitEvents, nullptr, false, true, false, false, false);
+    commandList.appendWaitOnEvents(numWaitEvents, phWaitEvents, nullptr, false, true, false, false, false, false);
 
     if (metricQueriesSize) {
 

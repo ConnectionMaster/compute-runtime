@@ -223,7 +223,8 @@ class GraphicsAllocation : public IDNode<GraphicsAllocation> {
                allocationType == AllocationType::gpuTimestampDeviceBuffer ||
                allocationType == AllocationType::debugModuleArea ||
                allocationType == AllocationType::assertBuffer ||
-               allocationType == AllocationType::syncDispatchToken;
+               allocationType == AllocationType::syncDispatchToken ||
+               allocationType == AllocationType::syncBuffer;
     }
     static bool isLockable(AllocationType allocationType) {
         return isCpuAccessRequired(allocationType) ||
@@ -311,7 +312,7 @@ class GraphicsAllocation : public IDNode<GraphicsAllocation> {
         bindlessInfo = info;
     }
 
-    SurfaceStateInHeapInfo getBindlessInfo() {
+    const SurfaceStateInHeapInfo &getBindlessInfo() const {
         return bindlessInfo;
     }
     bool canBeReadOnly() {

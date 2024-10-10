@@ -1423,7 +1423,7 @@ struct MockMergeResidencyContainerMemoryOperationsHandler : public DrmMemoryOper
 HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenMergeWithResidencyContainerFailsThenFlushReturnsError) {
     struct MockDrmCsr : public DrmCommandStreamReceiver<FamilyType> {
         using DrmCommandStreamReceiver<FamilyType>::DrmCommandStreamReceiver;
-        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, const ResidencyContainer &allocationsForResidency) override {
+        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
             return SubmissionStatus::success;
         }
     };
@@ -1455,7 +1455,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenMergeWithResidencyContaine
 HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenMergeWithResidencyContainerReturnsOutOfMemoryThenFlushReturnsError) {
     struct MockDrmCsr : public DrmCommandStreamReceiver<FamilyType> {
         using DrmCommandStreamReceiver<FamilyType>::DrmCommandStreamReceiver;
-        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, const ResidencyContainer &allocationsForResidency) override {
+        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
             return SubmissionStatus::success;
         }
     };
@@ -1490,7 +1490,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenNoAllocsInMemoryOperationH
 
     struct MockDrmCsr : public DrmCommandStreamReceiver<FamilyType> {
         using DrmCommandStreamReceiver<FamilyType>::DrmCommandStreamReceiver;
-        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, const ResidencyContainer &allocationsForResidency) override {
+        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
             auto memoryOperationsInterface = static_cast<MockDrmMemoryOperationsHandler *>(this->executionEnvironment.rootDeviceEnvironments[this->rootDeviceIndex]->memoryOperationsInterface.get());
             EXPECT_TRUE(memoryOperationsInterface->mutex.try_lock());
             memoryOperationsInterface->mutex.unlock();
@@ -1522,7 +1522,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenAllocsInMemoryOperationHan
 
     struct MockDrmCsr : public DrmCommandStreamReceiver<FamilyType> {
         using DrmCommandStreamReceiver<FamilyType>::DrmCommandStreamReceiver;
-        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, const ResidencyContainer &allocationsForResidency) override {
+        SubmissionStatus flushInternal(const BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
             auto memoryOperationsInterface = static_cast<MockDrmMemoryOperationsHandler *>(this->executionEnvironment.rootDeviceEnvironments[this->rootDeviceIndex]->memoryOperationsInterface.get());
             EXPECT_FALSE(memoryOperationsInterface->mutex.try_lock());
             return SubmissionStatus::success;
@@ -1534,7 +1534,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenAllocsInMemoryOperationHan
                                                                                                    PreemptionHelper::getDefaultPreemptionMode(*defaultHwInfo)));
 
     auto allocation = mm->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
-    executionEnvironment->rootDeviceEnvironments[csr->getRootDeviceIndex()]->memoryOperationsInterface->makeResident(device.get(), ArrayRef<GraphicsAllocation *>(&allocation, 1));
+    executionEnvironment->rootDeviceEnvironments[csr->getRootDeviceIndex()]->memoryOperationsInterface->makeResident(device.get(), ArrayRef<GraphicsAllocation *>(&allocation, 1), false);
 
     auto commandBuffer = mm->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
     LinearStream cs(commandBuffer);
@@ -1558,7 +1558,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenAllocInMemoryOperationsInt
     BatchBuffer batchBuffer = BatchBufferHelper::createDefaultBatchBuffer(cs.getGraphicsAllocation(), &cs, cs.getUsed());
 
     auto allocation = mm->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
-    executionEnvironment->rootDeviceEnvironments[csr->getRootDeviceIndex()]->memoryOperationsInterface->makeResident(device.get(), ArrayRef<GraphicsAllocation *>(&allocation, 1));
+    executionEnvironment->rootDeviceEnvironments[csr->getRootDeviceIndex()]->memoryOperationsInterface->makeResident(device.get(), ArrayRef<GraphicsAllocation *>(&allocation, 1), false);
 
     csr->flush(batchBuffer, csr->getResidencyAllocations());
 

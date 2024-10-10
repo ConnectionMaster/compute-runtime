@@ -291,7 +291,7 @@ ze_result_t ModuleTranslationUnit::buildFromSpirV(const char *input, uint32_t in
     return this->compileGenBinary(inputArgs, false);
 }
 
-ze_result_t ModuleTranslationUnit::createFromNativeBinary(const char *input, size_t inputSize) {
+ze_result_t ModuleTranslationUnit::createFromNativeBinary(const char *input, size_t inputSize, const char *internalBuildOptions) {
     UNRECOVERABLE_IF((nullptr == device) || (nullptr == device->getNEODevice()));
     auto productAbbreviation = NEO::hardwarePrefix[device->getNEODevice()->getHardwareInfo().platform.eProductFamily];
 
@@ -348,7 +348,7 @@ ze_result_t ModuleTranslationUnit::createFromNativeBinary(const char *input, siz
             updateBuildLog(NEO::CompilerWarnings::recompiledFromIr.str());
         }
 
-        return buildFromSpirV(this->irBinary.get(), static_cast<uint32_t>(this->irBinarySize), this->options.c_str(), "", nullptr);
+        return buildFromSpirV(this->irBinary.get(), static_cast<uint32_t>(this->irBinarySize), this->options.c_str(), internalBuildOptions, nullptr);
     } else {
         if (processUnpackedBinary() != ZE_RESULT_SUCCESS) {
             driverHandle->clearErrorDescription();
@@ -523,9 +523,16 @@ ModuleImp::~ModuleImp() {
 }
 
 NEO::Zebin::Debug::Segments ModuleImp::getZebinSegments() {
-    std::vector<std::pair<std::string_view, NEO::GraphicsAllocation *>> kernels;
-    for (const auto &kernelImmData : kernelImmDatas)
-        kernels.push_back({kernelImmData->getDescriptor().kernelMetadata.kernelName, kernelImmData->getIsaGraphicsAllocation()});
+    std::vector<NEO::Zebin::Debug::Segments::KernelNameIsaTupleT> kernels;
+    for (const auto &kernelImmData : kernelImmDatas) {
+        NEO::Zebin::Debug::Segments::Segment segment = {kernelImmData->getIsaGraphicsAllocation()->getGpuAddress(), kernelImmData->getIsaGraphicsAllocation()->getUnderlyingBufferSize()};
+        if (kernelImmData->getIsaParentAllocation()) {
+            segment.address += kernelImmData->getIsaOffsetInParentAllocation();
+            segment.size = kernelImmData->getIsaSubAllocationSize();
+        }
+        kernels.push_back({kernelImmData->getDescriptor().kernelMetadata.kernelName, segment});
+    }
+
     ArrayRef<const uint8_t> strings = {reinterpret_cast<const uint8_t *>(translationUnit->programInfo.globalStrings.initData),
                                        translationUnit->programInfo.globalStrings.size};
     return NEO::Zebin::Debug::Segments(translationUnit->globalVarBuffer, translationUnit->globalConstBuffer, strings, kernels);
@@ -538,7 +545,7 @@ ze_result_t ModuleImp::initialize(const ze_module_desc_t *desc, NEO::Device *neo
     if (result != ZE_RESULT_SUCCESS) {
         return result;
     }
-    this->verifyDebugCapabilities();
+
     if (this->shouldBuildBeFailed(neoDevice)) {
         return ZE_RESULT_ERROR_MODULE_BUILD_FAILURE;
     }
@@ -734,7 +741,7 @@ inline ze_result_t ModuleImp::initializeTranslationUnit(const ze_module_desc_t *
             this->isFunctionSymbolExportEnabled = true;
             this->isGlobalSymbolExportEnabled = true;
             this->precompiled = true;
-            return this->translationUnit->createFromNativeBinary(reinterpret_cast<const char *>(desc->pInputModule), desc->inputSize);
+            return this->translationUnit->createFromNativeBinary(reinterpret_cast<const char *>(desc->pInputModule), desc->inputSize, internalBuildOptions.c_str());
         } else if (desc->format == ZE_MODULE_FORMAT_IL_SPIRV) {
             this->builtFromSpirv = true;
             this->precompiled = false;
@@ -902,7 +909,7 @@ void ModuleImp::createBuildOptions(const char *pBuildFlags, std::string &apiOpti
 
         createBuildExtraOptions(apiOptions, internalBuildOptions);
     }
-    if (NEO::ApiSpecificConfig::getBindlessMode(device->getNEODevice()->getReleaseHelper())) {
+    if (NEO::ApiSpecificConfig::getBindlessMode(*device->getNEODevice())) {
         NEO::CompilerOptions::concatenateAppend(internalBuildOptions, NEO::CompilerOptions::bindlessMode.str());
     }
 }
@@ -976,18 +983,6 @@ ze_result_t ModuleImp::createKernel(const ze_kernel_desc_t *desc,
         driverHandle->clearErrorDescription();
     }
 
-    auto localMemSize = static_cast<uint32_t>(this->getDevice()->getNEODevice()->getDeviceInfo().localMemSize);
-    for (const auto &kernelImmutableData : this->getKernelImmutableDataVector()) {
-        auto slmInlineSize = kernelImmutableData->getDescriptor().kernelAttributes.slmInlineSize;
-        if (slmInlineSize > 0 && localMemSize < slmInlineSize) {
-            CREATE_DEBUG_STRING(str, "Size of SLM (%u) larger than available (%u)\n", slmInlineSize, localMemSize);
-            driverHandle->setErrorDescription(std::string(str.get()));
-            PRINT_DEBUG_STRING(NEO::debugManager.flags.PrintDebugMessages.get(), stderr, "Size of SLM (%u) larger than available (%u)\n", slmInlineSize, localMemSize);
-            res = ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY;
-            break;
-        }
-    }
-
     return res;
 }
 
@@ -1053,7 +1048,7 @@ void ModuleImp::copyPatchedSegments(const NEO::Linker::PatchableSegments &isaSeg
                 NEO::MemoryOperationsHandler *memoryOperationsIface = rootDeviceEnvironment.memoryOperationsInterface.get();
                 auto allocation = kernelImmData->getIsaGraphicsAllocation();
                 if (memoryOperationsIface) {
-                    memoryOperationsIface->makeResident(neoDevice, ArrayRef<NEO::GraphicsAllocation *>(&allocation, 1));
+                    memoryOperationsIface->makeResident(neoDevice, ArrayRef<NEO::GraphicsAllocation *>(&allocation, 1), false);
                 }
             }
         }
@@ -1282,20 +1277,6 @@ ze_result_t ModuleImp::getKernelNames(uint32_t *pCount, const char **pNames) {
     }
 
     return ZE_RESULT_SUCCESS;
-}
-
-void ModuleImp::verifyDebugCapabilities() {
-    bool debugCapabilities = device->getNEODevice()->getDebugger() != nullptr;
-
-    if (debugCapabilities) {
-        // verify all kernels are debuggable
-        for (auto kernelInfo : this->translationUnit->programInfo.kernelInfos) {
-            bool systemThreadSurfaceAvailable = NEO::isValidOffset(kernelInfo->kernelDescriptor.payloadMappings.implicitArgs.systemThreadSurfaceAddress.bindful) ||
-                                                NEO::isValidOffset(kernelInfo->kernelDescriptor.payloadMappings.implicitArgs.systemThreadSurfaceAddress.bindless);
-
-            debugCapabilities &= systemThreadSurfaceAvailable;
-        }
-    }
 }
 
 void ModuleImp::checkIfPrivateMemoryPerDispatchIsNeeded() {

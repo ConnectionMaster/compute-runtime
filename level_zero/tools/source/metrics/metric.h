@@ -24,19 +24,29 @@ struct _zet_metric_programmable_exp_handle_t {};
 
 namespace L0 {
 
-#define METRICS_LOG(out, ...)                              \
-    if (NEO::debugManager.flags.PrintL0MetricLogs.get()) { \
-        NEO::printDebugString(true, out, __VA_ARGS__);     \
+struct METRICS_LOG_BITMASK {                    // NOLINT(readability-identifier-naming)
+    constexpr static int32_t LOG_ERROR{1};      // NOLINT(readability-identifier-naming)
+    constexpr static int32_t LOG_INFO{1 << 1};  // NOLINT(readability-identifier-naming)
+    constexpr static int32_t LOG_DEBUG{1 << 2}; // NOLINT(readability-identifier-naming)
+};
+
+#define METRICS_LOG(out, ...) \
+    NEO::printDebugString(true, out, __VA_ARGS__);
+
+#define METRICS_LOG_ERR(str, ...)                                                                               \
+    if (NEO::debugManager.flags.PrintL0MetricLogs.get() & METRICS_LOG_BITMASK::LOG_ERROR) {                     \
+        METRICS_LOG(stderr, "\n\nL0Metrics[E][@fn:%s,ln:%d]: " str "\n\n", __FUNCTION__, __LINE__, __VA_ARGS__) \
     }
 
-#define METRICS_LOG_INFO(...) \
-    METRICS_LOG(stdout, "\nL0Metrics[I]: " __VA_ARGS__)
+#define METRICS_LOG_INFO(str, ...)                                                         \
+    if (NEO::debugManager.flags.PrintL0MetricLogs.get() & METRICS_LOG_BITMASK::LOG_INFO) { \
+        METRICS_LOG(stdout, "L0Metrics[I]: " str "\n", __VA_ARGS__)                        \
+    }
 
-#define METRICS_LOG_DBG(str, ...) \
-    METRICS_LOG(stdout, "\nL0Metrics[D][@fn:%s,ln:%d]: " str, __FUNCTION__, __LINE__, __VA_ARGS__)
-
-#define METRICS_LOG_ERR(str, ...) \
-    METRICS_LOG(stderr, "\nL0Metrics[E][@fn:%s,ln:%d]: " str, __FUNCTION__, __LINE__, __VA_ARGS__)
+#define METRICS_LOG_DBG(str, ...)                                                                         \
+    if (NEO::debugManager.flags.PrintL0MetricLogs.get() & METRICS_LOG_BITMASK::LOG_DEBUG) {               \
+        METRICS_LOG(stdout, "L0Metrics[D][@fn:%s,ln:%d]: " str "\n", __FUNCTION__, __LINE__, __VA_ARGS__) \
+    }
 
 struct CommandList;
 struct MetricStreamer;
@@ -53,8 +63,6 @@ class MetricSource {
     virtual bool isAvailable() = 0;
     virtual ze_result_t appendMetricMemoryBarrier(CommandList &commandList) = 0;
     virtual ze_result_t metricGroupGet(uint32_t *pCount, zet_metric_group_handle_t *phMetricGroups) = 0;
-    virtual ze_result_t getTimerResolution(uint64_t &resolution) = 0;
-    virtual ze_result_t getTimestampValidBits(uint64_t &validBits) = 0;
     virtual ze_result_t activateMetricGroupsPreferDeferred(uint32_t count, zet_metric_group_handle_t *phMetricGroups) = 0;
     virtual ze_result_t activateMetricGroupsAlreadyDeferred() = 0;
     virtual ze_result_t metricProgrammableGet(uint32_t *pCount, zet_metric_programmable_exp_handle_t *phMetricProgrammables) = 0;
@@ -71,6 +79,7 @@ class MetricSource {
     uint32_t getType() const {
         return type;
     }
+    virtual ze_result_t handleMetricGroupExtendedProperties(zet_metric_group_handle_t hMetricGroup, void *pNext) = 0;
 
   protected:
     uint32_t type = MetricSource::metricSourceTypeUndefined;
@@ -140,6 +149,8 @@ struct Metric : _zet_metric_handle_t {
     inline zet_metric_handle_t toHandle() { return this; }
 };
 
+struct MultiDeviceMetricImp;
+
 struct MetricImp : public Metric {
 
     MetricSource &getMetricSource() {
@@ -150,10 +161,37 @@ struct MetricImp : public Metric {
     bool isImmutable() { return isPredefined; }
     bool isRootDevice() { return isMultiDevice; }
 
+    MultiDeviceMetricImp *getRootDevMetric() { return rootDeviceMetricImp; };
+    void setRootDevMetric(MultiDeviceMetricImp *inputRootDevMetricImp) {
+        rootDeviceMetricImp = inputRootDevMetricImp;
+    };
+
   protected:
     MetricSource &metricSource;
     bool isPredefined = true;
     bool isMultiDevice = false;
+    MultiDeviceMetricImp *rootDeviceMetricImp = nullptr;
+};
+
+struct MultiDeviceMetricImp : public MetricImp {
+    ~MultiDeviceMetricImp() override = default;
+    MultiDeviceMetricImp(MetricSource &metricSource, std::vector<MetricImp *> &subDeviceMetrics) : MetricImp(metricSource), subDeviceMetrics(subDeviceMetrics) {
+        isPredefined = true;
+        isMultiDevice = true;
+        rootDeviceMetricImp = nullptr;
+
+        for (auto &subDeviceMetric : subDeviceMetrics) {
+            static_cast<MetricImp *>(subDeviceMetric)->setRootDevMetric(this);
+        }
+    }
+
+    ze_result_t destroy() override { return ZE_RESULT_ERROR_UNSUPPORTED_FEATURE; }
+    ze_result_t getProperties(zet_metric_properties_t *pProperties) override;
+    static MultiDeviceMetricImp *create(MetricSource &metricSource, std::vector<MetricImp *> &subDeviceMetrics);
+    MetricImp *getMetricAtSubDeviceIndex(uint32_t index);
+
+  protected:
+    std::vector<MetricImp *> subDeviceMetrics{};
 };
 
 struct MetricGroup : _zet_metric_group_handle_t {
@@ -194,7 +232,6 @@ struct MetricGroup : _zet_metric_group_handle_t {
         zet_device_handle_t hDevice,
         const zet_metric_query_pool_desc_t *desc,
         zet_metric_query_pool_handle_t *phMetricQueryPool) = 0;
-    ze_result_t getMetricGroupExtendedProperties(MetricSource &metricSource, void *pnext);
     virtual ze_result_t getExportData(const uint8_t *pRawData, size_t rawDataSize, size_t *pExportDataSize,
                                       uint8_t *pExportData) = 0;
 };

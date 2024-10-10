@@ -24,8 +24,6 @@ using Family = NEO::Xe2HpgCoreFamily;
 #include "shared/source/helpers/simd_helper.h"
 #include "shared/source/release_helper/release_helper.h"
 
-#include "gfx_core_helper_xe2_hpg_core_additional.inl"
-
 namespace NEO {
 
 template <>
@@ -166,27 +164,28 @@ aub_stream::MMIOList GfxCoreHelperHw<Family>::getExtraMmioList(const HardwareInf
 
 template <>
 size_t MemorySynchronizationCommands<Family>::getSizeForSingleAdditionalSynchronization(const RootDeviceEnvironment &rootDeviceEnvironment) {
-    auto programGlobalFenceAsMiMemFenceCommandInCommandStream = true;
+    auto programGlobalFenceAsMiMemFenceCommandInCommandStream = rootDeviceEnvironment.getHardwareInfo()->capabilityTable.isIntegratedDevice ? AdditionalSynchronizationType::none : AdditionalSynchronizationType::fence;
     if (debugManager.flags.ProgramGlobalFenceAsMiMemFenceCommandInCommandStream.get() != -1) {
-        programGlobalFenceAsMiMemFenceCommandInCommandStream = !!debugManager.flags.ProgramGlobalFenceAsMiMemFenceCommandInCommandStream.get();
+        programGlobalFenceAsMiMemFenceCommandInCommandStream = static_cast<AdditionalSynchronizationType>(debugManager.flags.ProgramGlobalFenceAsMiMemFenceCommandInCommandStream.get());
     }
 
-    if (programGlobalFenceAsMiMemFenceCommandInCommandStream) {
+    if (programGlobalFenceAsMiMemFenceCommandInCommandStream == AdditionalSynchronizationType::fence) {
         return sizeof(Family::MI_MEM_FENCE);
-    } else {
+    } else if (programGlobalFenceAsMiMemFenceCommandInCommandStream == AdditionalSynchronizationType::semaphore) {
         return EncodeSemaphore<Family>::getSizeMiSemaphoreWait();
     }
+    return 0;
 }
 
 template <>
 void MemorySynchronizationCommands<Family>::setAdditionalSynchronization(void *&commandsBuffer, uint64_t gpuAddress, bool acquire, const RootDeviceEnvironment &rootDeviceEnvironment) {
     using MI_MEM_FENCE = typename Family::MI_MEM_FENCE;
     using MI_SEMAPHORE_WAIT = typename Family::MI_SEMAPHORE_WAIT;
-    auto programGlobalFenceAsMiMemFenceCommandInCommandStream = true;
+    auto programGlobalFenceAsMiMemFenceCommandInCommandStream = rootDeviceEnvironment.getHardwareInfo()->capabilityTable.isIntegratedDevice ? AdditionalSynchronizationType::none : AdditionalSynchronizationType::fence;
     if (debugManager.flags.ProgramGlobalFenceAsMiMemFenceCommandInCommandStream.get() != -1) {
-        programGlobalFenceAsMiMemFenceCommandInCommandStream = !!debugManager.flags.ProgramGlobalFenceAsMiMemFenceCommandInCommandStream.get();
+        programGlobalFenceAsMiMemFenceCommandInCommandStream = static_cast<AdditionalSynchronizationType>(debugManager.flags.ProgramGlobalFenceAsMiMemFenceCommandInCommandStream.get());
     }
-    if (programGlobalFenceAsMiMemFenceCommandInCommandStream) {
+    if (programGlobalFenceAsMiMemFenceCommandInCommandStream == AdditionalSynchronizationType::fence) {
         MI_MEM_FENCE miMemFence = Family::cmdInitMemFence;
         if (acquire) {
             miMemFence.setFenceType(Family::MI_MEM_FENCE::FENCE_TYPE::FENCE_TYPE_ACQUIRE);
@@ -195,7 +194,7 @@ void MemorySynchronizationCommands<Family>::setAdditionalSynchronization(void *&
         }
         *reinterpret_cast<MI_MEM_FENCE *>(commandsBuffer) = miMemFence;
         commandsBuffer = ptrOffset(commandsBuffer, sizeof(MI_MEM_FENCE));
-    } else {
+    } else if (programGlobalFenceAsMiMemFenceCommandInCommandStream == AdditionalSynchronizationType::semaphore) {
         EncodeSemaphore<Family>::programMiSemaphoreWait(reinterpret_cast<MI_SEMAPHORE_WAIT *>(commandsBuffer),
                                                         gpuAddress,
                                                         EncodeSemaphore<Family>::invalidHardwareTag,
@@ -278,77 +277,6 @@ void GfxCoreHelperHw<Family>::setExtraAllocationData(AllocationData &allocationD
 }
 
 template <>
-uint32_t GfxCoreHelperHw<Family>::alignSlmSize(uint32_t slmSize) const {
-    const uint32_t alignedSlmSizes[] = {
-        0u,
-        1u * MemoryConstants::kiloByte,
-        2u * MemoryConstants::kiloByte,
-        4u * MemoryConstants::kiloByte,
-        8u * MemoryConstants::kiloByte,
-        16u * MemoryConstants::kiloByte,
-        24u * MemoryConstants::kiloByte,
-        32u * MemoryConstants::kiloByte,
-        48u * MemoryConstants::kiloByte,
-        64u * MemoryConstants::kiloByte,
-        96u * MemoryConstants::kiloByte,
-        128u * MemoryConstants::kiloByte,
-    };
-
-    for (auto &alignedSlmSize : alignedSlmSizes) {
-        if (slmSize <= alignedSlmSize) {
-            return alignedSlmSize;
-        }
-    }
-
-    UNRECOVERABLE_IF(true);
-    return 0;
-}
-
-template <>
-uint32_t GfxCoreHelperHw<Family>::computeSlmValues(const HardwareInfo &hwInfo, uint32_t slmSize) const {
-    using SHARED_LOCAL_MEMORY_SIZE = typename Family::INTERFACE_DESCRIPTOR_DATA::SHARED_LOCAL_MEMORY_SIZE;
-    auto alignedSlmSize = alignSlmSize(slmSize);
-
-    if (alignedSlmSize == 0u) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_0K;
-    }
-
-    UNRECOVERABLE_IF(slmSize > 128u * MemoryConstants::kiloByte);
-
-    if (alignedSlmSize > 96u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_128K;
-    }
-    if (alignedSlmSize > 64u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_96K;
-    }
-    if (alignedSlmSize > 48u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_64K;
-    }
-    if (alignedSlmSize > 32u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_48K;
-    }
-    if (alignedSlmSize > 24u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_32K;
-    }
-    if (alignedSlmSize > 16u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_24K;
-    }
-    if (alignedSlmSize > 8u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_16K;
-    }
-    if (alignedSlmSize > 4u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_8K;
-    }
-    if (alignedSlmSize > 2u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_4K;
-    }
-    if (alignedSlmSize > 1u * MemoryConstants::kiloByte) {
-        return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_2K;
-    }
-    return SHARED_LOCAL_MEMORY_SIZE::SHARED_LOCAL_MEMORY_SIZE_ENCODES_1K;
-}
-
-template <>
 int32_t GfxCoreHelperHw<Family>::getDefaultThreadArbitrationPolicy() const {
     return ThreadArbitrationPolicy::RoundRobinAfterDependency;
 }
@@ -367,11 +295,6 @@ size_t GfxCoreHelperHw<Family>::getPreemptionAllocationAlignment() const {
 template <>
 uint32_t GfxCoreHelperHw<Family>::overrideMaxWorkGroupSize(uint32_t maxWG) const {
     return std::min(maxWG, 2048u);
-}
-
-template <>
-bool GfxCoreHelperHw<Family>::isRunaloneModeRequired(DebuggingMode debuggingMode) const {
-    return (debuggingMode == DebuggingMode::online);
 }
 
 template <>

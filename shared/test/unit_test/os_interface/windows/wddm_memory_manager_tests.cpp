@@ -563,6 +563,7 @@ TEST_F(WddmMemoryManagerTests, givenTypeWhenCallIsStatelessAccessRequiredThenPro
                       AllocationType::svmCpu,
                       AllocationType::svmGpu,
                       AllocationType::svmZeroCopy,
+                      AllocationType::syncBuffer,
                       AllocationType::tagBuffer,
                       AllocationType::globalFence,
                       AllocationType::timestampPacketTagBuffer,
@@ -1598,7 +1599,7 @@ TEST_F(WddmMemoryManagerSimpleTest, givenIsaTypeAnd32BitFrontWindowWhenFrontWind
     EXPECT_EQ(gpuAddress, gfxPartition->heapFreePtr);
 }
 
-HWTEST2_F(WddmMemoryManagerSimpleTest, givenLocalMemoryIsaTypeAnd32BitFrontWindowWhenFrontWindowMemoryAllocatedAndFreedThenFrontWindowHeapAllocatorIsUsed, IsAtLeastGen12lp) {
+HWTEST2_F(WddmMemoryManagerSimpleTest, givenLocalMemoryIsaTypeAnd32BitFrontWindowWhenFrontWindowMemoryAllocatedAndFreedThenFrontWindowHeapAllocatorIsUsed, MatchAny) {
     DebugManagerStateRestore restore{};
     debugManager.flags.ForceLocalMemoryAccessMode.set(0);
 
@@ -1660,7 +1661,7 @@ TEST_F(WddmMemoryManagerSimpleTest, givenDebugModuleAreaTypeWhenCreatingAllocati
     memoryManager->freeGraphicsMemory(moduleDebugArea);
 }
 
-HWTEST2_F(WddmMemoryManagerSimpleTest, givenEnabledLocalMemoryWhenAllocatingDebugAreaThenHeapInternalDeviceFrontWindowIsUsed, IsAtLeastGen12lp) {
+HWTEST2_F(WddmMemoryManagerSimpleTest, givenEnabledLocalMemoryWhenAllocatingDebugAreaThenHeapInternalDeviceFrontWindowIsUsed, MatchAny) {
     DebugManagerStateRestore restore{};
     debugManager.flags.ForceLocalMemoryAccessMode.set(0);
     const auto size = MemoryConstants::pageSize64k;
@@ -2899,7 +2900,11 @@ HWTEST_F(WddmMemoryManagerTest, givenInternalHeapOrLinearStreamTypeWhenAllocatin
 
         ASSERT_NE(nullptr, allocation);
 
-        EXPECT_TRUE(allocation->getDefaultGmm()->resourceParams.Usage == GMM_RESOURCE_USAGE_TYPE::GMM_RESOURCE_USAGE_OCL_STATE_HEAP_BUFFER);
+        if (rootDeviceEnvironment->getProductHelper().isDcFlushMitigated()) {
+            EXPECT_TRUE(allocation->getDefaultGmm()->resourceParams.Usage == GMM_RESOURCE_USAGE_TYPE::GMM_RESOURCE_USAGE_OCL_SYSTEM_MEMORY_BUFFER_CACHELINE_MISALIGNED);
+        } else {
+            EXPECT_TRUE(allocation->getDefaultGmm()->resourceParams.Usage == GMM_RESOURCE_USAGE_TYPE::GMM_RESOURCE_USAGE_OCL_STATE_HEAP_BUFFER);
+        }
 
         memoryManager->freeGraphicsMemory(allocation);
     }
@@ -2911,7 +2916,11 @@ HWTEST_F(WddmMemoryManagerTest, givenInternalHeapOrLinearStreamTypeWhenAllocatin
 
         ASSERT_NE(nullptr, allocation);
 
-        EXPECT_TRUE(allocation->getDefaultGmm()->resourceParams.Usage == GMM_RESOURCE_USAGE_TYPE::GMM_RESOURCE_USAGE_OCL_STATE_HEAP_BUFFER);
+        if (rootDeviceEnvironment->getProductHelper().isDcFlushMitigated()) {
+            EXPECT_TRUE(allocation->getDefaultGmm()->resourceParams.Usage == GMM_RESOURCE_USAGE_TYPE::GMM_RESOURCE_USAGE_OCL_SYSTEM_MEMORY_BUFFER_CACHELINE_MISALIGNED);
+        } else {
+            EXPECT_TRUE(allocation->getDefaultGmm()->resourceParams.Usage == GMM_RESOURCE_USAGE_TYPE::GMM_RESOURCE_USAGE_OCL_STATE_HEAP_BUFFER);
+        }
 
         memoryManager->freeGraphicsMemory(allocation);
     }
@@ -4025,14 +4034,14 @@ struct WddmMemoryManagerWithAsyncDeleterTest : public ::testing::Test {
 
 TEST_F(WddmMemoryManagerWithAsyncDeleterTest, givenWddmWhenAsyncDeleterIsEnabledThenCanDeferDeletions) {
     EXPECT_EQ(0, deleter->deferDeletionCalled);
-    memoryManager->tryDeferDeletions(nullptr, 0, 0, 0);
+    memoryManager->tryDeferDeletions(nullptr, 0, 0, 0, AllocationType::unknown);
     EXPECT_EQ(1, deleter->deferDeletionCalled);
     EXPECT_EQ(1u, wddm->destroyAllocationResult.called);
 }
 
 TEST_F(WddmMemoryManagerWithAsyncDeleterTest, givenWddmWhenAsyncDeleterIsDisabledThenCannotDeferDeletions) {
     memoryManager->setDeferredDeleter(nullptr);
-    memoryManager->tryDeferDeletions(nullptr, 0, 0, 0);
+    memoryManager->tryDeferDeletions(nullptr, 0, 0, 0, AllocationType::unknown);
     EXPECT_EQ(1u, wddm->destroyAllocationResult.called);
 }
 
@@ -4279,34 +4288,6 @@ TEST(WddmMemoryManagerTest3, WhenWddmMemoryManagerIsCreatedThenItIsNonCopyable) 
 TEST(WddmMemoryManagerTest3, WhenWddmMemoryManagerIsCreatedThenItIsNonAssignable) {
     EXPECT_FALSE(std::is_move_assignable<WddmMemoryManager>::value);
     EXPECT_FALSE(std::is_copy_assignable<WddmMemoryManager>::value);
-}
-
-TEST(WddmMemoryManagerTest3, givenAllocationIsTrimCandidateInOneOsContextWhenGettingTrimCandidatePositionThenReturnItsPositionAndUnusedPositionInOtherContexts) {
-    auto executionEnvironment = std::unique_ptr<ExecutionEnvironment>(MockDevice::prepareExecutionEnvironment(defaultHwInfo.get(), 0u));
-    executionEnvironment->rootDeviceEnvironments[0]->initGmm();
-    MockWddmAllocation allocation(executionEnvironment->rootDeviceEnvironments[0]->getGmmHelper());
-    MockOsContext osContext(1u, EngineDescriptorHelper::getDefaultDescriptor({aub_stream::ENGINE_RCS, EngineUsage::regular},
-                                                                             PreemptionHelper::getDefaultPreemptionMode(*defaultHwInfo)));
-    allocation.setTrimCandidateListPosition(osContext.getContextId(), 700u);
-    EXPECT_EQ(trimListUnusedPosition, allocation.getTrimCandidateListPosition(0u));
-    EXPECT_EQ(700u, allocation.getTrimCandidateListPosition(1u));
-}
-
-TEST(WddmMemoryManagerTest3, givenAllocationCreatedWithOsContextCountOneWhenItIsCreatedThenMaxOsContextCountIsUsedInstead) {
-    auto executionEnvironment = std::unique_ptr<ExecutionEnvironment>(MockDevice::prepareExecutionEnvironment(defaultHwInfo.get(), 0u));
-    executionEnvironment->rootDeviceEnvironments[0]->initGmm();
-    MockWddmAllocation allocation(executionEnvironment->rootDeviceEnvironments[0]->getGmmHelper());
-    allocation.setTrimCandidateListPosition(1u, 700u);
-    EXPECT_EQ(700u, allocation.getTrimCandidateListPosition(1u));
-    EXPECT_EQ(trimListUnusedPosition, allocation.getTrimCandidateListPosition(0u));
-}
-
-TEST(WddmMemoryManagerTest3, givenRequestedContextIdTooLargeWhenGettingTrimCandidateListPositionThenReturnUnusedPosition) {
-    auto executionEnvironment = std::unique_ptr<ExecutionEnvironment>(MockDevice::prepareExecutionEnvironment(defaultHwInfo.get(), 0u));
-    executionEnvironment->rootDeviceEnvironments[0]->initGmm();
-    MockWddmAllocation allocation(executionEnvironment->rootDeviceEnvironments[0]->getGmmHelper());
-    EXPECT_EQ(trimListUnusedPosition, allocation.getTrimCandidateListPosition(1u));
-    EXPECT_EQ(trimListUnusedPosition, allocation.getTrimCandidateListPosition(1000u));
 }
 
 TEST(WddmMemoryManagerTest3, givenAllocationTypeWhenPassedToWddmAllocationConstructorThenAllocationTypeIsStored) {

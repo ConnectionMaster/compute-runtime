@@ -41,6 +41,10 @@ template Event *Event::create<uint32_t>(EventPool *, const ze_event_desc_t *, De
 template Event *Event::create<uint64_t>(const EventDescriptor &, const ze_event_desc_t *, Device *);
 template Event *Event::create<uint32_t>(const EventDescriptor &, const ze_event_desc_t *, Device *);
 
+bool Event::standaloneInOrderTimestampAllocationEnabled() {
+    return (NEO::debugManager.flags.StandaloneInOrderTimestampAllocationEnabled.get() != 0);
+}
+
 ze_result_t EventPool::initialize(DriverHandle *driver, Context *context, uint32_t numDevices, ze_device_handle_t *deviceHandles) {
     this->context = static_cast<ContextImp *>(context);
 
@@ -273,9 +277,11 @@ ze_result_t EventPool::getIpcHandle(ze_ipc_event_pool_handle_t *ipcHandle) {
 
     auto memoryManager = this->context->getDriverHandle()->getMemoryManager();
     auto allocation = this->eventPoolAllocations->getDefaultGraphicsAllocation();
-    if (int retCode = allocation->peekInternalHandle(memoryManager, poolData.handle); retCode != 0) {
+    uint64_t handle{};
+    if (int retCode = allocation->peekInternalHandle(memoryManager, handle); retCode != 0) {
         return ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY;
     }
+    poolData.handle = handle;
     memoryManager->registerIpcExportedAllocation(allocation);
     return ZE_RESULT_SUCCESS;
 }
@@ -381,8 +387,16 @@ ze_result_t EventPool::openEventPoolIpcHandle(const ze_ipc_event_pool_handle_t &
     return ZE_RESULT_SUCCESS;
 }
 
+void Event::releaseTempInOrderTimestampNodes() {
+    if (inOrderExecInfo) {
+        inOrderExecInfo->releaseNotUsedTempTimestampNodes(false);
+    }
+}
+
 ze_result_t Event::destroy() {
-    this->resetInOrderTimestampNode(nullptr);
+    resetInOrderTimestampNode(nullptr);
+    releaseTempInOrderTimestampNodes();
+
     delete this;
     return ZE_RESULT_SUCCESS;
 }
@@ -407,11 +421,30 @@ void Event::disableImplicitCounterBasedMode() {
 }
 
 uint64_t Event::getGpuAddress(Device *device) const {
-    return getPoolAllocation(device)->getGpuAddress() + this->eventPoolOffset;
+    if (inOrderTimestampNode) {
+        return inOrderTimestampNode->getGpuAddress();
+    }
+    return getAllocation(device)->getGpuAddress() + this->eventPoolOffset;
 }
 
-NEO::GraphicsAllocation *Event::getPoolAllocation(Device *device) const {
-    return this->eventPoolAllocation ? this->eventPoolAllocation->getGraphicsAllocation(device->getNEODevice()->getRootDeviceIndex()) : nullptr;
+void *Event::getHostAddress() const {
+    if (inOrderTimestampNode) {
+        return inOrderTimestampNode->getCpuBase();
+    }
+
+    return this->hostAddressFromPool;
+}
+
+NEO::GraphicsAllocation *Event::getAllocation(Device *device) const {
+    auto rootDeviceIndex = device->getNEODevice()->getRootDeviceIndex();
+
+    if (inOrderTimestampNode) {
+        return inOrderTimestampNode->getBaseGraphicsAllocation()->getGraphicsAllocation(rootDeviceIndex);
+    } else if (eventPoolAllocation) {
+        return eventPoolAllocation->getGraphicsAllocation(rootDeviceIndex);
+    }
+
+    return nullptr;
 }
 
 void Event::setGpuStartTimestamp() {

@@ -164,7 +164,6 @@ TEST_F(GmmHelperTests, GivenInvalidImageTypeWhenQueryingImgParamsThenExceptionIs
 }
 
 TEST_F(GmmHelperTests, WhenQueryingImgParamsThenCorrectValuesAreReturned) {
-    const HardwareInfo *hwinfo = defaultHwInfo.get();
     ImageDescriptor imgDesc = {};
     imgDesc.imageType = ImageType::image3D;
     imgDesc.imageWidth = 17;
@@ -180,11 +179,7 @@ TEST_F(GmmHelperTests, WhenQueryingImgParamsThenCorrectValuesAreReturned) {
     EXPECT_GT(imgInfo.size, minSize);
     EXPECT_GT(imgInfo.rowPitch, 0u);
     EXPECT_GT(imgInfo.slicePitch, 0u);
-    if (hwinfo->platform.eRenderCoreFamily == IGFX_GEN8_CORE) {
-        EXPECT_EQ(imgInfo.qPitch, 0u);
-    } else {
-        EXPECT_GT(imgInfo.qPitch, 0u);
-    }
+    EXPECT_GT(imgInfo.qPitch, 0u);
 
     auto &gfxCoreHelper = this->rootDeviceEnvironment->getHelper<GfxCoreHelper>();
 
@@ -685,6 +680,11 @@ TEST(GmmTest, givenHwInfoWhenDeviceIsCreatedThenSetThisHwInfoToGmmHelper) {
 TEST(GmmTest, givenAllocationTypeWhenGettingUsageTypeThenReturnCorrectValue) {
     MockExecutionEnvironment mockExecutionEnvironment{};
     const auto &productHelper = mockExecutionEnvironment.rootDeviceEnvironments[0]->getHelper<ProductHelper>();
+
+    if (productHelper.isDcFlushMitigated()) {
+        GTEST_SKIP();
+    }
+
     for (uint32_t i = 0; i < static_cast<uint32_t>(AllocationType::count); i++) {
         auto allocationType = static_cast<AllocationType>(i);
         auto uncachedGmmUsageType = productHelper.isNewCoherencyModelSupported() ? GMM_RESOURCE_USAGE_OCL_BUFFER_CSR_UC : GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED;
@@ -806,6 +806,16 @@ TEST(GmmTest, givenAllocationTypeAndMitigatedDcFlushWhenGettingUsageTypeThenRetu
     }
 }
 
+TEST(GmmTest, givenDebugFlagWhenTimestampAllocationsAreQueriedThenBufferPolicyIsReturned) {
+    DebugManagerStateRestore restorer;
+    debugManager.flags.ForceNonCoherentModeForTimestamps.set(1);
+    MockExecutionEnvironment mockExecutionEnvironment{};
+    const auto &productHelper = mockExecutionEnvironment.rootDeviceEnvironments[0]->getHelper<ProductHelper>();
+    auto expectedUsage = GMM_RESOURCE_USAGE_OCL_BUFFER;
+    EXPECT_EQ(expectedUsage, CacheSettingsHelper::getGmmUsageType(AllocationType::gpuTimestampDeviceBuffer, false, productHelper));
+    EXPECT_EQ(expectedUsage, CacheSettingsHelper::getGmmUsageType(AllocationType::timestampPacketTagBuffer, false, productHelper));
+}
+
 TEST(GmmTest, givenForceAllResourcesUncachedFlagSetWhenGettingUsageTypeThenReturnUncached) {
     DebugManagerStateRestore restore;
     debugManager.flags.ForceAllResourcesUncached.set(true);
@@ -882,6 +892,10 @@ TEST(GmmTest, givenUncachedDebugFlagMaskSetWhenAskingForUsageTypeThenReturnUncac
 
     MockExecutionEnvironment mockExecutionEnvironment{};
     const auto &productHelper = mockExecutionEnvironment.rootDeviceEnvironments[0]->getHelper<ProductHelper>();
+
+    if (productHelper.isDcFlushMitigated()) {
+        GTEST_SKIP();
+    }
 
     constexpr int64_t bufferMask = 1 << (static_cast<int64_t>(AllocationType::buffer) - 1);
     constexpr int64_t imageMask = 1 << (static_cast<int64_t>(AllocationType::image) - 1);

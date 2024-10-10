@@ -171,6 +171,10 @@ DG2TEST_F(ProductHelperTestDg2, givenDg2ProductHelperWhenIsInitBuiltinAsyncSuppo
     EXPECT_TRUE(productHelper->isInitBuiltinAsyncSupported(*defaultHwInfo));
 }
 
+DG2TEST_F(ProductHelperTestDg2, givenProductHelperWhenCheckIsCopyBufferRectSplitSupportedThenReturnsFalse) {
+    EXPECT_FALSE(productHelper->isCopyBufferRectSplitSupported());
+}
+
 DG2TEST_F(ProductHelperTestDg2, givenG10DevIdWhenAdditionalKernelExecInfoSupportCheckedThenCorrectValueIsReturned) {
     HardwareInfo myHwInfo = *defaultHwInfo;
     myHwInfo.platform.usDeviceID = dg2G10DeviceIds[0];
@@ -283,7 +287,6 @@ DG2TEST_F(ProductHelperTestDg2, givenDg2G10A0OrA1SteppingWhenAskingIfWAIsRequire
         refreshReleaseHelper(&hwInfo);
 
         EXPECT_EQ(expectedValue, productHelper->isDefaultEngineTypeAdjustmentRequired(hwInfo));
-        EXPECT_EQ(expectedValue, productHelper->isAllocationSizeAdjustmentRequired(hwInfo));
         EXPECT_EQ(expectedValue, releaseHelper->isPrefetchDisablingRequired());
     }
 }

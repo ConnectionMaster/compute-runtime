@@ -376,7 +376,7 @@ HWTEST_F(TbxCommandSteamSimpleTest, givenTbxCsrAndResidentAllocationWhenProcessR
 
     MockGraphicsAllocation allocation2(reinterpret_cast<void *>(0x5000), 0x5000, 0x1000);
     GraphicsAllocation *allocPtr = &allocation2;
-    memoryOperationsHandler->makeResident(pDevice, ArrayRef<GraphicsAllocation *>(&allocPtr, 1));
+    memoryOperationsHandler->makeResident(pDevice, ArrayRef<GraphicsAllocation *>(&allocPtr, 1), false);
     EXPECT_TRUE(mockManager->writeMemory2Called);
 
     mockManager->storeAllocationParams = true;
@@ -473,12 +473,110 @@ HWTEST_F(TbxCommandSteamSimpleTest, givenTbxCsrWhenDownloadAllocatoinsCalledThen
     MockGraphicsAllocation allocation1, allocation2, allocation3;
     tbxCsr.allocationsForDownload = {&allocation1, &allocation2, &allocation3};
 
+    allocation1.updateTaskCount(0, tbxCsr.getOsContext().getContextId());
+    allocation2.updateTaskCount(0, tbxCsr.getOsContext().getContextId());
+    allocation3.updateTaskCount(0, tbxCsr.getOsContext().getContextId());
+
     EXPECT_EQ(0u, tbxCsr.obtainUniqueOwnershipCalled);
-    tbxCsr.downloadAllocations();
+    tbxCsr.downloadAllocations(true);
     EXPECT_EQ(1u, tbxCsr.obtainUniqueOwnershipCalled);
 
     std::set<GraphicsAllocation *> expectedDownloadedAllocations = {tbxCsr.getTagAllocation(), &allocation1, &allocation2, &allocation3};
     EXPECT_EQ(0u, tbxCsr.allocationsForDownload.size());
+}
+
+HWTEST_F(TbxCommandSteamSimpleTest, givenTbxCsrWhenUpdatingTaskCountDuringWaitThenDontRemoveFromContainer) {
+    MockTbxCsrRegisterDownloadedAllocations<FamilyType> tbxCsr{*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield()};
+    MockOsContext osContext(0, EngineDescriptorHelper::getDefaultDescriptor(pDevice->getDeviceBitfield()));
+
+    tbxCsr.downloadAllocationImpl = nullptr;
+
+    tbxCsr.setupContext(osContext);
+    tbxCsr.initializeTagAllocation();
+
+    auto tagAddress = tbxCsr.getTagAddress();
+
+    *tagAddress = 0u;
+    tbxCsr.latestFlushedTaskCount = 1;
+
+    MockGraphicsAllocation allocation1, allocation2, allocation3;
+    tbxCsr.allocationsForDownload = {&allocation1, &allocation2, &allocation3};
+
+    tbxCsr.makeResident(allocation1);
+    tbxCsr.makeResident(allocation2);
+    tbxCsr.makeResident(allocation3);
+
+    allocation2.updateTaskCount(2u, tbxCsr.getOsContext().getContextId());
+
+    tbxCsr.downloadAllocations(false);
+    EXPECT_EQ(0u, tbxCsr.obtainUniqueOwnershipCalled);
+    EXPECT_EQ(3u, tbxCsr.allocationsForDownload.size());
+
+    *tagAddress = 1u;
+
+    tbxCsr.downloadAllocations(false);
+    EXPECT_EQ(1u, tbxCsr.obtainUniqueOwnershipCalled);
+    EXPECT_EQ(1u, tbxCsr.allocationsForDownload.size());
+    EXPECT_NE(tbxCsr.allocationsForDownload.find(&allocation2), tbxCsr.allocationsForDownload.end());
+}
+
+HWTEST_F(TbxCommandSteamSimpleTest, givenAllocationWithBiggerTaskCountThanWaitingTaskCountThenDontRemoveFromContainer) {
+    MockTbxCsrRegisterDownloadedAllocations<FamilyType> tbxCsr{*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield()};
+    MockOsContext osContext(0, EngineDescriptorHelper::getDefaultDescriptor(pDevice->getDeviceBitfield()));
+
+    tbxCsr.setupContext(osContext);
+    tbxCsr.initializeTagAllocation();
+    *tbxCsr.getTagAddress() = 0u;
+    tbxCsr.latestFlushedTaskCount = 1;
+
+    MockGraphicsAllocation allocation1, allocation2, allocation3;
+    tbxCsr.allocationsForDownload = {&allocation1, &allocation2, &allocation3};
+
+    tbxCsr.makeResident(allocation1);
+    tbxCsr.makeResident(allocation2);
+    tbxCsr.makeResident(allocation3);
+
+    auto contextId = tbxCsr.getOsContext().getContextId();
+
+    allocation1.updateTaskCount(2, contextId);
+    allocation2.updateTaskCount(1, contextId);
+    allocation3.updateTaskCount(2, contextId);
+
+    *tbxCsr.getTagAddress() = 1u;
+    tbxCsr.downloadAllocations(false, 1);
+    EXPECT_EQ(1u, tbxCsr.obtainUniqueOwnershipCalled);
+    EXPECT_EQ(2u, tbxCsr.allocationsForDownload.size());
+
+    EXPECT_NE(tbxCsr.allocationsForDownload.find(&allocation1), tbxCsr.allocationsForDownload.end());
+    EXPECT_NE(tbxCsr.allocationsForDownload.find(&allocation3), tbxCsr.allocationsForDownload.end());
+}
+
+HWTEST_F(TbxCommandSteamSimpleTest, givenDifferentTaskCountThanLatestFlushedWhenDownloadingThenPickSmallest) {
+    MockTbxCsrRegisterDownloadedAllocations<FamilyType> tbxCsr{*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield()};
+    MockOsContext osContext(0, EngineDescriptorHelper::getDefaultDescriptor(pDevice->getDeviceBitfield()));
+
+    tbxCsr.downloadAllocationImpl = nullptr;
+
+    tbxCsr.setupContext(osContext);
+    tbxCsr.initializeTagAllocation();
+    *tbxCsr.getTagAddress() = 0;
+    tbxCsr.latestFlushedTaskCount = 1;
+
+    tbxCsr.downloadAllocations(false, 2);
+    EXPECT_EQ(0u, tbxCsr.obtainUniqueOwnershipCalled);
+
+    *tbxCsr.getTagAddress() = 1;
+
+    tbxCsr.downloadAllocations(false, 2);
+    EXPECT_EQ(1u, tbxCsr.obtainUniqueOwnershipCalled);
+
+    tbxCsr.latestFlushedTaskCount = 3;
+    tbxCsr.downloadAllocations(false, 2);
+    EXPECT_EQ(1u, tbxCsr.obtainUniqueOwnershipCalled);
+
+    *tbxCsr.getTagAddress() = 3;
+    tbxCsr.downloadAllocations(false, 2);
+    EXPECT_EQ(2u, tbxCsr.obtainUniqueOwnershipCalled);
 }
 
 HWTEST_F(TbxCommandSteamSimpleTest, whenTbxCommandStreamReceiverIsCreatedThenPPGTTAndGGTTCreatedHavePhysicalAddressAllocatorSet) {

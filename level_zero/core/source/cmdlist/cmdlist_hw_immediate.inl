@@ -154,8 +154,6 @@ void CommandListCoreFamilyImmediate<gfxCoreFamily>::handleHeapsAndResidencyForIm
     NEO::IndirectHeap *ssh = nullptr;
 
     const auto bindlessHeapsHelper = this->device->getNEODevice()->getBindlessHeapsHelper();
-    const bool isLastAppendedKernelBindlessMode = this->isLastAppendedKernelBindlessMode();
-
     auto csr = getCsr(false);
 
     csr->makeResident(*ioh->getGraphicsAllocation());
@@ -172,8 +170,8 @@ void CommandListCoreFamilyImmediate<gfxCoreFamily>::handleHeapsAndResidencyForIm
 
         if constexpr (streamStatesSupported) {
             if (this->requiredStreamState.stateBaseAddress.surfaceStateBaseAddress.value == NEO::StreamProperty64::initValue) {
-                this->requiredStreamState.stateBaseAddress.setPropertiesSurfaceState(NEO::getStateBaseAddress(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode),
-                                                                                     NEO::getStateSize(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode));
+                this->requiredStreamState.stateBaseAddress.setPropertiesSurfaceState(NEO::getStateBaseAddressForSsh(*ssh, bindlessHeapsHelper),
+                                                                                     NEO::getStateSizeForSsh(*ssh, bindlessHeapsHelper));
             }
         }
     } else if (this->immediateCmdListHeapSharing) {
@@ -182,10 +180,10 @@ void CommandListCoreFamilyImmediate<gfxCoreFamily>::handleHeapsAndResidencyForIm
             csr->makeResident(*ssh->getGraphicsAllocation());
 
             if constexpr (streamStatesSupported) {
-                this->requiredStreamState.stateBaseAddress.setPropertiesBindingTableSurfaceState(NEO::getStateBaseAddress(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode),
-                                                                                                 NEO::getStateSize(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode),
-                                                                                                 NEO::getStateBaseAddress(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode),
-                                                                                                 NEO::getStateSize(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode));
+                this->requiredStreamState.stateBaseAddress.setPropertiesBindingTableSurfaceState(NEO::getStateBaseAddressForSsh(*ssh, bindlessHeapsHelper),
+                                                                                                 NEO::getStateSizeForSsh(*ssh, bindlessHeapsHelper),
+                                                                                                 NEO::getStateBaseAddressForSsh(*ssh, bindlessHeapsHelper),
+                                                                                                 NEO::getStateSizeForSsh(*ssh, bindlessHeapsHelper));
             }
         }
         if (this->dynamicHeapRequired) {
@@ -211,10 +209,10 @@ void CommandListCoreFamilyImmediate<gfxCoreFamily>::handleHeapsAndResidencyForIm
         if (ssh) {
             csr->makeResident(*ssh->getGraphicsAllocation());
             if constexpr (streamStatesSupported) {
-                this->requiredStreamState.stateBaseAddress.setPropertiesBindingTableSurfaceState(NEO::getStateBaseAddress(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode),
-                                                                                                 NEO::getStateSize(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode),
-                                                                                                 NEO::getStateBaseAddress(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode),
-                                                                                                 NEO::getStateSize(*ssh, bindlessHeapsHelper, isLastAppendedKernelBindlessMode));
+                this->requiredStreamState.stateBaseAddress.setPropertiesBindingTableSurfaceState(NEO::getStateBaseAddressForSsh(*ssh, bindlessHeapsHelper),
+                                                                                                 NEO::getStateSizeForSsh(*ssh, bindlessHeapsHelper),
+                                                                                                 NEO::getStateBaseAddressForSsh(*ssh, bindlessHeapsHelper),
+                                                                                                 NEO::getStateSizeForSsh(*ssh, bindlessHeapsHelper));
             }
         }
     }
@@ -322,8 +320,7 @@ NEO::CompletionStamp CommandListCoreFamilyImmediate<gfxCoreFamily>::flushRegular
         hasRelaxedOrderingDependencies,                                   // hasRelaxedOrderingDependencies
         false,                                                            // stateCacheInvalidation
         false,                                                            // isStallingCommandsOnNextFlushRequired
-        false,                                                            // isDcFlushRequiredOnStallingCommandsOnNextFlush
-        !this->isLastAppendedKernelBindlessMode()                         // disableGlobalSSH
+        false                                                             // isDcFlushRequiredOnStallingCommandsOnNextFlush
     );
 
     auto ioh = (this->commandContainer.getIndirectHeap(NEO::IndirectHeap::Type::indirectObject));
@@ -553,12 +550,12 @@ void CommandListCoreFamilyImmediate<gfxCoreFamily>::handleInOrderNonWalkerSignal
 
     if (nonWalkerSignalingHasRelaxedOrdering) {
         result = flushImmediate(result, true, hasStallingCmds, relaxedOrderingDispatch, true, false, nullptr, false);
-        NEO::RelaxedOrderingHelper::encodeRegistersBeforeDependencyCheckers<GfxFamily>(*this->commandContainer.getCommandStream());
+        NEO::RelaxedOrderingHelper::encodeRegistersBeforeDependencyCheckers<GfxFamily>(*this->commandContainer.getCommandStream(), isCopyOnly(false));
         relaxedOrderingDispatch = true;
         hasStallingCmds = hasStallingCmdsForRelaxedOrdering(1, relaxedOrderingDispatch);
     }
 
-    CommandListCoreFamily<gfxCoreFamily>::appendWaitOnSingleEvent(event, nullptr, nonWalkerSignalingHasRelaxedOrdering, CommandToPatch::Invalid);
+    CommandListCoreFamily<gfxCoreFamily>::appendWaitOnSingleEvent(event, nullptr, nonWalkerSignalingHasRelaxedOrdering, false, CommandToPatch::Invalid);
     CommandListCoreFamily<gfxCoreFamily>::appendSignalInOrderDependencyCounter(event, false);
 }
 
@@ -614,7 +611,7 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::appendMemoryCopy(
     relaxedOrderingDispatch = isRelaxedOrderingDispatchAllowed(numWaitEvents, isCopyOffloadEnabled());
 
     auto estimatedSize = commonImmediateCommandSize;
-    if (isCopyOnly() || isCopyOffloadEnabled()) {
+    if (isCopyOnly(true)) {
         auto nBlits = size / (NEO::BlitCommandsHelper<GfxFamily>::getMaxBlitWidth(this->device->getNEODevice()->getRootDeviceEnvironment()) *
                               NEO::BlitCommandsHelper<GfxFamily>::getMaxBlitHeight(this->device->getNEODevice()->getRootDeviceEnvironment(), true));
         auto sizePerBlit = sizeof(typename GfxFamily::XY_COPY_BLT) + NEO::BlitCommandsHelper<GfxFamily>::estimatePostBlitCommandSize();
@@ -668,7 +665,7 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::appendMemoryCopyRegio
     relaxedOrderingDispatch = isRelaxedOrderingDispatchAllowed(numWaitEvents, isCopyOffloadEnabled());
 
     auto estimatedSize = commonImmediateCommandSize;
-    if (isCopyOnly() || isCopyOffloadEnabled()) {
+    if (isCopyOnly(true)) {
         auto xBlits = static_cast<size_t>(std::ceil(srcRegion->width / static_cast<double>(BlitterConstants::maxBlitWidth)));
         auto yBlits = static_cast<size_t>(std::ceil(srcRegion->height / static_cast<double>(BlitterConstants::maxBlitHeight)));
         auto zBlits = static_cast<size_t>(srcRegion->depth);
@@ -776,7 +773,7 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::appendPageFaultCopy(N
 
 template <GFXCORE_FAMILY gfxCoreFamily>
 ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::appendWaitOnEvents(uint32_t numEvents, ze_event_handle_t *phWaitEvents, CommandToPatchContainer *outWaitCmds,
-                                                                              bool relaxedOrderingAllowed, bool trackDependencies, bool apiRequest, bool skipAddingWaitEventsToResidency, bool skipFlush) {
+                                                                              bool relaxedOrderingAllowed, bool trackDependencies, bool apiRequest, bool skipAddingWaitEventsToResidency, bool skipFlush, bool copyOffloadOperation) {
     bool allSignaled = true;
     for (auto i = 0u; i < numEvents; i++) {
         allSignaled &= (!this->dcFlushSupport && Event::fromHandle(phWaitEvents[i])->isAlreadyCompleted());
@@ -789,7 +786,7 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::appendWaitOnEvents(ui
         checkAvailableSpace(numEvents, false, commonImmediateCommandSize);
     }
 
-    auto ret = CommandListCoreFamily<gfxCoreFamily>::appendWaitOnEvents(numEvents, phWaitEvents, outWaitCmds, relaxedOrderingAllowed, trackDependencies, apiRequest, skipAddingWaitEventsToResidency, false);
+    auto ret = CommandListCoreFamily<gfxCoreFamily>::appendWaitOnEvents(numEvents, phWaitEvents, outWaitCmds, relaxedOrderingAllowed, trackDependencies, apiRequest, skipAddingWaitEventsToResidency, false, copyOffloadOperation);
     this->dependenciesPresent = true;
 
     if (skipFlush) {
@@ -841,7 +838,7 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::appendImageCopyRegion
     relaxedOrderingDispatch = isRelaxedOrderingDispatchAllowed(numWaitEvents, false);
 
     auto estimatedSize = commonImmediateCommandSize;
-    if (isCopyOnly()) {
+    if (isCopyOnly(false)) {
         auto imgSize = L0::Image::fromHandle(hSrcImage)->getImageInfo().size;
         auto nBlits = static_cast<size_t>(std::ceil(imgSize / static_cast<double>(BlitterConstants::maxBlitWidth * BlitterConstants::maxBlitHeight)));
         auto sizePerBlit = sizeof(typename GfxFamily::XY_BLOCK_COPY_BLT) + NEO::BlitCommandsHelper<GfxFamily>::estimatePostBlitCommandSize();
@@ -1011,13 +1008,13 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::hostSynchronize(uint6
 
     if (status != ZE_RESULT_NOT_READY) {
         if (isInOrderExecutionEnabled()) {
-            this->latestHostWaitedInOrderSyncValue = inOrderSyncValue;
+            inOrderExecInfo->setLastWaitedCounterValue(inOrderSyncValue);
         }
 
         if (this->isTbxMode && (status == ZE_RESULT_SUCCESS)) {
-            mainQueueCsr->downloadAllocations();
+            mainQueueCsr->downloadAllocations(true);
             if (isCopyOffloadEnabled()) {
-                copyOffloadCsr->downloadAllocations();
+                copyOffloadCsr->downloadAllocations(true);
             }
         }
 
@@ -1035,6 +1032,10 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::hostSynchronize(uint6
                     if (copyOffloadStorageCleanupNeeded) {
                         copyOffloadInternalAllocStorage->cleanAllocationList(copyOffloadTaskCount, NEO::AllocationUsage::TEMPORARY_ALLOCATION);
                     }
+                }
+
+                if (inOrderExecInfo) {
+                    inOrderExecInfo->releaseNotUsedTempTimestampNodes(false);
                 }
             }
 
@@ -1511,7 +1512,7 @@ ze_result_t CommandListCoreFamilyImmediate<gfxCoreFamily>::appendCommandLists(ui
     auto ret = ZE_RESULT_SUCCESS;
     checkAvailableSpace(numWaitEvents, false, commonImmediateCommandSize);
     if (numWaitEvents) {
-        ret = this->appendWaitOnEvents(numWaitEvents, phWaitEvents, nullptr, false, true, true, true, true);
+        ret = this->appendWaitOnEvents(numWaitEvents, phWaitEvents, nullptr, false, true, true, true, true, false);
     }
 
     if (ret != ZE_RESULT_SUCCESS) {

@@ -33,9 +33,8 @@ void PageFaultManager::transferToCpu(void *ptr, size_t size, void *cmdQ) {
 }
 void PageFaultManager::transferToGpu(void *ptr, void *cmdQ) {
 }
-void PageFaultManager::allowCPUMemoryEviction(void *ptr, PageFaultData &pageFaultData) {
+void PageFaultManager::allowCPUMemoryEviction(bool evict, void *ptr, PageFaultData &pageFaultData) {
 }
-const char *getAdditionalBuiltinAsString(EBuiltInOps::Type builtin) { return nullptr; }
 
 void RootDeviceEnvironment::initApiGfxCoreHelper() {
 }

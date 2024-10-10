@@ -32,6 +32,7 @@ class TestedDrmCommandStreamReceiver : public DrmCommandStreamReceiver<GfxFamily
     using CommandStreamReceiver::getTagAddress;
     using CommandStreamReceiver::getTagAllocation;
     using CommandStreamReceiver::globalFenceAllocation;
+    using CommandStreamReceiver::heaplessStateInitialized;
     using CommandStreamReceiver::immWritePostSyncWriteOffset;
     using CommandStreamReceiver::latestSentTaskCount;
     using CommandStreamReceiver::makeResident;
@@ -77,7 +78,7 @@ class TestedDrmCommandStreamReceiver : public DrmCommandStreamReceiver<GfxFamily
         return this->submissionAggregator.get();
     }
 
-    ADDMETHOD(processResidency, SubmissionStatus, true, SubmissionStatus::success, (const ResidencyContainer &allocationsForResidency, uint32_t handleId), (allocationsForResidency, handleId));
+    ADDMETHOD(processResidency, SubmissionStatus, true, SubmissionStatus::success, (ResidencyContainer & allocationsForResidency, uint32_t handleId), (allocationsForResidency, handleId));
 
     ADDMETHOD(exec, int, true, 0, (const BatchBuffer &batchBuffer, uint32_t vmHandleId, uint32_t drmContextId, uint32_t index), (batchBuffer, vmHandleId, drmContextId, index));
 
@@ -117,7 +118,7 @@ class TestedDrmCommandStreamReceiver : public DrmCommandStreamReceiver<GfxFamily
         }
     }
 
-    ADDMETHOD(flushInternal, SubmissionStatus, true, SubmissionStatus::success, (const BatchBuffer &batchBuffer, const ResidencyContainer &allocationsForResidency), (batchBuffer, allocationsForResidency));
+    ADDMETHOD(flushInternal, SubmissionStatus, true, SubmissionStatus::success, (const BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency), (batchBuffer, allocationsForResidency));
 
     void readBackAllocation(void *source) override {
         latestReadBackAddress = source;

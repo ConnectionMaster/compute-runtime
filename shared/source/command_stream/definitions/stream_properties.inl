@@ -46,12 +46,10 @@ struct StateComputeModeProperties {
 
   protected:
     void clearIsDirtyExtraPerContext();
-    void clearIsDirtyExtraPerKernel();
     bool isDirtyExtra() const;
     void resetStateExtra();
 
     void setPropertiesExtraPerContext();
-    void setPropertiesExtraPerKernel();
 
     void copyPropertiesExtra(const StateComputeModeProperties &properties);
 
@@ -81,9 +79,9 @@ struct FrontEndProperties {
     void initSupport(const RootDeviceEnvironment &rootDeviceEnvironment);
     void resetState();
 
-    void setPropertiesAll(bool isCooperativeKernel, bool disableEuFusion, bool disableOverdispatch, int32_t engineInstancedDevice);
-    void setPropertySingleSliceDispatchCcsMode(int32_t engineInstancedDevice);
-    void setPropertiesDisableOverdispatchEngineInstanced(bool disableOverdispatch, int32_t engineInstancedDevice, bool clearDirtyState);
+    void setPropertiesAll(bool isCooperativeKernel, bool disableEuFusion, bool disableOverdispatch);
+    void setPropertySingleSliceDispatchCcsMode();
+    void setPropertiesDisableOverdispatch(bool disableOverdispatch, bool clearDirtyState);
     void setPropertiesComputeDispatchAllWalkerEnableDisableEuFusion(bool isCooperativeKernel, bool disableEuFusion);
 
     void copyPropertiesAll(const FrontEndProperties &properties);

@@ -38,7 +38,7 @@ template <>
 size_t PreemptionHelper::getRequiredPreambleSize<GfxFamily>(const Device &device) {
     using STATE_CONTEXT_DATA_BASE_ADDRESS = typename GfxFamily::STATE_CONTEXT_DATA_BASE_ADDRESS;
     bool debuggingEnabled = device.getDebugger() != nullptr;
-    if ((device.getPreemptionMode() == PreemptionMode::MidThread) || debuggingEnabled) {
+    if ((device.getPreemptionMode() == PreemptionMode::MidThread) && !debuggingEnabled) {
         return sizeof(STATE_CONTEXT_DATA_BASE_ADDRESS);
     }
     return 0u;
@@ -46,9 +46,6 @@ size_t PreemptionHelper::getRequiredPreambleSize<GfxFamily>(const Device &device
 
 #include "shared/source/command_stream/preemption_xe2_and_later.inl"
 
-template size_t PreemptionHelper::getPreemptionWaCsSize<GfxFamily>(const Device &device);
-template void PreemptionHelper::applyPreemptionWaCmdsBegin<GfxFamily>(LinearStream *pCommandStream, const Device &device);
-template void PreemptionHelper::applyPreemptionWaCmdsEnd<GfxFamily>(LinearStream *pCommandStream, const Device &device);
 template void PreemptionHelper::programStateSip<GfxFamily>(LinearStream &preambleCmdStream, Device &device, OsContext *context);
 template void PreemptionHelper::programStateSipCmd<GfxFamily>(LinearStream &preambleCmdStream, GraphicsAllocation *sipAllocation, bool useFullAddress);
 template size_t PreemptionHelper::getRequiredStateSipCmdSize<GfxFamily>(Device &device, bool isRcs);

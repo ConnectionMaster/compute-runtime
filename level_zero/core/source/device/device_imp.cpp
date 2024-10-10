@@ -64,6 +64,7 @@
 #include "encode_surface_state_args.h"
 
 #include <algorithm>
+#include <array>
 
 namespace NEO {
 bool releaseFP64Override();
@@ -252,9 +253,23 @@ ze_result_t DeviceImp::createCommandList(const ze_command_list_desc_t *desc,
     }
 
     auto cmdList = static_cast<L0::CommandListImp *>(CommandList::fromHandle(*commandList));
+    UNRECOVERABLE_IF(cmdList == nullptr);
 
     cmdList->setOrdinal(desc->commandQueueGroupOrdinal);
-    cmdList->enableSynchronizedDispatch(syncDispatchMode);
+
+    if (syncDispatchMode != NEO::SynchronizedDispatchMode::disabled) {
+        if (cmdList->isInOrderExecutionEnabled()) {
+            cmdList->enableSynchronizedDispatch(syncDispatchMode);
+        } else {
+            returnValue = ZE_RESULT_ERROR_INVALID_ARGUMENT;
+        }
+    }
+
+    if (returnValue != ZE_RESULT_SUCCESS) {
+        cmdList->destroy();
+        cmdList = nullptr;
+        *commandList = nullptr;
+    }
 
     return returnValue;
 }
@@ -677,6 +692,12 @@ ze_result_t DeviceImp::getPciProperties(ze_pci_ext_properties_t *pPciProperties)
     return ZE_RESULT_SUCCESS;
 }
 
+const char *DeviceImp::getDeviceMemoryName() {
+    constexpr std::array<uint32_t, 4> hbmTypeIds = {2, 3, 5, 8};
+
+    return std::find(hbmTypeIds.begin(), hbmTypeIds.end(), getHwInfo().gtSystemInfo.MemoryType) != hbmTypeIds.end() ? "HBM" : "DDR";
+}
+
 ze_result_t DeviceImp::getMemoryProperties(uint32_t *pCount, ze_device_memory_properties_t *pMemProperties) {
     if (*pCount == 0) {
         *pCount = 1;
@@ -694,7 +715,7 @@ ze_result_t DeviceImp::getMemoryProperties(uint32_t *pCount, ze_device_memory_pr
     const auto &deviceInfo = this->neoDevice->getDeviceInfo();
     auto &hwInfo = this->getHwInfo();
     auto &productHelper = this->getProductHelper();
-    strcpy_s(pMemProperties->name, ZE_MAX_DEVICE_NAME, productHelper.getDeviceMemoryName().c_str());
+    strcpy_s(pMemProperties->name, ZE_MAX_DEVICE_NAME, getDeviceMemoryName());
     auto osInterface = neoDevice->getRootDeviceEnvironment().osInterface.get();
     pMemProperties->maxClockRate = productHelper.getDeviceMemoryMaxClkRate(hwInfo, osInterface, 0);
     pMemProperties->maxBusWidth = deviceInfo.addressBits;
@@ -1153,7 +1174,8 @@ ze_result_t DeviceImp::getCacheProperties(uint32_t *pCount, ze_device_cache_prop
 }
 
 ze_result_t DeviceImp::reserveCache(size_t cacheLevel, size_t cacheReservationSize) {
-    if (getOsInterface().getDriverModel()->getDriverModelType() != NEO::DriverModelType::drm) {
+    auto osInterface = neoDevice->getRootDeviceEnvironment().osInterface.get();
+    if (!osInterface || osInterface->getDriverModel()->getDriverModelType() != NEO::DriverModelType::drm) {
         return ZE_RESULT_ERROR_UNSUPPORTED_FEATURE;
     }
 
@@ -1174,7 +1196,8 @@ ze_result_t DeviceImp::reserveCache(size_t cacheLevel, size_t cacheReservationSi
 }
 
 ze_result_t DeviceImp::setCacheAdvice(void *ptr, size_t regionSize, ze_cache_ext_region_t cacheRegion) {
-    if (getOsInterface().getDriverModel()->getDriverModelType() != NEO::DriverModelType::drm) {
+    auto osInterface = neoDevice->getRootDeviceEnvironment().osInterface.get();
+    if (!osInterface || osInterface->getDriverModel()->getDriverModelType() != NEO::DriverModelType::drm) {
         return ZE_RESULT_ERROR_UNSUPPORTED_FEATURE;
     }
 
@@ -1245,7 +1268,7 @@ ze_result_t DeviceImp::getDeviceImageProperties(ze_device_image_properties_t *pD
 
 ze_result_t DeviceImp::getDebugProperties(zet_device_debug_properties_t *pDebugProperties) {
     bool isDebugAttachAvailable = getOsInterface().isDebugAttachAvailable();
-    auto &stateSaveAreaHeader = NEO::SipKernel::getBindlessDebugSipKernel(*this->getNEODevice()).getStateSaveAreaHeader();
+    auto &stateSaveAreaHeader = NEO::SipKernel::getDebugSipKernel(*this->getNEODevice()).getStateSaveAreaHeader();
 
     if (stateSaveAreaHeader.size() == 0) {
         PRINT_DEBUGGER_INFO_LOG("Context state save area header missing", "");
@@ -1388,8 +1411,11 @@ Device *Device::create(DriverHandle *driverHandle, NEO::Device *neoDevice, bool 
                                           "Invalid SIP binary.\n");
                 }
             }
-
-            stateSaveAreaHeader = NEO::SipKernel::getSipKernel(*neoDevice, nullptr).getStateSaveAreaHeader();
+            auto &sipKernel = NEO::SipKernel::getSipKernel(*neoDevice, nullptr);
+            stateSaveAreaHeader = sipKernel.getStateSaveAreaHeader();
+            if (sipKernel.getStateSaveAreaSize(neoDevice) == 0) {
+                *returnValue = ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE;
+            }
         } else {
             *returnValue = ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE;
         }
@@ -1706,29 +1732,29 @@ ze_result_t DeviceImp::getCsrForOrdinalAndIndex(NEO::CommandStreamReceiver **csr
         contextPriority = NEO::EngineUsage::lowPriority;
     }
 
-    if (contextPriority == NEO::EngineUsage::lowPriority) {
-        getCsrForLowPriority(csr, copyOnly);
-        return ZE_RESULT_SUCCESS;
-    }
-
     if (ordinal < numEngineGroups) {
+
+        if (contextPriority == NEO::EngineUsage::lowPriority) {
+            getCsrForLowPriority(csr, copyOnly);
+            return ZE_RESULT_SUCCESS;
+        }
+
         auto &engines = engineGroups[ordinal].engines;
         if (index >= engines.size()) {
             return ZE_RESULT_ERROR_INVALID_ARGUMENT;
         }
         *csr = engines[index].commandStreamReceiver;
+
+        if (copyOnly && contextPriority == NEO::EngineUsage::highPriority) {
+            getCsrForHighPriority(csr, copyOnly);
+        }
+
     } else {
         auto subDeviceOrdinal = ordinal - numEngineGroups;
         if (index >= this->subDeviceCopyEngineGroups[subDeviceOrdinal].engines.size()) {
             return ZE_RESULT_ERROR_INVALID_ARGUMENT;
         }
         *csr = this->subDeviceCopyEngineGroups[subDeviceOrdinal].engines[index].commandStreamReceiver;
-    }
-
-    if (copyOnly && contextPriority == NEO::EngineUsage::highPriority) {
-        if (getCsrForHighPriority(csr, copyOnly) != ZE_RESULT_SUCCESS) {
-            contextPriority = NEO::EngineUsage::regular;
-        }
     }
 
     auto &osContext = (*csr)->getOsContext();
@@ -1770,10 +1796,11 @@ ze_result_t DeviceImp::getCsrForLowPriority(NEO::CommandStreamReceiver **csr, bo
     return ZE_RESULT_ERROR_UNKNOWN;
 }
 ze_result_t DeviceImp::getCsrForHighPriority(NEO::CommandStreamReceiver **csr, bool copyOnly) {
-    for (auto &it : getActiveDevice()->getAllEngines()) {
-        bool engineTypeMatch = NEO::EngineHelpers::isBcs(it.osContext->getEngineType()) == copyOnly;
-        if (it.osContext->isHighPriority() && engineTypeMatch) {
-            *csr = it.commandStreamReceiver;
+
+    if (copyOnly) {
+        auto engine = getActiveDevice()->getHpCopyEngine();
+        if (engine) {
+            *csr = engine->commandStreamReceiver;
             return ZE_RESULT_SUCCESS;
         }
     }

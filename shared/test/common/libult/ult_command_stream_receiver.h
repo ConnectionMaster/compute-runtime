@@ -99,7 +99,6 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     using BaseClass::CommandStreamReceiver::activePartitionsConfig;
     using BaseClass::CommandStreamReceiver::baseWaitFunction;
     using BaseClass::CommandStreamReceiver::bindingTableBaseAddressRequired;
-    using BaseClass::CommandStreamReceiver::canUse4GbHeaps;
     using BaseClass::CommandStreamReceiver::checkForNewResources;
     using BaseClass::CommandStreamReceiver::checkImplicitFlushForGpuIdle;
     using BaseClass::CommandStreamReceiver::cleanupResources;
@@ -117,6 +116,7 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     using BaseClass::CommandStreamReceiver::flushBcsTask;
     using BaseClass::CommandStreamReceiver::flushStamp;
     using BaseClass::CommandStreamReceiver::globalFenceAllocation;
+    using BaseClass::CommandStreamReceiver::globalStatelessHeapAllocation;
     using BaseClass::CommandStreamReceiver::gpuHangCheckPeriod;
     using BaseClass::CommandStreamReceiver::gsbaFor32BitProgrammed;
     using BaseClass::CommandStreamReceiver::heaplessModeEnabled;
@@ -164,6 +164,7 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     using BaseClass::CommandStreamReceiver::timestampPacketAllocator;
     using BaseClass::CommandStreamReceiver::timestampPacketWriteEnabled;
     using BaseClass::CommandStreamReceiver::timeStampPostSyncWriteOffset;
+    using BaseClass::CommandStreamReceiver::use4GbHeaps;
     using BaseClass::CommandStreamReceiver::useGpuIdleImplicitFlush;
     using BaseClass::CommandStreamReceiver::useNewResourceImplicitFlush;
     using BaseClass::CommandStreamReceiver::useNotifyEnableForPostSync;
@@ -253,6 +254,11 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
         return BaseClass::initializeDeviceWithFirstSubmission(device);
     }
 
+    void programHeaplessStateProlog(Device &device, LinearStream &commandStream) override {
+        this->commandStreamHeaplessStateInit = &commandStream;
+        return BaseClass::programHeaplessStateProlog(device, commandStream);
+    }
+
     bool writeMemory(GraphicsAllocation &gfxAllocation, bool isChunkCopy, uint64_t gpuVaChunkOffset, size_t chunkSize) override {
         writeMemoryParams.totalCallCount++;
         if (isChunkCopy) {
@@ -272,8 +278,9 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     }
     void setPreemptionAllocation(GraphicsAllocation *allocation) { this->preemptionAllocation = allocation; }
 
-    void downloadAllocations() override {
+    void downloadAllocations(bool blockingWait, TaskCountType taskCount) override {
         downloadAllocationsCalledCount++;
+        latestDownloadAllocationsBlocking = blockingWait;
     }
 
     void downloadAllocationUlt(GraphicsAllocation &gfxAllocation) {
@@ -319,6 +326,7 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     GraphicsAllocation *getPreemptionAllocation() const { return this->preemptionAllocation; }
 
     void makeResident(GraphicsAllocation &gfxAllocation) override {
+        makeResidentCalledTimes++;
         if (storeMakeResidentAllocations) {
             std::map<GraphicsAllocation *, uint32_t>::iterator it = makeResidentAllocations.find(&gfxAllocation);
             if (it == makeResidentAllocations.end()) {
@@ -522,6 +530,15 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
         BaseClass::unblockPagingFenceSemaphore(pagingFenceValue);
     }
 
+    void drainPagingFenceQueue() override {
+        drainPagingFenceQueueCalled++;
+        BaseClass::drainPagingFenceQueue();
+    }
+    SubmissionStatus flushHandler(BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
+        flushHandlerCalled++;
+        return BaseClass::flushHandler(batchBuffer, allocationsForResidency);
+    }
+
     std::vector<std::string> aubCommentMessages;
 
     BatchBuffer latestFlushedBatchBuffer = {};
@@ -534,12 +551,15 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     TaskCountType flushBcsTaskReturnValue{};
 
     LinearStream *lastFlushedCommandStream = nullptr;
+    LinearStream *commandStreamHeaplessStateInit = nullptr;
+
     const IndirectHeap *recordedSsh = nullptr;
 
     std::mutex mutex;
     std::atomic<uint32_t> recursiveLockCounter;
     std::atomic<uint32_t> waitForCompletionWithTimeoutTaskCountCalled{0};
     std::atomic<uint64_t> pagingFenceValueToUnblock{0u};
+    uint32_t makeResidentCalledTimes = 0;
     uint32_t makeSurfacePackNonResidentCalled = false;
     uint32_t blitBufferCalled = 0;
     uint32_t createPerDssBackedBufferCalled = 0;
@@ -547,6 +567,8 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     uint32_t fillReusableAllocationsListCalled = 0;
     uint32_t pollForCompletionCalled = 0;
     uint32_t initializeDeviceWithFirstSubmissionCalled = 0;
+    uint32_t drainPagingFenceQueueCalled = 0;
+    uint32_t flushHandlerCalled = 0;
     mutable uint32_t checkGpuHangDetectedCalled = 0;
     int ensureCommandBufferAllocationCalled = 0;
     DispatchFlags recordedDispatchFlags;
@@ -558,6 +580,7 @@ class UltCommandStreamReceiver : public CommandStreamReceiverHw<GfxFamily>, publ
     std::optional<SubmissionStatus> flushReturnValue{};
     CommandStreamReceiverType commandStreamReceiverType = CommandStreamReceiverType::hardware;
     std::atomic<uint32_t> downloadAllocationsCalledCount = 0;
+    std::atomic<bool> latestDownloadAllocationsBlocking = false;
 
     bool renderStateCacheFlushed = false;
     bool renderStateCacheDcFlushForced = false;

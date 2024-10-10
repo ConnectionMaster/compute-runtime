@@ -7,6 +7,7 @@
 
 #include "shared/source/command_container/implicit_scaling.h"
 #include "shared/source/command_stream/wait_status.h"
+#include "shared/source/helpers/api_specific_config.h"
 #include "shared/source/helpers/bit_helpers.h"
 #include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
@@ -53,6 +54,7 @@
 #include "level_zero/core/test/unit_tests/mocks/mock_context.h"
 #include "level_zero/core/test/unit_tests/mocks/mock_memory_manager.h"
 
+#include "common/StateSaveAreaHeader.h"
 #include "gtest/gtest.h"
 
 #include <memory>
@@ -286,6 +288,32 @@ TEST(L0DeviceTest, givenDisabledPreemptionWhenCreatingDeviceThenSipKernelIsNotIn
     EXPECT_FALSE(NEO::MockSipData::called);
 }
 
+TEST(L0DeviceTest, givenMidThreadPreemptionAndIncorrectStateSaveAreaHeaderWhenCreatingL0DeviceThenErrorIsReturned) {
+
+    VariableBackup<bool> mockSipCalled(&NEO::MockSipData::called, false);
+    VariableBackup<NEO::SipKernelType> mockSipCalledType(&NEO::MockSipData::calledType, NEO::SipKernelType::count);
+    VariableBackup<bool> backupSipInitType(&MockSipData::useMockSip, true);
+    NonCopyableVariableBackup<std::unique_ptr<MockSipKernel>> backupSipKernel(&MockSipData::mockSipKernel, std::make_unique<MockSipKernel>());
+
+    MockSipData::mockSipKernel->mockStateSaveAreaHeader = MockSipData::createStateSaveAreaHeader(1);
+    auto header = reinterpret_cast<SIP::StateSaveAreaHeader *>(MockSipData::mockSipKernel->mockStateSaveAreaHeader.data());
+    header->versionHeader.version.major = 5u;
+
+    std::unique_ptr<DriverHandleImp> driverHandle(new DriverHandleImp);
+    auto hwInfo = *NEO::defaultHwInfo;
+    hwInfo.capabilityTable.defaultPreemptionMode = NEO::PreemptionMode::MidThread;
+
+    auto neoDevice = std::unique_ptr<NEO::Device>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&hwInfo, 0));
+    ze_result_t returnValue = ZE_RESULT_SUCCESS;
+
+    auto device = std::unique_ptr<L0::Device>(Device::create(driverHandle.get(), neoDevice.release(), false, &returnValue));
+    EXPECT_NE(nullptr, device);
+    EXPECT_EQ(ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE, returnValue);
+
+    EXPECT_EQ(NEO::SipKernelType::csr, NEO::MockSipData::calledType);
+    EXPECT_TRUE(NEO::MockSipData::called);
+}
+
 TEST(L0DeviceTest, givenDeviceWithoutIGCCompilerLibraryThenInvalidDependencyIsNotReturned) {
     ze_result_t returnValue = ZE_RESULT_SUCCESS;
 
@@ -416,6 +444,31 @@ TEST(L0DeviceTest, givenFilledTopologyWhenGettingApiSliceThenCorrectSliceIdIsRet
 
     EXPECT_EQ(0u, sliceId);
     EXPECT_TRUE(ret);
+}
+
+TEST(L0DeviceTest, whenCallingGetDeviceMemoryNameThenCorrectTypeIsReturned) {
+    std::unique_ptr<DriverHandleImp> driverHandle(new DriverHandleImp);
+
+    auto neoDevice = std::unique_ptr<NEO::Device>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(NEO::defaultHwInfo.get(), 0));
+    auto device = std::unique_ptr<L0::Device>(Device::create(driverHandle.get(), neoDevice.release(), false, nullptr));
+    ASSERT_NE(nullptr, device);
+
+    uint32_t count = 1;
+    ze_device_memory_properties_t memProperties = {};
+
+    auto &sysInfo = device->getNEODevice()->getRootDeviceEnvironment().getMutableHardwareInfo()->gtSystemInfo;
+
+    for (uint32_t i = 0; i < 11; i++) {
+        sysInfo.MemoryType = i;
+
+        EXPECT_EQ(ZE_RESULT_SUCCESS, device->getMemoryProperties(&count, &memProperties));
+
+        if (i == 2 || i == 3 || i == 5 || i == 8) {
+            EXPECT_STREQ("HBM", memProperties.name);
+        } else {
+            EXPECT_STREQ("DDR", memProperties.name);
+        }
+    }
 }
 
 TEST(L0DeviceTest, givenFilledTopologyForZeroSubDeviceWhenGettingApiSliceForHigherSubDevicesThenFalseIsReturned) {
@@ -811,6 +864,12 @@ TEST_F(DeviceTest, givenNonEmptyAllocationsListAndUnproperAllocationTypeWhenRequ
     auto obtaindedAllocation = device->obtainReusableAllocation(4 * dataSize + 1u, NEO::AllocationType::fillPattern);
     EXPECT_EQ(nullptr, obtaindedAllocation);
     EXPECT_FALSE(deviceImp->allocationsForReuse->peekIsEmpty());
+}
+
+TEST_F(DeviceTest, givenNoOsInterfaceWhenUseCacheReservationApiThenUnsupportedFeatureErrorIsReturned) {
+    EXPECT_EQ(nullptr, neoDevice->getRootDeviceEnvironment().osInterface.get());
+    EXPECT_EQ(ZE_RESULT_ERROR_UNSUPPORTED_FEATURE, device->reserveCache(0, 0));
+    EXPECT_EQ(ZE_RESULT_ERROR_UNSUPPORTED_FEATURE, device->setCacheAdvice(nullptr, 0, ze_cache_ext_region_t::ZE_CACHE_EXT_REGION_ZE_CACHE_REGION_DEFAULT));
 }
 
 struct DeviceHostPointerTest : public ::testing::Test {
@@ -1396,12 +1455,18 @@ TEST_F(DeviceTest, givenCallToDevicePropertiesThenMaximumMemoryToBeAllocatedIsCo
     device->getProperties(&deviceProperties);
     EXPECT_EQ(deviceProperties.maxMemAllocSize, this->neoDevice->getDeviceInfo().maxMemAllocSize);
 
-    auto &gfxCoreHelper = neoDevice->getGfxCoreHelper();
     auto expectedSize = this->neoDevice->getDeviceInfo().globalMemSize;
-    if (!this->neoDevice->areSharedSystemAllocationsAllowed()) {
-        expectedSize = std::min(expectedSize, gfxCoreHelper.getMaxMemAllocSize());
+
+    auto &rootDeviceEnvironment = this->neoDevice->getRootDeviceEnvironment();
+    const auto &compilerProductHelper = rootDeviceEnvironment.getHelper<NEO::CompilerProductHelper>();
+    auto &gfxCoreHelper = rootDeviceEnvironment.getHelper<NEO::GfxCoreHelper>();
+
+    if (compilerProductHelper.isForceToStatelessRequired()) {
+        EXPECT_EQ(deviceProperties.maxMemAllocSize, expectedSize);
+    } else {
+        EXPECT_EQ(deviceProperties.maxMemAllocSize,
+                  std::min(ApiSpecificConfig::getReducedMaxAllocSize(expectedSize), gfxCoreHelper.getMaxMemAllocSize()));
     }
-    EXPECT_EQ(deviceProperties.maxMemAllocSize, expectedSize);
 }
 
 TEST_F(DeviceTest, givenNodeOrdinalFlagWhenCallAdjustCommandQueueDescThenDescOrdinalProperlySet) {
@@ -1552,7 +1617,7 @@ TEST_F(DeviceTest, whenGetDevicePropertiesCalledThenCorrectDevicePropertyEccFlag
     ze_device_properties_t deviceProps = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
 
     device->getProperties(&deviceProps);
-    auto expected = (this->neoDevice->getDeviceInfo().errorCorrectionSupport) ? ZE_DEVICE_PROPERTY_FLAG_ECC : static_cast<ze_device_property_flag_t>(0u);
+    auto expected = (this->neoDevice->getDeviceInfo().errorCorrectionSupport) ? ZE_DEVICE_PROPERTY_FLAG_ECC : static_cast<ze_device_property_flag_t>(0u); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
     EXPECT_EQ(expected, deviceProps.flags & ZE_DEVICE_PROPERTY_FLAG_ECC);
 }
 
@@ -4448,30 +4513,6 @@ struct MultipleDevicesDifferentLocalMemorySupportTest : public MultipleDevicesTe
     L0::Device *deviceWithoutLocalMemory = nullptr;
 };
 
-struct MultipleDevicesDifferentFamilyAndLocalMemorySupportTest : public MultipleDevicesTest {
-    void SetUp() override {
-
-        if ((NEO::ProductHelper::create(IGFX_SKYLAKE) == nullptr) ||
-            (NEO::ProductHelper::create(IGFX_KABYLAKE) == nullptr)) {
-            GTEST_SKIP();
-        }
-
-        MultipleDevicesTest::SetUp();
-
-        memoryManager->localMemorySupported[0] = 1;
-        memoryManager->localMemorySupported[1] = 1;
-
-        deviceSKL = driverHandle->devices[0];
-        deviceKBL = driverHandle->devices[1];
-
-        deviceSKL->getNEODevice()->getRootDeviceEnvironment().getMutableHardwareInfo()->platform.eProductFamily = IGFX_SKYLAKE;
-        deviceKBL->getNEODevice()->getRootDeviceEnvironment().getMutableHardwareInfo()->platform.eProductFamily = IGFX_KABYLAKE;
-    }
-
-    L0::Device *deviceSKL = nullptr;
-    L0::Device *deviceKBL = nullptr;
-};
-
 struct MultipleDevicesSameFamilyAndLocalMemorySupportTest : public MultipleDevicesTest {
     void SetUp() override {
         MultipleDevicesTest::SetUp();
@@ -4586,7 +4627,7 @@ HWTEST_F(DeviceTest, givenContextGroupSupportedWhenGettingLowPriorityCsrThenCorr
     auto hwInfo = *NEO::defaultHwInfo;
     hwInfo.featureTable.flags.ftrCCSNode = true;
     hwInfo.capabilityTable.defaultEngineType = aub_stream::ENGINE_CCS;
-    hwInfo.gtSystemInfo.CCSInfo.NumberOfCCSEnabled = 2;
+    hwInfo.gtSystemInfo.CCSInfo.NumberOfCCSEnabled = 1;
 
     MockExecutionEnvironment mockExecutionEnvironment{&hwInfo};
     RAIIGfxCoreHelperFactory<MockGfxCoreHelper> raii(*mockExecutionEnvironment.rootDeviceEnvironments[rootDeviceIndex]);
@@ -4707,7 +4748,7 @@ HWTEST_F(DeviceTest, givenContextGroupSupportedWhenGettingHighPriorityCsrThenCor
 
         auto &secondaryEngines = neoMockDevice->secondaryEngines[EngineHelpers::mapCcsIndexToEngineType(index)];
 
-        ASSERT_EQ(8u, secondaryEngines.engines.size());
+        ASSERT_EQ(8u / hwInfo.gtSystemInfo.CCSInfo.NumberOfCCSEnabled, secondaryEngines.engines.size());
 
         auto highPriorityIndex = secondaryEngines.regularEnginesTotal;
         ASSERT_LT(highPriorityIndex, static_cast<uint32_t>(secondaryEngines.engines.size()));
@@ -4735,14 +4776,19 @@ HWTEST_F(DeviceTest, givenContextGroupSupportedWhenGettingHighPriorityCsrThenCor
         result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
         EXPECT_EQ(ZE_RESULT_ERROR_INVALID_ARGUMENT, result);
 
-        // When no HP copy engine, then regular engine is returned
-        NEO::CommandStreamReceiver *bcsEngine = nullptr;
+        // When no HP copy engine, then hp csr from group is returned
+        NEO::CommandStreamReceiver *bcsEngine = nullptr, *bcsEngine2 = nullptr;
         EXPECT_EQ(nullptr, neoMockDevice->getHpCopyEngine());
 
         result = deviceImp.getCsrForOrdinalAndIndex(&bcsEngine, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_NE(nullptr, bcsEngine);
-        EXPECT_TRUE(bcsEngine->getOsContext().isRegular());
+        EXPECT_TRUE(bcsEngine->getOsContext().isHighPriority());
+
+        result = deviceImp.getCsrForOrdinalAndIndex(&bcsEngine2, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
+        EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+        ASSERT_EQ(bcsEngine2, bcsEngine->getPrimaryCsr());
+        EXPECT_TRUE(bcsEngine2->getOsContext().isRegular());
     }
 }
 
@@ -5022,13 +5068,21 @@ TEST_F(zeDeviceSystemBarrierTest, whenCallingSystemBarrierThenReturnErrorUnsuppo
 template <bool osLocalMemory, bool apiSupport, int32_t enablePartitionWalker, int32_t enableImplicitScaling>
 struct MultiSubDeviceFixture : public DeviceFixture {
     void setUp() {
+        setUp(nullptr);
+    }
+
+    void setUp(NEO::HardwareInfo *hwInfo) {
         debugManager.flags.CreateMultipleSubDevices.set(2);
         debugManager.flags.EnableWalkerPartition.set(enablePartitionWalker);
         debugManager.flags.EnableImplicitScaling.set(enableImplicitScaling);
         osLocalMemoryBackup = std::make_unique<VariableBackup<bool>>(&NEO::OSInterface::osEnableLocalMemory, osLocalMemory);
         apiSupportBackup = std::make_unique<VariableBackup<bool>>(&NEO::ImplicitScaling::apiSupport, apiSupport);
 
-        DeviceFixture::setUp();
+        if (hwInfo == nullptr) {
+            DeviceFixture::setUp();
+        } else {
+            DeviceFixture::setUpImpl(hwInfo);
+        }
 
         deviceImp = reinterpret_cast<L0::DeviceImp *>(device);
         subDevice = neoDevice->getSubDevice(0);
@@ -5087,6 +5141,61 @@ TEST_F(MultiSubDeviceEnabledImplicitScalingTest, GivenEnabledImplicitScalingWhen
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
     EXPECT_EQ(defaultEngine.commandStreamReceiver, csr);
+}
+
+struct MultiSubDeviceWithContextGroupAndImplicitScalingTest : public MultiSubDeviceFixture<true, true, -1, 1>, public ::testing::Test {
+    void SetUp() override {
+        debugManager.flags.ContextGroupSize.set(8);
+
+        hardwareInfo = *defaultHwInfo;
+        hardwareInfo.featureTable.ftrBcsInfo = 0b1111;
+        hardwareInfo.capabilityTable.blitterOperationsSupported = true;
+
+        MultiSubDeviceFixture<true, true, -1, 1>::setUp(&hardwareInfo);
+    }
+
+    void TearDown() override {
+        MultiSubDeviceFixture<true, true, -1, 1>::tearDown();
+    }
+    DebugManagerStateRestore restorer;
+    HardwareInfo hardwareInfo;
+};
+
+HWTEST2_F(MultiSubDeviceWithContextGroupAndImplicitScalingTest, GivenRootDeviceWhenGettingLowPriorityCsrForComputeEngineThenDefaultCsrReturned, IsAtLeastXeHpgCore) {
+    auto &defaultEngine = deviceImp->getActiveDevice()->getDefaultEngine();
+
+    NEO::CommandStreamReceiver *csr = nullptr;
+    EXPECT_ANY_THROW(deviceImp->getCsrForLowPriority(&csr, false));
+
+    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, 0, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, false);
+
+    EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
+    EXPECT_EQ(defaultEngine.commandStreamReceiver, csr);
+}
+
+HWTEST2_F(MultiSubDeviceWithContextGroupAndImplicitScalingTest, GivenRootDeviceWhenGettingLowPriorityCsrForCopyEngineThenRegularBcsIsReturned, IsAtLeastXeHpgCore) {
+    NEO::CommandStreamReceiver *csr = nullptr;
+    EXPECT_ANY_THROW(deviceImp->getCsrForLowPriority(&csr, true));
+    auto ordinal = deviceImp->getCopyEngineOrdinal();
+
+    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, ordinal, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, false);
+
+    EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
+    EXPECT_NE(nullptr, csr);
+    EXPECT_TRUE(csr->getOsContext().isRegular());
+}
+
+HWTEST2_F(MultiSubDeviceWithContextGroupAndImplicitScalingTest, GivenRootDeviceWhenGettingHighPriorityCsrForCopyEngineThenRegularBcsIsReturned, IsAtLeastXeHpgCore) {
+
+    NEO::CommandStreamReceiver *csr = nullptr;
+    EXPECT_ANY_THROW(deviceImp->getCsrForLowPriority(&csr, true));
+    auto ordinal = deviceImp->getCopyEngineOrdinal();
+
+    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, ordinal, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+
+    EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
+    EXPECT_NE(nullptr, csr);
+    EXPECT_TRUE(csr->getOsContext().isRegular());
 }
 
 using DeviceSimpleTests = Test<DeviceFixture>;
@@ -5915,7 +6024,7 @@ TEST_F(DeviceTest, GivenValidDeviceWhenQueryingKernelTimestampsProptertiesThenCo
 
 TEST_F(DeviceTest, givenDeviceWhenQueryingCmdListMemWaitOnMemDataSizeThenReturnValueFromHelper) {
     ze_device_properties_t devProps;
-    ze_intel_device_command_list_wait_on_memory_data_size_exp_desc_t sizeProps = {ZE_INTEL_STRUCTURE_TYPE_DEVICE_COMMAND_LIST_WAIT_ON_MEMORY_DATA_SIZE_EXP_DESC};
+    ze_intel_device_command_list_wait_on_memory_data_size_exp_desc_t sizeProps = {ZE_INTEL_STRUCTURE_TYPE_DEVICE_COMMAND_LIST_WAIT_ON_MEMORY_DATA_SIZE_EXP_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
 
     devProps.stype = ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
     devProps.pNext = &sizeProps;
@@ -5928,7 +6037,7 @@ TEST_F(DeviceTest, givenDeviceWhenQueryingCmdListMemWaitOnMemDataSizeThenReturnV
 
 TEST_F(DeviceTest, givenDeviecWhenQueryingMediaPropertiesThenReturnZero) {
     ze_device_properties_t devProps = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
-    ze_intel_device_media_exp_properties_t mediaProps = {ZE_STRUCTURE_TYPE_INTEL_DEVICE_MEDIA_EXP_PROPERTIES};
+    ze_intel_device_media_exp_properties_t mediaProps = {ZE_STRUCTURE_TYPE_INTEL_DEVICE_MEDIA_EXP_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
     mediaProps.numDecoderCores = 123;
     mediaProps.numEncoderCores = 456;
 
@@ -6148,7 +6257,7 @@ TEST(ExtensionLookupTest, given2DBlockLoadFalseAnd2DBlockStoreFalseThenFlagsIndi
     Mock2DTransposeDevice<false, false> deviceImp(neoMockDevice, neoMockDevice->getExecutionEnvironment());
 
     ze_device_properties_t deviceProps = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
-    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES};
+    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
     deviceProps.pNext = &blockArrayProps;
 
     auto success = L0::Device::fromHandle(static_cast<ze_device_handle_t>(&deviceImp))->getProperties(&deviceProps);
@@ -6163,7 +6272,7 @@ TEST(ExtensionLookupTest, given2DBlockLoadTrueAnd2DBlockStoreFalseThenFlagsIndic
     Mock2DTransposeDevice<true, false> deviceImp(neoMockDevice, neoMockDevice->getExecutionEnvironment());
 
     ze_device_properties_t deviceProps = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
-    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES};
+    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
     deviceProps.pNext = &blockArrayProps;
 
     auto success = L0::Device::fromHandle(static_cast<ze_device_handle_t>(&deviceImp))->getProperties(&deviceProps);
@@ -6178,7 +6287,7 @@ TEST(ExtensionLookupTest, given2DBlockLoadFalseAnd2DBlockStoreTrueThenFlagsIndic
     Mock2DTransposeDevice<false, true> deviceImp(neoMockDevice, neoMockDevice->getExecutionEnvironment());
 
     ze_device_properties_t deviceProps = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
-    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES};
+    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
     deviceProps.pNext = &blockArrayProps;
 
     auto success = L0::Device::fromHandle(static_cast<ze_device_handle_t>(&deviceImp))->getProperties(&deviceProps);
@@ -6193,7 +6302,7 @@ TEST(ExtensionLookupTest, given2DBlockLoadTrueAnd2DBlockStoreTrueThenFlagsIndica
     Mock2DTransposeDevice<true, true> deviceImp(neoMockDevice, neoMockDevice->getExecutionEnvironment());
 
     ze_device_properties_t deviceProps = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
-    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES};
+    ze_intel_device_block_array_exp_properties_t blockArrayProps = {ZE_INTEL_DEVICE_BLOCK_ARRAY_EXP_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
     deviceProps.pNext = &blockArrayProps;
 
     auto success = L0::Device::fromHandle(static_cast<ze_device_handle_t>(&deviceImp))->getProperties(&deviceProps);
@@ -6203,5 +6312,12 @@ TEST(ExtensionLookupTest, given2DBlockLoadTrueAnd2DBlockStoreTrueThenFlagsIndica
     ASSERT_TRUE(static_cast<bool>(blockArrayProps.flags & ZE_INTEL_DEVICE_EXP_FLAG_2D_BLOCK_STORE));
 }
 
+TEST_F(DeviceSimpleTests, whenWorkgroupSizeCheckedThenSizeLimitIs1kOrLess) {
+    ze_device_compute_properties_t properties{};
+    auto result = device->getComputeProperties(&properties);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+
+    EXPECT_LE(properties.maxTotalGroupSize, CommonConstants::maxWorkgroupSize);
+}
 } // namespace ult
 } // namespace L0

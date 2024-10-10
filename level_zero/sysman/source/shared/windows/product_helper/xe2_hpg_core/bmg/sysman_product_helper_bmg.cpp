@@ -5,7 +5,6 @@
  *
  */
 
-#include "shared/source/helpers/constants.h"
 #include "shared/source/helpers/debug_helpers.h"
 
 #include "level_zero/sysman/source/shared/windows/pmt/sysman_pmt.h"
@@ -19,16 +18,14 @@
 namespace L0 {
 namespace Sysman {
 
-#define PACK_INTO_64BIT(valueH, valueL) ((static_cast<uint64_t>(valueH) << 32) | static_cast<uint64_t>(valueL))
-
 constexpr static auto gfxProduct = IGFX_BMG;
 
 static std::map<unsigned long, std::map<std::string, uint32_t>> guidToKeyOffsetMap = {
     {0x1e2f8200, // BMG PUNIT rev 1
      {{"VRAM_BANDWIDTH", 14}}},
     {0x5e2f8210, // BMG OOBMSM rev 15
-     {{"SOC_THERMAL_SENSORS_TEMPERATURE_0_2_0_GTTMMADR[1]", 42},
-      {"VRAM_TEMPERATURE_0_2_0_GTTMMADR", 43},
+     {{"SOC_THERMAL_SENSORS_TEMPERATURE_0_2_0_GTTMMADR[1]", 41},
+      {"VRAM_TEMPERATURE_0_2_0_GTTMMADR", 42},
       {"rx_byte_count_lsb", 70},
       {"rx_byte_count_msb", 69},
       {"tx_byte_count_lsb", 72},
@@ -397,7 +394,7 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getPciStats(zes_pci_stats_t *pSta
                               "readValue call failed for register key rx_byte_count_msb\n");
         return status;
     }
-    pStats->rxCounter = PACK_INTO_64BIT(rxCounterH, rxCounterL);
+    pStats->rxCounter = packInto64Bit(rxCounterH, rxCounterL);
 
     // tx counter calculation
     uint32_t txCounterL = 0;
@@ -415,7 +412,7 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getPciStats(zes_pci_stats_t *pSta
                               "readValue call failed for register key tx_byte_count_msb\n");
         return status;
     }
-    pStats->txCounter = PACK_INTO_64BIT(txCounterH, txCounterL);
+    pStats->txCounter = packInto64Bit(txCounterH, txCounterL);
 
     // packet counter calculation
     uint32_t rxPacketCounterL = 0;
@@ -450,10 +447,18 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getPciStats(zes_pci_stats_t *pSta
         return status;
     }
 
-    pStats->packetCounter = PACK_INTO_64BIT(txPacketCounterH, txPacketCounterL) + PACK_INTO_64BIT(rxPacketCounterH, rxPacketCounterL);
+    pStats->packetCounter = packInto64Bit(txPacketCounterH, txPacketCounterL) + packInto64Bit(rxPacketCounterH, rxPacketCounterL);
     pStats->timestamp = SysmanDevice::getSysmanTimestamp();
 
     return status;
+}
+
+template <>
+ze_result_t SysmanProductHelperHw<gfxProduct>::getPciProperties(zes_pci_properties_t *properties) {
+    properties->haveBandwidthCounters = true;
+    properties->havePacketCounters = true;
+    properties->haveReplayCounters = true;
+    return ZE_RESULT_SUCCESS;
 }
 
 template <>
@@ -470,7 +475,6 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getMemoryBandWidth(zes_mem_bandwi
         return status;
     }
 
-    constexpr uint64_t transactionSize = 32;
     constexpr uint64_t maxSupportedMsu = 8;
     memset(pBandwidth, 0, sizeof(zes_mem_bandwidth_t));
 
@@ -517,8 +521,9 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getMemoryBandWidth(zes_mem_bandwi
                     return status;
                 }
 
-                uint64_t readCounter = PACK_INTO_64BIT(readRegisterH, readRegisterL);
+                uint64_t readCounter = packInto64Bit(readRegisterH, readRegisterL);
 
+                readCounterKey.find("_32B_") != std::string::npos ? readCounter *= 32 : readCounter *= 64;
                 pBandwidth->readCounter += readCounter;
             }
 
@@ -539,15 +544,13 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getMemoryBandWidth(zes_mem_bandwi
                     return status;
                 }
 
-                uint64_t writeCounter = PACK_INTO_64BIT(writeRegisterH, writeRegisterL);
+                uint64_t writeCounter = packInto64Bit(writeRegisterH, writeRegisterL);
 
+                readCounterKey.find("_32B_") != std::string::npos ? writeCounter *= 32 : writeCounter *= 64;
                 pBandwidth->writeCounter += writeCounter;
             }
         }
     }
-
-    pBandwidth->readCounter = (pBandwidth->readCounter * transactionSize) / microFactor;
-    pBandwidth->writeCounter = (pBandwidth->writeCounter * transactionSize) / microFactor;
 
     // Max BW
     uint32_t maxBandwidth = 0;
@@ -557,7 +560,9 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getMemoryBandWidth(zes_mem_bandwi
     }
 
     maxBandwidth = maxBandwidth >> 16;
-    pBandwidth->maxBandwidth = static_cast<uint64_t>(maxBandwidth) * MemoryConstants::megaByte;
+
+    // PMT reports maxBandwidth in units of 100 MBps (decimal). Need to convert it into Bytes/sec, unit to be returned by sysman.
+    pBandwidth->maxBandwidth = static_cast<uint64_t>(maxBandwidth) * megaBytesToBytes * 100;
 
     // timestamp calcuation
     uint32_t timeStampL = 0;
@@ -572,7 +577,7 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getMemoryBandWidth(zes_mem_bandwi
         return status;
     }
 
-    pBandwidth->timestamp = PACK_INTO_64BIT(timeStampH, timeStampL);
+    pBandwidth->timestamp = packInto64Bit(timeStampH, timeStampL);
 
     return status;
 }

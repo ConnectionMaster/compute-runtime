@@ -11,6 +11,7 @@
 
 #include "level_zero/core/source/cmdlist/cmdlist.h"
 #include "level_zero/core/source/device/device_imp.h"
+#include "level_zero/include/zet_intel_gpu_metric.h"
 #include "level_zero/tools/source/metrics/metric.h"
 #include "level_zero/tools/source/metrics/metric_oa_enumeration_imp.h"
 #include "level_zero/tools/source/metrics/metric_oa_query_imp.h"
@@ -197,6 +198,42 @@ ze_result_t OaMetricSourceImp::getConcurrentMetricGroups(std::vector<zet_metric_
     }
 
     return ZE_RESULT_SUCCESS;
+}
+
+ze_result_t OaMetricSourceImp::handleMetricGroupExtendedProperties(zet_metric_group_handle_t hMetricGroup, void *pNext) {
+    ze_result_t retVal = ZE_RESULT_ERROR_INVALID_ARGUMENT;
+    while (pNext) {
+        auto extendedProperties = reinterpret_cast<zet_base_properties_t *>(pNext);
+
+        if (extendedProperties->stype == ZET_STRUCTURE_TYPE_METRIC_GLOBAL_TIMESTAMPS_RESOLUTION_EXP) {
+
+            zet_metric_global_timestamps_resolution_exp_t *metricsTimestampProperties =
+                reinterpret_cast<zet_metric_global_timestamps_resolution_exp_t *>(extendedProperties);
+
+            retVal = getTimerResolution(metricsTimestampProperties->timerResolution);
+            if (retVal != ZE_RESULT_SUCCESS) {
+                metricsTimestampProperties->timerResolution = 0;
+                metricsTimestampProperties->timestampValidBits = 0;
+                return retVal;
+            }
+
+            retVal = getTimestampValidBits(metricsTimestampProperties->timestampValidBits);
+            if (retVal != ZE_RESULT_SUCCESS) {
+                metricsTimestampProperties->timerResolution = 0;
+                metricsTimestampProperties->timestampValidBits = 0;
+                return retVal;
+            }
+        }
+
+        if (extendedProperties->stype == ZET_INTEL_STRUCTURE_TYPE_METRIC_GROUP_TYPE_EXP) { // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+            zet_intel_metric_group_type_exp_t *groupType = reinterpret_cast<zet_intel_metric_group_type_exp_t *>(extendedProperties);
+            groupType->type = ZET_INTEL_METRIC_GROUP_TYPE_EXP_OTHER;
+            retVal = ZE_RESULT_SUCCESS;
+        }
+        pNext = extendedProperties->pNext;
+    }
+
+    return retVal;
 }
 
 template <>

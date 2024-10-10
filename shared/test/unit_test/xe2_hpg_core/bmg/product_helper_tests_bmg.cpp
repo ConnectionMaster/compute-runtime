@@ -11,12 +11,14 @@
 #include "shared/source/xe2_hpg_core/hw_cmds_bmg.h"
 #include "shared/source/xe2_hpg_core/hw_info_xe2_hpg_core.h"
 #include "shared/test/common/helpers/default_hw_info.h"
+#include "shared/test/common/mocks/mock_release_helper.h"
 #include "shared/test/common/test_macros/header/per_product_test_definitions.h"
 #include "shared/test/common/test_macros/test.h"
 #include "shared/test/unit_test/os_interface/product_helper_tests.h"
 
 #include "aubstream/product_family.h"
 #include "platforms.h"
+#include "wmtp_setup_bmg.inl"
 
 using namespace NEO;
 
@@ -31,13 +33,12 @@ BMGTEST_F(BmgProductHelper, givenProductHelperWhenGettingEvictIfNecessaryFlagSup
     EXPECT_TRUE(productHelper->isEvictionIfNecessaryFlagSupported());
 }
 
-BMGTEST_F(BmgProductHelper, whenGettingMidThreadPreemptionSupportForRtKernelsThenExpectNoSupport) {
-
-    EXPECT_TRUE(productHelper->isMidThreadPreemptionDisallowedForRayTracingKernels());
-}
-
 BMGTEST_F(BmgProductHelper, givenBmgProductHelperWhenIsInitBuiltinAsyncSupportedThenReturnFalse) {
     EXPECT_FALSE(productHelper->isInitBuiltinAsyncSupported(*defaultHwInfo));
+}
+
+BMGTEST_F(BmgProductHelper, givenProductHelperWhenCheckIsCopyBufferRectSplitSupportedThenReturnsTrue) {
+    EXPECT_TRUE(productHelper->isCopyBufferRectSplitSupported());
 }
 
 BMGTEST_F(BmgProductHelper, givenProductHelperWhenGetCommandsStreamPropertiesSupportThenExpectCorrectValues) {
@@ -86,6 +87,14 @@ BMGTEST_F(BmgProductHelper, givenProductHelperWhenAdditionalKernelExecInfoSuppor
 
 BMGTEST_F(BmgProductHelper, givenCompilerProductHelperWhenGetDefaultHwIpVersionThenCorrectValueIsSet) {
     EXPECT_EQ(compilerProductHelper->getDefaultHwIpVersion(), AOT::BMG_G21_B0);
+}
+
+BMGTEST_F(BmgProductHelper, givenCompilerProductHelperWhenGetMidThreadPreemptionSupportThenCorrectValueIsSet) {
+    auto hwInfo = *defaultHwInfo;
+    hwInfo.featureTable.flags.ftrWalkerMTP = false;
+    EXPECT_FALSE(compilerProductHelper->isMidThreadPreemptionSupported(hwInfo));
+    hwInfo.featureTable.flags.ftrWalkerMTP = true;
+    EXPECT_EQ(wmtpSupported, compilerProductHelper->isMidThreadPreemptionSupported(hwInfo));
 }
 
 BMGTEST_F(BmgProductHelper, givenProductHelperWhenCheckingIsBufferPoolAllocatorSupportedThenCorrectValueIsReturned) {

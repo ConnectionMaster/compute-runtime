@@ -702,27 +702,6 @@ HWTEST2_F(MinimumProgramFixture, givenEmptyAilWhenCreateProgramWithSourcesThenSo
     pProgram->release();
 }
 
-HWTEST2_F(MinimumProgramFixture, givenEmptyAilWhenCreateProgramWithSourcesAndWithDummyKernelThenDoNotMarkApplicationContextAsNonZebin, IsAtLeastSkl) {
-    auto pDevice = pContext->getDevice(0);
-    auto rootDeviceEnvironment = pDevice->getExecutionEnvironment()->rootDeviceEnvironments[rootDeviceIndex].get();
-    rootDeviceEnvironment->ailConfiguration.reset(nullptr);
-    const char *dummyKernelSources[] = {"kernel void _(){}"}; // if detected - should trigger fallback to CTNI
-    size_t knownSourceSize = strlen(dummyKernelSources[0]);
-
-    auto pProgram = Program::create<MockProgram>(
-        pContext,
-        1,
-        dummyKernelSources,
-        &knownSourceSize,
-        retVal);
-
-    ASSERT_NE(nullptr, pProgram);
-    ASSERT_EQ(CL_SUCCESS, retVal);
-
-    EXPECT_FALSE(pProgram->getContext().checkIfContextIsNonZebin());
-    pProgram->release();
-}
-
 TEST_F(MinimumProgramFixture, givenApplicationContextMarkedAsNonZebinWhenBuildingProgramThenInternalOptionsShouldContainDisableZebinOption) {
     const char *kernelSources[] = {"some source code"};
     size_t knownSourceSize = strlen(kernelSources[0]);
@@ -746,38 +725,6 @@ TEST_F(MinimumProgramFixture, givenApplicationContextMarkedAsNonZebinWhenBuildin
     retVal = pProgram->build(pProgram->getDevices(), "");
     EXPECT_EQ(CL_SUCCESS, retVal);
     EXPECT_TRUE(CompilerOptions::contains(cip->buildInternalOptions, CompilerOptions::disableZebin));
-    pProgram->release();
-}
-
-HWTEST2_F(MinimumProgramFixture, givenAILReturningTrueForFallbackRequirementWhenBuildingProgramThenMarkContextAsNonZebin, IsAtLeastSkl) {
-    class MockAIL : public AILConfigurationHw<productFamily> {
-      public:
-        bool isFallbackToPatchtokensRequired(const std::string &kernelSources) override {
-            return true;
-        }
-    };
-    auto pDevice = pContext->getDevice(0);
-    auto rootDeviceEnvironment = pDevice->getExecutionEnvironment()->rootDeviceEnvironments[rootDeviceIndex].get();
-    rootDeviceEnvironment->ailConfiguration.reset(new MockAIL());
-
-    ASSERT_FALSE(pContext->checkIfContextIsNonZebin());
-
-    const char *kernelSources[] = {"some source code"};
-    size_t knownSourceSize = strlen(kernelSources[0]);
-    MockProgram *pProgram = nullptr;
-    pProgram = Program::create<SucceedingGenBinaryProgram>(
-        pContext,
-        1,
-        kernelSources,
-        &knownSourceSize,
-        retVal);
-
-    ASSERT_NE(nullptr, pProgram);
-    ASSERT_EQ(CL_SUCCESS, retVal);
-
-    retVal = pProgram->build(pProgram->getDevices(), "");
-    EXPECT_EQ(CL_SUCCESS, retVal);
-    EXPECT_TRUE(pContext->checkIfContextIsNonZebin());
     pProgram->release();
 }
 
@@ -1480,7 +1427,7 @@ class PatchTokenFromBinaryTest : public ProgramSimpleFixture {
 using PatchTokenTests = Test<PatchTokenFromBinaryTest>;
 
 TEST_F(PatchTokenTests, WhenBuildingProgramThenGwsIsSet) {
-    createProgramFromBinary(pContext, pContext->getDevices(), "kernel_data_param");
+    createProgramFromBinary(pContext, pContext->getDevices(), "simple_kernels");
 
     ASSERT_NE(nullptr, pProgram);
     retVal = pProgram->build(
@@ -1489,7 +1436,7 @@ TEST_F(PatchTokenTests, WhenBuildingProgramThenGwsIsSet) {
 
     ASSERT_EQ(CL_SUCCESS, retVal);
 
-    auto pKernelInfo = pProgram->getKernelInfo("test", rootDeviceIndex);
+    auto pKernelInfo = pProgram->getKernelInfo("test_get_global_size", rootDeviceIndex);
 
     ASSERT_NE(static_cast<uint32_t>(-1), pKernelInfo->kernelDescriptor.payloadMappings.dispatchTraits.globalWorkSize[0]);
     ASSERT_NE(static_cast<uint32_t>(-1), pKernelInfo->kernelDescriptor.payloadMappings.dispatchTraits.globalWorkSize[1]);
@@ -1499,7 +1446,7 @@ TEST_F(PatchTokenTests, WhenBuildingProgramThenGwsIsSet) {
 TEST_F(PatchTokenTests, WhenBuildingProgramThenConstantKernelArgsAreAvailable) {
     // PATCH_TOKEN_STATELESS_CONSTANT_MEMORY_OBJECT_KERNEL_ARGUMENT
 
-    createProgramFromBinary(pContext, pContext->getDevices(), "test_basic_constant");
+    createProgramFromBinary(pContext, pContext->getDevices(), "simple_kernels");
 
     ASSERT_NE(nullptr, pProgram);
     retVal = pProgram->build(
@@ -3112,7 +3059,7 @@ TEST_F(ProgramBinTest, givenPrintProgramBinaryProcessingTimeSetWhenBuildProgramT
     debugManager.flags.PrintProgramBinaryProcessingTime.set(true);
     testing::internal::CaptureStdout();
 
-    createProgramFromBinary(pContext, pContext->getDevices(), "kernel_data_param");
+    createProgramFromBinary(pContext, pContext->getDevices(), "simple_kernels");
 
     auto retVal = pProgram->build(
         pProgram->getDevices(),

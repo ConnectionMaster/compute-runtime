@@ -50,7 +50,6 @@ void StateComputeModeProperties::setPropertiesAll(bool requiresCoherency, uint32
     }
 
     setPropertiesExtraPerContext();
-    setPropertiesExtraPerKernel();
 }
 
 void StateComputeModeProperties::copyPropertiesAll(const StateComputeModeProperties &properties) {
@@ -70,8 +69,6 @@ void StateComputeModeProperties::copyPropertiesAll(const StateComputeModePropert
 void StateComputeModeProperties::copyPropertiesGrfNumberThreadArbitration(const StateComputeModeProperties &properties) {
     largeGrfMode.isDirty = false;
     threadArbitrationPolicy.isDirty = false;
-
-    clearIsDirtyExtraPerKernel();
 
     largeGrfMode.set(properties.largeGrfMode.value);
     threadArbitrationPolicy.set(properties.threadArbitrationPolicy.value);
@@ -94,7 +91,6 @@ void StateComputeModeProperties::clearIsDirty() {
     memoryAllocationForScratchAndMidthreadPreemptionBuffers.isDirty = false;
 
     clearIsDirtyExtraPerContext();
-    clearIsDirtyExtraPerKernel();
 }
 
 void StateComputeModeProperties::setCoherencyProperty(bool requiresCoherency) {
@@ -179,11 +175,9 @@ void StateComputeModeProperties::setPropertiesGrfNumberThreadArbitration(uint32_
 
     this->threadArbitrationPolicy.isDirty = false;
     this->largeGrfMode.isDirty = false;
-    clearIsDirtyExtraPerKernel();
 
     setGrfNumberProperty(numGrfRequired);
     setThreadArbitrationProperty(threadArbitrationPolicy);
-    setPropertiesExtraPerKernel();
 }
 
 void FrontEndProperties::initSupport(const RootDeviceEnvironment &rootDeviceEnvironment) {
@@ -202,7 +196,7 @@ void FrontEndProperties::resetState() {
     this->singleSliceDispatchCcsMode.value = StreamProperty::initValue;
 }
 
-void FrontEndProperties::setPropertiesAll(bool isCooperativeKernel, bool disableEuFusion, bool disableOverdispatch, int32_t engineInstancedDevice) {
+void FrontEndProperties::setPropertiesAll(bool isCooperativeKernel, bool disableEuFusion, bool disableOverdispatch) {
     DEBUG_BREAK_IF(!this->propertiesSupportLoaded);
     clearIsDirty();
 
@@ -217,22 +211,15 @@ void FrontEndProperties::setPropertiesAll(bool isCooperativeKernel, bool disable
     if (this->frontEndPropertiesSupport.disableOverdispatch) {
         this->disableOverdispatch.set(disableOverdispatch);
     }
-
-    if (this->frontEndPropertiesSupport.singleSliceDispatchCcsMode) {
-        this->singleSliceDispatchCcsMode.set(engineInstancedDevice);
-    }
 }
 
-void FrontEndProperties::setPropertySingleSliceDispatchCcsMode(int32_t engineInstancedDevice) {
+void FrontEndProperties::setPropertySingleSliceDispatchCcsMode() {
     DEBUG_BREAK_IF(!this->propertiesSupportLoaded);
 
     this->singleSliceDispatchCcsMode.isDirty = false;
-    if (this->frontEndPropertiesSupport.singleSliceDispatchCcsMode) {
-        this->singleSliceDispatchCcsMode.set(engineInstancedDevice);
-    }
 }
 
-void FrontEndProperties::setPropertiesDisableOverdispatchEngineInstanced(bool disableOverdispatch, int32_t engineInstancedDevice, bool clearDirtyState) {
+void FrontEndProperties::setPropertiesDisableOverdispatch(bool disableOverdispatch, bool clearDirtyState) {
     DEBUG_BREAK_IF(!this->propertiesSupportLoaded);
 
     if (!clearDirtyState) {
@@ -242,9 +229,6 @@ void FrontEndProperties::setPropertiesDisableOverdispatchEngineInstanced(bool di
 
     if (this->frontEndPropertiesSupport.disableOverdispatch) {
         this->disableOverdispatch.set(disableOverdispatch);
-    }
-    if (this->frontEndPropertiesSupport.singleSliceDispatchCcsMode) {
-        this->singleSliceDispatchCcsMode.set(engineInstancedDevice);
     }
 
     if (clearDirtyState) {

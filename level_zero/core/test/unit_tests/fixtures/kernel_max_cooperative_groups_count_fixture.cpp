@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Intel Corporation
+ * Copyright (C) 2023-2024 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -40,12 +40,11 @@ uint32_t KernelImpSuggestMaxCooperativeGroupCountFixture::getMaxWorkGroupCount()
     kernel.kernelImmData = &kernelInfo;
     auto module = std::make_unique<ModuleImp>(device, nullptr, ModuleType::user);
     kernel.module = module.get();
-
+    kernel.implicitScalingEnabled = device->getNEODevice()->getDeviceBitfield().count() > 1;
     kernel.groupSize[0] = lws[0];
     kernel.groupSize[1] = lws[1];
     kernel.groupSize[2] = lws[2];
-    uint32_t totalGroupCount = 0;
-    kernel.KernelImp::suggestMaxCooperativeGroupCount(&totalGroupCount, NEO::EngineGroupType::cooperativeCompute, true);
+    uint32_t totalGroupCount = kernel.KernelImp::suggestMaxCooperativeGroupCount(NEO::EngineGroupType::cooperativeCompute, false);
     return totalGroupCount;
 }
 } // namespace ult

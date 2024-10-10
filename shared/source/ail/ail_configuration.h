@@ -41,6 +41,7 @@ enum class AILEnumeration : uint32_t {
     enableLegacyPlatformName,
     disableDirectSubmission,
     handleDivergentBarriers,
+    disableBindlessAddressing,
 };
 
 class AILConfiguration;
@@ -65,9 +66,9 @@ class AILConfiguration {
 
     virtual void modifyKernelIfRequired(std::string &kernel) = 0;
 
-    virtual bool isFallbackToPatchtokensRequired(const std::string &kernelSources) = 0;
-
     virtual bool isContextSyncFlagRequired() = 0;
+
+    virtual bool is256BPrefetchDisableRequired() = 0;
 
     virtual bool isBufferPoolEnabled() = 0;
 
@@ -79,6 +80,8 @@ class AILConfiguration {
 
     virtual bool handleDivergentBarriers() = 0;
 
+    virtual bool disableBindlessAddressing() = 0;
+
   protected:
     virtual void applyExt(RuntimeCapabilityTable &runtimeCapabilityTable) = 0;
     std::string processName;
@@ -86,11 +89,13 @@ class AILConfiguration {
     bool sourcesContain(const std::string &sources, std::string_view contentToFind) const;
     MOCKABLE_VIRTUAL bool isKernelHashCorrect(const std::string &kernelSources, uint64_t expectedHash) const;
     virtual void setHandleDivergentBarriers(bool val) = 0;
+    virtual void setDisableBindlessAddressing(bool val) = 0;
 };
 
 extern const std::set<std::string_view> applicationsContextSyncFlag;
 extern const std::set<std::string_view> applicationsForceRcsDg2;
 extern const std::set<std::string_view> applicationsBufferPoolDisabled;
+extern const std::set<std::string_view> applicationsOverfetchDisabled;
 
 template <PRODUCT_FAMILY product>
 class AILConfigurationHw : public AILConfiguration {
@@ -103,18 +108,21 @@ class AILConfigurationHw : public AILConfiguration {
     void applyExt(RuntimeCapabilityTable &runtimeCapabilityTable) override;
 
     void modifyKernelIfRequired(std::string &kernel) override;
-    bool isFallbackToPatchtokensRequired(const std::string &kernelSources) override;
     bool isContextSyncFlagRequired() override;
+    bool is256BPrefetchDisableRequired() override;
     bool isBufferPoolEnabled() override;
     bool useLegacyValidationLogic() override;
     bool forceRcs() override;
     bool handleDivergentBarriers() override;
+    bool disableBindlessAddressing() override;
 
     bool shouldForceRcs = false;
     bool shouldHandleDivergentBarriers = false;
+    bool shouldDisableBindlessAddressing = false;
 
   protected:
     void setHandleDivergentBarriers(bool val) override;
+    void setDisableBindlessAddressing(bool val) override;
 };
 
 template <PRODUCT_FAMILY product>

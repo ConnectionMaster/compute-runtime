@@ -614,6 +614,8 @@ int Drm::setupHardwareInfo(const DeviceDescriptor *device, bool setupFeatureTabl
     setupCacheInfo(*hwInfo);
     hwInfo->capabilityTable.deviceName = device->devName;
 
+    rootDeviceEnvironment.initializeGfxCoreHelperFromHwInfo();
+
     return 0;
 }
 
@@ -1005,7 +1007,7 @@ void Drm::setupSystemInfo(HardwareInfo *hwInfo, SystemInfo *sysInfo) {
     gtSysInfo->CsrSizeInMb = sysInfo->getCsrSizeInMb();
     gtSysInfo->SLMSizeInKb = sysInfo->getSlmSizePerDss();
 
-    if (!hwInfo->capabilityTable.slmSize) {
+    if (gtSysInfo->SLMSizeInKb > 0) {
         hwInfo->capabilityTable.slmSize = gtSysInfo->SLMSizeInKb;
     }
 }
@@ -1164,7 +1166,7 @@ void Drm::configureGpuFaultCheckThreshold() {
     }
 }
 
-unsigned int Drm::bindDrmContext(uint32_t drmContextId, uint32_t deviceIndex, aub_stream::EngineType engineType, bool engineInstancedDevice) {
+unsigned int Drm::bindDrmContext(uint32_t drmContextId, uint32_t deviceIndex, aub_stream::EngineType engineType) {
     auto engineInfo = this->engineInfo.get();
 
     auto retVal = static_cast<unsigned int>(ioctlHelper->getDrmParamValue(DrmEngineMapper::engineNodeMap(engineType)));
@@ -1177,7 +1179,7 @@ unsigned int Drm::bindDrmContext(uint32_t drmContextId, uint32_t deviceIndex, au
         return retVal;
     }
 
-    bool useVirtualEnginesForCcs = !engineInstancedDevice;
+    bool useVirtualEnginesForCcs = true;
     if (debugManager.flags.UseDrmVirtualEnginesForCcs.get() != -1) {
         useVirtualEnginesForCcs = !!debugManager.flags.UseDrmVirtualEnginesForCcs.get();
     }
@@ -1267,11 +1269,11 @@ unsigned int Drm::bindDrmContext(uint32_t drmContextId, uint32_t deviceIndex, au
 }
 
 void Drm::waitForBind(uint32_t vmHandleId) {
-    if (pagingFence[vmHandleId] >= fenceVal[vmHandleId]) {
+    if (*ioctlHelper->getPagingFenceAddress(vmHandleId, nullptr) >= fenceVal[vmHandleId]) {
         return;
     }
     auto lock = this->lockBindFenceMutex();
-    auto fenceAddress = castToUint64(&this->pagingFence[vmHandleId]);
+    auto fenceAddress = castToUint64(ioctlHelper->getPagingFenceAddress(vmHandleId, nullptr));
     auto fenceValue = this->fenceVal[vmHandleId];
     lock.unlock();
 
@@ -1396,10 +1398,10 @@ void programUserFence(Drm *drm, OsContext *osContext, BufferObject *bo, VmBindEx
 
     if (drm->isPerContextVMRequired()) {
         auto osContextLinux = static_cast<OsContextLinux *>(osContext);
-        address = castToUint64(osContextLinux->getFenceAddr(vmHandleId));
+        address = castToUint64(ioctlHelper->getPagingFenceAddress(vmHandleId, osContextLinux));
         value = osContextLinux->getNextFenceVal(vmHandleId);
     } else {
-        address = castToUint64(drm->getFenceAddr(vmHandleId));
+        address = castToUint64(ioctlHelper->getPagingFenceAddress(vmHandleId, nullptr));
         value = drm->getNextFenceVal(vmHandleId);
     }
 
@@ -1430,10 +1432,10 @@ int changeBufferObjectBinding(Drm *drm, OsContext *osContext, uint32_t vmHandleI
         bool readOnlyResource = bo->isReadOnlyGpuResource();
 
         if (drm->useVMBindImmediate()) {
-            bindMakeResident = bo->isExplicitResidencyRequired() && bo->isLockable();
+            bindMakeResident = bo->isExplicitResidencyRequired();
             bindImmediate = true;
         }
-        bool bindLock = bo->isExplicitLockedMemoryRequired() && bo->isLockable();
+        bool bindLock = bo->isExplicitLockedMemoryRequired();
         flags |= ioctlHelper->getFlagsForVmBind(bindCapture, bindImmediate, bindMakeResident, bindLock, readOnlyResource);
     }
 
@@ -1527,14 +1529,8 @@ int changeBufferObjectBinding(Drm *drm, OsContext *osContext, uint32_t vmHandleI
 int Drm::bindBufferObject(OsContext *osContext, uint32_t vmHandleId, BufferObject *bo) {
     auto ret = changeBufferObjectBinding(this, osContext, vmHandleId, bo, true);
     if (ret != 0) {
-        errno = 0;
         static_cast<DrmMemoryOperationsHandlerBind *>(this->rootDeviceEnvironment.memoryOperationsInterface.get())->evictUnusedAllocations(false, false);
         ret = changeBufferObjectBinding(this, osContext, vmHandleId, bo, true);
-        if ((getErrno() == ENOMEM) && ioctlHelper->isPageFaultSupported()) {
-            DEBUG_BREAK_IF(true);
-            bo->setIsLockable(false);
-            ret = changeBufferObjectBinding(this, osContext, vmHandleId, bo, true);
-        }
     }
     return ret;
 }

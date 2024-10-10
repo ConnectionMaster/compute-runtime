@@ -96,8 +96,10 @@ std::string getRunPath(char *argv0) {
 #else
         cwd = _getcwd(nullptr, 0);
 #endif
-        res = cwd;
-        free(cwd);
+        if (cwd) {
+            res = cwd;
+            free(cwd);
+        }
     }
 
     return res;
@@ -431,6 +433,9 @@ int main(int argc, char **argv) {
             MockSipData::mockSipKernel.reset(new MockSipKernel());
             if (testMode == TestMode::aubTests || testMode == TestMode::aubTestsWithTbx) {
                 MockSipData::useMockSip = false;
+                debugManager.flags.OverrideCsrAllocationSize.set(1);
+            } else {
+                MockSipData::useMockSip = true;
             }
             sipInitialized = true;
         }

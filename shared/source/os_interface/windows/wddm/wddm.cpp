@@ -110,7 +110,7 @@ bool Wddm::init() {
     hardwareInfo->capabilityTable.instrumentationEnabled =
         (hardwareInfo->capabilityTable.instrumentationEnabled && instrumentationEnabled);
 
-    if (!hardwareInfo->capabilityTable.slmSize) {
+    if (gtSystemInfo->SLMSizeInKb > 0) {
         hardwareInfo->capabilityTable.slmSize = gtSystemInfo->SLMSizeInKb;
     }
     rootDeviceEnvironment.initProductHelper();
@@ -119,6 +119,7 @@ bool Wddm::init() {
     productHelper.adjustPlatformForProductFamily(hardwareInfo);
     rootDeviceEnvironment.initApiGfxCoreHelper();
     rootDeviceEnvironment.initGfxCoreHelper();
+    rootDeviceEnvironment.initializeGfxCoreHelperFromHwInfo();
     rootDeviceEnvironment.initAilConfigurationHelper();
     if (false == rootDeviceEnvironment.initAilConfiguration()) {
         return false;

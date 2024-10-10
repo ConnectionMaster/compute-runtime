@@ -82,7 +82,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenFlushTas
     // we should have 3 heaps, tag allocation and csr command stream + cq
     EXPECT_EQ(4u + csrSurfaceCount, cmdBuffer->surfaces.size());
 
-    EXPECT_EQ(0, mockCsr->flushCalledCount);
+    EXPECT_EQ(0u, mockCsr->flushCalledCount);
 
     // we should be submitting via csr
     EXPECT_EQ(cmdBuffer->batchBuffer.commandBufferAllocation, mockCsr->commandStream.getGraphicsAllocation());
@@ -186,11 +186,15 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, whenFlushSmallTaskThenCommandStrea
     using MI_BATCH_BUFFER_END = typename FamilyType::MI_BATCH_BUFFER_END;
     auto &csr = pDevice->getUltCommandStreamReceiver<FamilyType>();
 
+    auto usedBefore = csr.commandStream.getUsed();
+
     auto &stream = csr.getCS(2 * MemoryConstants::cacheLineSize);
     stream.getSpace(MemoryConstants::cacheLineSize - sizeof(MI_BATCH_BUFFER_END) - 2);
     EXPECT_EQ(SubmissionStatus::success, csr.flushSmallTask(stream, stream.getUsed()));
 
-    auto used = csr.commandStream.getUsed();
+    auto usedAfter = csr.commandStream.getUsed();
+
+    auto used = usedAfter - usedBefore;
     auto expected = 2 * MemoryConstants::cacheLineSize;
     EXPECT_EQ(used, expected);
 }
@@ -257,7 +261,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeAndThreeReco
     auto batchBufferStart = genCmdCast<MI_BATCH_BUFFER_START *>(bbEndLocation);
     ASSERT_NE(nullptr, batchBufferStart);
     EXPECT_EQ(lastBatchBufferAddress, batchBufferStart->getBatchBufferStartAddress());
-    EXPECT_EQ(1, mockCsr->flushCalledCount);
+    EXPECT_EQ(1u, mockCsr->flushCalledCount);
     EXPECT_EQ(mockCsr->recordedCommandBuffer->batchBuffer.endCmdPtr, lastbbEndPtr);
 }
 
@@ -326,7 +330,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeAndThreeReco
     auto bbEnd = genCmdCast<MI_BATCH_BUFFER_END *>(bbEndLocation);
     EXPECT_NE(nullptr, bbEnd);
 
-    EXPECT_EQ(3, mockCsr->flushCalledCount);
+    EXPECT_EQ(3u, mockCsr->flushCalledCount);
 }
 
 HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenFlushTaskIsCalledTwiceThenNothingIsSubmittedToTheHwAndTwoSubmissionAreRecorded) {
@@ -403,7 +407,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenFlushTas
     EXPECT_GT(cmdBuffer2->batchBuffer.startOffset, cmdBuffer1->batchBuffer.startOffset);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenRecordedBatchBufferIsBeingSubmittedThenFlushIsCalledWithRecordedCommandBuffer) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenRecordedBatchBufferIsBeingSubmittedThenFlushIsCalledWithRecordedCommandBuffer) {
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
 
@@ -434,7 +438,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInBatch
                        dispatchFlags,
                        *pDevice);
 
-    EXPECT_EQ(0, mockCsr->flushCalledCount);
+    EXPECT_EQ(0u, mockCsr->flushCalledCount);
 
     auto &surfacesForResidency = mockCsr->getResidencyAllocations();
     EXPECT_EQ(0u, surfacesForResidency.size());
@@ -462,7 +466,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInBatch
     EXPECT_FALSE(mockCsr->recordedCommandBuffer->batchBuffer.lowPriority);
     EXPECT_EQ(mockCsr->recordedCommandBuffer->batchBuffer.commandBufferAllocation, commandStream.getGraphicsAllocation());
     EXPECT_EQ(4u, mockCsr->recordedCommandBuffer->batchBuffer.startOffset);
-    EXPECT_EQ(1, mockCsr->flushCalledCount);
+    EXPECT_EQ(1u, mockCsr->flushCalledCount);
 
     EXPECT_TRUE(mockedSubmissionsAggregator->peekCommandBuffers().peekIsEmpty());
 
@@ -508,7 +512,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenBlocking
                        dispatchFlags,
                        *pDevice);
 
-    EXPECT_EQ(1, mockCsr->flushCalledCount);
+    EXPECT_EQ(1u, mockCsr->flushCalledCount);
     EXPECT_TRUE(mockedSubmissionsAggregator->peekCmdBufferList().peekIsEmpty());
 }
 
@@ -517,26 +521,26 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenBufferToFlushWhenFlushTaskCal
     pDevice->resetCommandStreamReceiver(mockCsr);
 
     commandStream.getSpace(1);
-    EXPECT_EQ(0, mockCsr->flushCalledCount);
+    EXPECT_EQ(0u, mockCsr->flushCalledCount);
     auto previousFlushStamp = mockCsr->flushStamp->peekStamp();
     auto cmplStamp = flushTask(*mockCsr);
     EXPECT_GT(mockCsr->flushStamp->peekStamp(), previousFlushStamp);
     EXPECT_EQ(mockCsr->flushStamp->peekStamp(), cmplStamp.flushStamp);
-    EXPECT_EQ(1, mockCsr->flushCalledCount);
+    EXPECT_EQ(1u, mockCsr->flushCalledCount);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenNothingToFlushWhenFlushTaskCalledThenDontFlushStamp) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenNothingToFlushWhenFlushTaskCalledThenDontFlushStamp) {
     auto mockCsr = new MockCsrHw2<FamilyType>(*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield());
     pDevice->resetCommandStreamReceiver(mockCsr);
 
     configureCSRtoNonDirtyState<FamilyType>(false);
 
-    EXPECT_EQ(0, mockCsr->flushCalledCount);
+    EXPECT_EQ(0u, mockCsr->flushCalledCount);
     auto previousFlushStamp = mockCsr->flushStamp->peekStamp();
     auto cmplStamp = flushTask(*mockCsr);
     EXPECT_EQ(mockCsr->flushStamp->peekStamp(), previousFlushStamp);
     EXPECT_EQ(previousFlushStamp, cmplStamp.flushStamp);
-    EXPECT_EQ(0, mockCsr->flushCalledCount);
+    EXPECT_EQ(0u, mockCsr->flushCalledCount);
 }
 
 HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenFlushTaskIsCalledThenFlushedTaskCountIsNotModifed) {
@@ -674,6 +678,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenUpdateTaskCountFromWaitEnable
 HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInDefaultModeWhenFlushTaskIsCalledThenFlushedTaskCountIsModifed) {
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
+    bool heaplessStateInit = commandQueue.getHeaplessStateInitEnabled();
 
     DispatchFlags dispatchFlags = DispatchFlagsHelper::createDefaultDispatchFlags();
     dispatchFlags.preemptionMode = PreemptionHelper::getDefaultPreemptionMode(pDevice->getHardwareInfo());
@@ -681,17 +686,10 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInDefaultModeWhenFlushTask
 
     auto &csr = commandQueue.getGpgpuCommandStreamReceiver();
 
-    csr.flushTask(commandStream,
-                  0,
-                  &dsh,
-                  &ioh,
-                  &ssh,
-                  taskLevel,
-                  dispatchFlags,
-                  *pDevice);
+    flushTaskMethod<FamilyType>(csr, commandStream, 0, &dsh, &ioh, &ssh, taskLevel, dispatchFlags, *pDevice);
 
-    EXPECT_EQ(1u, csr.peekLatestSentTaskCount());
-    EXPECT_EQ(1u, csr.peekLatestFlushedTaskCount());
+    EXPECT_EQ(heaplessStateInit ? 2u : 1u, csr.peekLatestSentTaskCount());
+    EXPECT_EQ(heaplessStateInit ? 2u : 1u, csr.peekLatestFlushedTaskCount());
 }
 
 HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenFlushTaskIsCalledGivenNumberOfTimesThenFlushIsCalled) {
@@ -710,44 +708,23 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenFlushTas
     csr.useGpuIdleImplicitFlush = false;
     dispatchFlags.implicitFlush = false;
 
-    csr.flushTask(commandStream,
-                  0,
-                  &dsh,
-                  &ioh,
-                  &ssh,
-                  taskLevel,
-                  dispatchFlags,
-                  *pDevice);
+    flushTaskMethod<FamilyType>(csr, commandStream, 0, &dsh, &ioh, &ssh, taskLevel, dispatchFlags, *pDevice);
 
-    EXPECT_EQ(1u, csr.peekLatestSentTaskCount());
-    EXPECT_EQ(0u, csr.peekLatestFlushedTaskCount());
+    EXPECT_EQ(csr.heaplessStateInitialized ? 2u : 1u, csr.peekLatestSentTaskCount());
+    EXPECT_EQ(csr.heaplessStateInitialized ? 2u : 0u, csr.peekLatestFlushedTaskCount());
     dispatchFlags.implicitFlush = false;
 
-    csr.flushTask(commandStream,
-                  0,
-                  &dsh,
-                  &ioh,
-                  &ssh,
-                  taskLevel,
-                  dispatchFlags,
-                  *pDevice);
+    flushTaskMethod<FamilyType>(csr, commandStream, 0, &dsh, &ioh, &ssh, taskLevel, dispatchFlags, *pDevice);
 
-    EXPECT_EQ(2u, csr.peekLatestSentTaskCount());
+    EXPECT_EQ(csr.heaplessStateInitialized ? 3u : 2u, csr.peekLatestSentTaskCount());
     EXPECT_EQ(2u, csr.peekLatestFlushedTaskCount());
 
     dispatchFlags.implicitFlush = false;
 
-    csr.flushTask(commandStream,
-                  0,
-                  &dsh,
-                  &ioh,
-                  &ssh,
-                  taskLevel,
-                  dispatchFlags,
-                  *pDevice);
+    flushTaskMethod<FamilyType>(csr, commandStream, 0, &dsh, &ioh, &ssh, taskLevel, dispatchFlags, *pDevice);
 
-    EXPECT_EQ(3u, csr.peekLatestSentTaskCount());
-    EXPECT_EQ(2u, csr.peekLatestFlushedTaskCount());
+    EXPECT_EQ(csr.heaplessStateInitialized ? 4u : 3u, csr.peekLatestSentTaskCount());
+    EXPECT_EQ(csr.heaplessStateInitialized ? 4u : 2u, csr.peekLatestFlushedTaskCount());
 }
 
 HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenWaitForTaskCountIsCalledWithTaskCountThatWasNotYetFlushedThenBatchedCommandBuffersAreSubmitted) {
@@ -1221,7 +1198,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenUpdateTaskCountFromWaitSetWhe
     auto itorPipeControl = find<typename FamilyType::PIPE_CONTROL *>(cmdList.begin(), cmdList.end());
 
     EXPECT_NE(itorPipeControl, cmdList.end());
-    EXPECT_EQ(mockCsr->flushCalledCount, 1);
+    EXPECT_EQ(mockCsr->flushCalledCount, 1u);
 }
 
 HWTEST_F(CommandStreamReceiverFlushTaskTests, givenGpuHangOnPrintEnqueueOutputWhenWaitingForEnginesThenGpuHangIsReported) {
@@ -1269,7 +1246,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenEnabledDirectSubmissionUpdate
 
     EXPECT_NE(itorPipeControl, cmdList.end());
     EXPECT_NE(itorBBS, cmdList.end());
-    EXPECT_EQ(mockCsr->flushCalledCount, 1);
+    EXPECT_EQ(mockCsr->flushCalledCount, 1u);
 }
 
 HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeWhenDcFlushIsRequiredThenPipeControlIsNotRegistredForNooping) {
@@ -1810,7 +1787,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenDispatchFlagsWithThrottleSetT
     EXPECT_EQ(cmdBuffer->batchBuffer.throttle, QueueThrottle::HIGH);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandStreamReceiverFlushTaskTests, givenEpilogueRequiredFlagWhenTaskIsSubmittedDirectlyThenItPointsBackToCsr) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenEpilogueRequiredFlagWhenTaskIsSubmittedDirectlyThenItPointsBackToCsr) {
     configureCSRtoNonDirtyState<FamilyType>(false);
     auto &commandStreamReceiver = this->pDevice->getUltCommandStreamReceiver<FamilyType>();
 
@@ -1909,6 +1886,15 @@ class UltCommandStreamReceiverForDispatchFlags : public UltCommandStreamReceiver
         return BaseClass::flushTask(commandStream, commandStreamStart,
                                     dsh, ioh, ssh, taskLevel, dispatchFlags, device);
     }
+
+    CompletionStamp flushTaskStateless(LinearStream &commandStream, size_t commandStreamStart,
+                                       const IndirectHeap *dsh, const IndirectHeap *ioh, const IndirectHeap *ssh,
+                                       TaskCountType taskLevel, DispatchFlags &dispatchFlags, Device &device) override {
+        savedDispatchFlags = dispatchFlags;
+        return BaseClass::flushTaskStateless(commandStream, commandStreamStart,
+                                             dsh, ioh, ssh, taskLevel, dispatchFlags, device);
+    }
+
     DispatchFlags savedDispatchFlags = DispatchFlagsHelper::createDefaultDispatchFlags();
 };
 
@@ -2011,8 +1997,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenDcFlushArgumentIsFalseWhenCal
     PIPE_CONTROL *pipeControl = genCmdCast<PIPE_CONTROL *>(buffer.get());
     ASSERT_NE(nullptr, pipeControl);
 
-    const bool expectedDcFlush = ::renderCoreFamily == IGFX_GEN8_CORE;
-    EXPECT_EQ(expectedDcFlush, pipeControl->getDcFlushEnable());
+    EXPECT_FALSE(pipeControl->getDcFlushEnable());
     EXPECT_TRUE(pipeControl->getCommandStreamerStallEnable());
 }
 

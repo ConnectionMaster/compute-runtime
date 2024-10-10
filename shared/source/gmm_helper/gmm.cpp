@@ -130,6 +130,32 @@ void Gmm::setupImageResourceParams(ImageInfo &imgInfo, bool preferCompressed) {
 
     resourceParams.Flags.Info.Linear = imgInfo.linearStorage;
 
+    switch (imgInfo.forceTiling) {
+    case ImageTilingMode::tiledW:
+        resourceParams.Flags.Info.TiledW = true;
+        break;
+    case ImageTilingMode::tiledX:
+        resourceParams.Flags.Info.TiledX = true;
+        break;
+    case ImageTilingMode::tiledY:
+        resourceParams.Flags.Info.TiledY = true;
+        break;
+    case ImageTilingMode::tiledYf:
+        resourceParams.Flags.Info.TiledYf = true;
+        break;
+    case ImageTilingMode::tiledYs:
+        resourceParams.Flags.Info.TiledYs = true;
+        break;
+    case ImageTilingMode::tiled4:
+        resourceParams.Flags.Info.Tile4 = true;
+        break;
+    case ImageTilingMode::tiled64:
+        resourceParams.Flags.Info.Tile64 = true;
+        break;
+    default:
+        break;
+    }
+
     auto &gfxCoreHelper = gmmHelper->getRootDeviceEnvironment().getHelper<GfxCoreHelper>();
     auto &productHelper = gmmHelper->getRootDeviceEnvironment().getHelper<ProductHelper>();
     resourceParams.NoGfxMemory = 1; // dont allocate, only query for params
@@ -274,9 +300,6 @@ void Gmm::queryImageParams(ImageInfo &imgInfo) {
 }
 
 uint32_t Gmm::queryQPitch(GMM_RESOURCE_TYPE resType) {
-    if (gmmHelper->getHardwareInfo()->platform.eRenderCoreFamily == IGFX_GEN8_CORE && resType == GMM_RESOURCE_TYPE::RESOURCE_3D) {
-        return 0;
-    }
     return gmmResourceInfo->getQPitch();
 }
 

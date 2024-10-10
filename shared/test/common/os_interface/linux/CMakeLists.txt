@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021-2023 Intel Corporation
+# Copyright (C) 2021-2024 Intel Corporation
 #
 # SPDX-License-Identifier: MIT
 #
@@ -15,7 +15,7 @@ if(UNIX)
                  ${CMAKE_CURRENT_SOURCE_DIR}/drm_mock_extended.h
   )
 
-  if(NEO_ENABLE_i915_PRELIM_DETECTION)
+  if(NEO_ENABLE_I915_PRELIM_DETECTION)
     target_sources(neo_libult_common PRIVATE
                    ${CMAKE_CURRENT_SOURCE_DIR}/device_command_stream_fixture_context.cpp
                    ${CMAKE_CURRENT_SOURCE_DIR}/device_command_stream_fixture_context.h
@@ -24,5 +24,5 @@ if(UNIX)
     )
   endif()
 endif()
-
 add_subdirectories()
+

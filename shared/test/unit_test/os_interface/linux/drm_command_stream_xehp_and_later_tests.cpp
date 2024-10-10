@@ -8,6 +8,7 @@
 #include "shared/source/command_container/command_encoder.h"
 #include "shared/source/command_stream/tag_allocation_layout.h"
 #include "shared/source/execution_environment/root_device_environment.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/os_interface/linux/drm_command_stream.h"
 #include "shared/source/os_interface/linux/drm_memory_manager.h"
 #include "shared/source/os_interface/linux/drm_memory_operations_handler.h"
@@ -16,6 +17,7 @@
 #include "shared/test/common/helpers/batch_buffer_helper.h"
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/engine_descriptor_helper.h"
+#include "shared/test/common/helpers/unit_test_helper.h"
 #include "shared/test/common/helpers/variable_backup.h"
 #include "shared/test/common/libult/linux/drm_mock.h"
 #include "shared/test/common/mocks/linux/mock_drm_allocation.h"
@@ -45,13 +47,26 @@ struct DrmCommandStreamMultiTileMemExecFixture {
         executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mock));
         executionEnvironment->rootDeviceEnvironments[0]->memoryOperationsInterface = DrmMemoryOperationsHandler::create(*mock, 0, false);
 
-        memoryManager = new DrmMemoryManager(GemCloseWorkerMode::gemCloseWorkerInactive,
+        memoryManager = new DrmMemoryManager(GemCloseWorkerMode::gemCloseWorkerActive,
                                              debugManager.flags.EnableForcePin.get(),
                                              true,
                                              *executionEnvironment);
         executionEnvironment->memoryManager.reset(memoryManager);
         executionEnvironment->prepareRootDeviceEnvironments(1u);
         executionEnvironment->rootDeviceEnvironments[0]->setHwInfoAndInitHelpers(NEO::defaultHwInfo.get());
+
+        auto &compilerProductHelper = executionEnvironment->rootDeviceEnvironments[0]->getHelper<CompilerProductHelper>();
+        auto heapless = compilerProductHelper.isHeaplessModeEnabled();
+        auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(heapless);
+
+        if (heaplessStateInit) {
+            GTEST_SKIP();
+        }
+
+        UnitTestSetter::setCcsExposure(*executionEnvironment->rootDeviceEnvironments[0]);
+        UnitTestSetter::setRcsExposure(*executionEnvironment->rootDeviceEnvironments[0]);
+        executionEnvironment->calculateMaxOsContextCount();
+
         executionEnvironment->initializeMemoryManager();
 
         VariableBackup<UltHwConfig> backup(&ultHwConfig);
@@ -124,21 +139,30 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, DrmCommandStreamMultiTileMemExecTest, GivenDrmSuppo
     mock->isVmBindAvailableCall.callParent = false;
     mock->isVmBindAvailableCall.returnValue = true;
 
+    auto &compilerProductHelper = device->getCompilerProductHelper();
+    auto heapless = compilerProductHelper.isHeaplessModeEnabled();
+    auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(heapless);
+
+    if (heaplessStateInit) {
+        GTEST_SKIP();
+    }
+
     auto allocation = memoryManager->allocateGraphicsMemoryWithProperties(MockAllocationProperties{0, 1024, AllocationType::commandBuffer});
-    allocation->updateTaskCount(2, defaultEngine.osContext->getContextId());
+    allocation->updateTaskCount(heaplessStateInit ? 3 : 2, defaultEngine.osContext->getContextId());
 
     volatile TagAddressType *completionAddress = defaultEngine.commandStreamReceiver->getTagAddress();
     completionAddress += (TagAllocationLayout::completionFenceOffset / sizeof(TagAddressType));
-    *completionAddress = 1;
+    *completionAddress = heaplessStateInit ? 2 : 1;
+
     completionAddress += (postSyncOffset / sizeof(TagAddressType));
-    *completionAddress = 1;
+    *completionAddress = heaplessStateInit ? 2 : 1;
 
     memoryManager->handleFenceCompletion(allocation);
 
     uint64_t expectedAddress = castToUint64(const_cast<TagAddressType *>(defaultEngine.commandStreamReceiver->getTagAddress())) +
                                TagAllocationLayout::completionFenceOffset +
                                postSyncOffset;
-    constexpr uint64_t expectedValue = 2;
+    uint64_t expectedValue = heaplessStateInit ? 3 : 2;
 
     EXPECT_EQ(2u, mock->waitUserFenceCall.called);
     EXPECT_EQ(expectedAddress, mock->waitUserFenceCall.address);
@@ -157,6 +181,14 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, DrmCommandStreamMultiTileMemExecTest, GivenDrmSuppo
     mock->completionFenceSupported = true;
     mock->isVmBindAvailableCall.callParent = false;
     mock->isVmBindAvailableCall.returnValue = true;
+
+    auto &compilerProductHelper = device->getCompilerProductHelper();
+    auto heapless = compilerProductHelper.isHeaplessModeEnabled();
+    auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(heapless);
+
+    if (heaplessStateInit) {
+        GTEST_SKIP();
+    }
 
     auto allocation = memoryManager->allocateGraphicsMemoryWithProperties(MockAllocationProperties{0, 1024, AllocationType::commandBuffer});
     allocation->updateTaskCount(2, defaultEngine.osContext->getContextId());

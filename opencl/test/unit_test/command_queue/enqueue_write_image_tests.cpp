@@ -29,7 +29,7 @@
 
 using namespace NEO;
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueWriteImageTest, WhenWritingImageThenCommandsAreProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueWriteImageTest, WhenWritingImageThenCommandsAreProgrammedCorrectly) {
     typedef typename FamilyType::GPGPU_WALKER GPGPU_WALKER;
     enqueueWriteImage<FamilyType>();
 
@@ -127,7 +127,7 @@ HWTEST_F(EnqueueWriteImageTest, WhenWritingImageThenL3ProgrammingIsCorrect) {
     validateL3Programming<FamilyType>(cmdList, itorWalker);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueWriteImageTest, WhenEnqueueIsDoneThenStateBaseAddressIsProperlyProgrammed) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueWriteImageTest, WhenEnqueueIsDoneThenStateBaseAddressIsProperlyProgrammed) {
     enqueueWriteImage<FamilyType>();
     auto &ultCsr = this->pDevice->getUltCommandStreamReceiver<FamilyType>();
     auto &gfxCoreHelper = pDevice->getGfxCoreHelper();
@@ -137,7 +137,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueWriteImageTest, WhenEnqueueIsDoneThenStateBas
                                          pDSH, pIOH, pSSH, itorPipelineSelect, itorWalker, cmdList, 0llu);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueWriteImageTest, WhenWritingImageThenMediaInterfaceDescriptorIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueWriteImageTest, WhenWritingImageThenMediaInterfaceDescriptorIsCorrect) {
     typedef typename FamilyType::MEDIA_INTERFACE_DESCRIPTOR_LOAD MEDIA_INTERFACE_DESCRIPTOR_LOAD;
     typedef typename FamilyType::INTERFACE_DESCRIPTOR_DATA INTERFACE_DESCRIPTOR_DATA;
 
@@ -163,7 +163,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueWriteImageTest, WhenWritingImageThenMediaInte
     FamilyType::Parse::template validateCommand<MEDIA_INTERFACE_DESCRIPTOR_LOAD *>(cmdList.begin(), itorMediaInterfaceDescriptorLoad);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueWriteImageTest, WhenWritingImageThenInterfaceDescriptorDataIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueWriteImageTest, WhenWritingImageThenInterfaceDescriptorDataIsCorrect) {
     typedef typename FamilyType::STATE_BASE_ADDRESS STATE_BASE_ADDRESS;
     typedef typename FamilyType::INTERFACE_DESCRIPTOR_DATA INTERFACE_DESCRIPTOR_DATA;
 
@@ -219,7 +219,7 @@ HWTEST2_F(EnqueueWriteImageTest, WhenWritingImageThenOnePipelineSelectIsProgramm
     EXPECT_EQ(1, numCommands);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueWriteImageTest, WhenWritingImageThenMediaVfeStateIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueWriteImageTest, WhenWritingImageThenMediaVfeStateIsCorrect) {
     enqueueWriteImage<FamilyType>();
     validateMediaVFEState<FamilyType>(&pDevice->getHardwareInfo(), cmdMediaVfeState, cmdList, itorMediaVfeState);
 }
@@ -552,7 +552,6 @@ HWTEST_F(EnqueueWriteImageTest, whenEnqueueWriteImageThenBuiltinKernelIsResolved
 
     auto pEvent = castToObject<Event>(outputEvent);
     auto pCommand = static_cast<CommandComputeKernel *>(pEvent->peekCommand());
-    EXPECT_FALSE(pCommand->peekKernel()->Kernel::canTransformImages());
     EXPECT_TRUE(pCommand->peekKernel()->isPatched());
     userEvent.setStatus(CL_COMPLETE);
     pEvent->release();
@@ -586,7 +585,6 @@ HWTEST_F(EnqueueWriteImageTest, givenMultiRootDeviceImageWhenEnqueueWriteImageTh
     auto pEvent = castToObject<Event>(outputEvent);
     auto pCommand = static_cast<CommandComputeKernel *>(pEvent->peekCommand());
     auto pKernel = pCommand->peekKernel();
-    EXPECT_FALSE(pKernel->Kernel::canTransformImages());
     EXPECT_TRUE(pKernel->isPatched());
     EXPECT_TRUE(pKernel->requiresMemoryMigration());
 
@@ -640,7 +638,6 @@ HWTEST_F(EnqueueWriteImageTest, givenMultiRootDeviceImageWhenEnqueueWriteImageIs
     auto pEvent0 = castToObject<Event>(outputEvent0);
     auto pCommand0 = static_cast<CommandComputeKernel *>(pEvent0->peekCommand());
     auto pKernel0 = pCommand0->peekKernel();
-    EXPECT_FALSE(pKernel0->Kernel::canTransformImages());
     EXPECT_TRUE(pKernel0->isPatched());
     EXPECT_TRUE(pKernel0->requiresMemoryMigration());
 
@@ -668,7 +665,6 @@ HWTEST_F(EnqueueWriteImageTest, givenMultiRootDeviceImageWhenEnqueueWriteImageIs
     auto pEvent1 = castToObject<Event>(outputEvent1);
     auto pCommand1 = static_cast<CommandComputeKernel *>(pEvent1->peekCommand());
     auto pKernel1 = pCommand1->peekKernel();
-    EXPECT_FALSE(pKernel1->Kernel::canTransformImages());
     EXPECT_TRUE(pKernel1->isPatched());
     EXPECT_TRUE(pKernel1->requiresMemoryMigration());
 

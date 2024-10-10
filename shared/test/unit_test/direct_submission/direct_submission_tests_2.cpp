@@ -14,6 +14,7 @@
 #include "shared/source/gmm_helper/gmm_helper.h"
 #include "shared/source/gmm_helper/gmm_lib.h"
 #include "shared/source/helpers/blit_commands_helper.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/definitions/command_encoder_args.h"
 #include "shared/source/helpers/flush_stamp.h"
 #include "shared/source/helpers/gfx_core_helper.h"
@@ -48,6 +49,9 @@ struct DirectSubmissionDispatchMiMemFenceTest : public DirectSubmissionDispatchB
 
         auto &productHelper = pDevice->getProductHelper();
         miMemFenceSupported = pDevice->getHardwareInfo().capabilityTable.isIntegratedDevice ? false : productHelper.isGlobalFenceInDirectSubmissionRequired(pDevice->getHardwareInfo());
+
+        auto &compilerProductHelper = pDevice->getCompilerProductHelper();
+        heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(compilerProductHelper.isHeaplessModeEnabled());
     }
 
     template <typename FamilyType>
@@ -111,35 +115,40 @@ struct DirectSubmissionDispatchMiMemFenceTest : public DirectSubmissionDispatchB
     }
 
     bool miMemFenceSupported = false;
+    bool heaplessStateInit = false;
 };
 
 HWTEST_F(DirectSubmissionDispatchMiMemFenceTest, givenMiMemFenceSupportedWhenInitializingDirectSubmissionThenEnableMiMemFenceProgramming) {
     MockDirectSubmissionHw<FamilyType, RenderDispatcher<FamilyType>> directSubmission(*pDevice->getDefaultEngine().commandStreamReceiver);
 
+    uint32_t expectedSysMemFenceAddress = heaplessStateInit ? 0 : 1;
+
     EXPECT_EQ(miMemFenceSupported, directSubmission.miMemFenceRequired);
-    EXPECT_FALSE(directSubmission.systemMemoryFenceAddressSet);
+    EXPECT_EQ(heaplessStateInit && miMemFenceSupported, directSubmission.systemMemoryFenceAddressSet);
 
     EXPECT_TRUE(directSubmission.initialize(true, false));
 
     EXPECT_EQ(miMemFenceSupported, directSubmission.systemMemoryFenceAddressSet);
 
-    validateFenceProgramming<FamilyType>(directSubmission, 1, 1);
+    validateFenceProgramming<FamilyType>(directSubmission, 1, expectedSysMemFenceAddress);
 }
 
 HWTEST_F(DirectSubmissionDispatchMiMemFenceTest, givenMiMemFenceSupportedWhenDispatchingWithoutInitThenEnableMiMemFenceProgramming) {
     MockDirectSubmissionHw<FamilyType, RenderDispatcher<FamilyType>> directSubmission(*pDevice->getDefaultEngine().commandStreamReceiver);
     FlushStampTracker flushStamp(true);
 
+    uint32_t expectedSysMemFenceAddress = heaplessStateInit ? 0 : 1;
+
     EXPECT_EQ(miMemFenceSupported, directSubmission.miMemFenceRequired);
-    EXPECT_FALSE(directSubmission.systemMemoryFenceAddressSet);
+    EXPECT_EQ(heaplessStateInit && miMemFenceSupported, directSubmission.systemMemoryFenceAddressSet);
 
     EXPECT_TRUE(directSubmission.initialize(false, false));
 
-    EXPECT_FALSE(directSubmission.systemMemoryFenceAddressSet);
+    EXPECT_EQ(heaplessStateInit && miMemFenceSupported, directSubmission.systemMemoryFenceAddressSet);
 
     EXPECT_TRUE(directSubmission.dispatchCommandBuffer(batchBuffer, flushStamp));
 
-    validateFenceProgramming<FamilyType>(directSubmission, 1, 1);
+    validateFenceProgramming<FamilyType>(directSubmission, 1, expectedSysMemFenceAddress);
 
     EXPECT_EQ(miMemFenceSupported, directSubmission.systemMemoryFenceAddressSet);
 }
@@ -190,6 +199,10 @@ HWTEST_F(DirectSubmissionDispatchMiMemFenceTest, givenDebugFlagSetToTrueWhenCrea
     DebugManagerStateRestore restorer;
     debugManager.flags.DirectSubmissionInsertExtraMiMemFenceCommands.set(1);
 
+    if (heaplessStateInit) {
+        GTEST_SKIP();
+    }
+
     MockDirectSubmissionHw<FamilyType, RenderDispatcher<FamilyType>> directSubmission(*pDevice->getDefaultEngine().commandStreamReceiver);
 
     EXPECT_TRUE(directSubmission.miMemFenceRequired);
@@ -237,7 +250,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, DirectSubmissionDispatchBufferTest,
                         directSubmission.getSizeSemaphoreSection(false) +
                         sizeof(MI_LOAD_REGISTER_IMM) +
                         sizeof(MI_LOAD_REGISTER_MEM);
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         submitSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -620,7 +633,7 @@ HWTEST_F(DirectSubmissionDispatchBufferTest,
     EXPECT_EQ(1u, directSubmission.submitCount);
     size_t submitSize = RenderDispatcher<FamilyType>::getSizePreemption() +
                         directSubmission.getSizeSemaphoreSection(false);
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         submitSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -674,7 +687,7 @@ HWTEST_F(DirectSubmissionDispatchBufferTest,
     EXPECT_EQ(1u, directSubmission.handleResidencyCount);
 
     size_t submitSize = directSubmission.getSizeDispatch(false, false, directSubmission.dispatchMonitorFenceRequired(false)) - directSubmission.getSizeNewResourceHandler();
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         submitSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -700,7 +713,7 @@ HWTEST_F(DirectSubmissionDispatchBufferTest,
     EXPECT_EQ(1u, directSubmission.submitCount);
     size_t submitSize = RenderDispatcher<FamilyType>::getSizePreemption() +
                         directSubmission.getSizeSemaphoreSection(false);
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         submitSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -751,7 +764,7 @@ HWTEST_F(DirectSubmissionDispatchBufferTest,
     EXPECT_EQ(1u, directSubmission.handleResidencyCount);
 
     size_t submitSize = directSubmission.getSizeDispatch(false, false, directSubmission.dispatchMonitorFenceRequired(false)) - directSubmission.getSizeNewResourceHandler();
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         submitSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
     if (directSubmission.isRelaxedOrderingEnabled()) {
@@ -844,7 +857,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, DirectSubmissionDispatchBufferTest,
                         directSubmission.getSizeSemaphoreSection(false) +
                         sizeof(MI_LOAD_REGISTER_IMM) +
                         sizeof(MI_LOAD_REGISTER_MEM);
-    if (directSubmission.miMemFenceRequired) {
+    if (directSubmission.miMemFenceRequired && !heaplessStateInit) {
         submitSize += directSubmission.getSizeSystemMemoryFenceAddress();
     }
 
@@ -2190,15 +2203,20 @@ HWTEST2_F(DirectSubmissionRelaxedOrderingTests, givenBcsRelaxedOrderingEnabledWh
 
     auto endingPtr = commandStream.getSpace(0);
 
-    ultCsr->programEndingCmd(commandStream, &endingPtr, true, true);
+    ultCsr->programEndingCmd(commandStream, &endingPtr, true, true, true);
 
-    auto lrrCmd = reinterpret_cast<MI_LOAD_REGISTER_REG *>(commandStream.getCpuBase());
-    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::csGprR3);
-    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::csGprR0);
+    HardwareParse hwParser;
+    hwParser.parseCommands<FamilyType>(commandStream, 0);
+    hwParser.findHardwareCommands<FamilyType>();
+    auto lrrCmdIt = find<MI_LOAD_REGISTER_REG *>(hwParser.cmdList.begin(), hwParser.cmdList.end());
+    auto lrrCmd = genCmdCast<MI_LOAD_REGISTER_REG *>(*lrrCmdIt);
+
+    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR3);
+    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR0);
 
     lrrCmd++;
-    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::csGprR3 + 4);
-    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::csGprR0 + 4);
+    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR3 + 4);
+    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR0 + 4);
 
     auto bbStartCmd = reinterpret_cast<MI_BATCH_BUFFER_START *>(++lrrCmd);
     EXPECT_EQ(1u, bbStartCmd->getIndirectAddressEnable());
@@ -2220,12 +2238,16 @@ HWTEST2_F(DirectSubmissionRelaxedOrderingTests, givenBcsRelaxedOrderingDisabledW
     ultCsr->blitterDirectSubmission.reset(directSubmission);
 
     auto &commandStream = ultCsr->getCS(0x100);
-
     auto endingPtr = commandStream.getSpace(0);
 
-    ultCsr->programEndingCmd(commandStream, &endingPtr, true, false);
+    ultCsr->programEndingCmd(commandStream, &endingPtr, true, false, true);
 
-    auto bbStartCmd = genCmdCast<MI_BATCH_BUFFER_START *>(commandStream.getCpuBase());
+    HardwareParse hwParser;
+    hwParser.parseCommands<FamilyType>(commandStream, 0);
+    hwParser.findHardwareCommands<FamilyType>();
+    auto bbStartCmdIt = find<MI_BATCH_BUFFER_START *>(hwParser.cmdList.begin(), hwParser.cmdList.end());
+    auto bbStartCmd = genCmdCast<MI_BATCH_BUFFER_START *>(*bbStartCmdIt);
+
     ASSERT_NE(nullptr, bbStartCmd);
     EXPECT_EQ(0u, bbStartCmd->getIndirectAddressEnable());
 }
@@ -2246,15 +2268,20 @@ HWTEST2_F(DirectSubmissionRelaxedOrderingTests, whenProgrammingEndingCmdsThenSet
 
     auto endingPtr = commandStream.getSpace(0);
 
-    ultCsr->programEndingCmd(commandStream, &endingPtr, true, true);
+    ultCsr->programEndingCmd(commandStream, &endingPtr, true, true, true);
 
-    auto lrrCmd = reinterpret_cast<MI_LOAD_REGISTER_REG *>(commandStream.getCpuBase());
-    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::csGprR3);
-    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::csGprR0);
+    HardwareParse hwParser;
+    hwParser.parseCommands<FamilyType>(commandStream, 0);
+    hwParser.findHardwareCommands<FamilyType>();
+    auto lrrCmdIt = find<MI_LOAD_REGISTER_REG *>(hwParser.cmdList.begin(), hwParser.cmdList.end());
+    auto lrrCmd = genCmdCast<MI_LOAD_REGISTER_REG *>(*lrrCmdIt);
+
+    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR3);
+    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR0);
 
     lrrCmd++;
-    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::csGprR3 + 4);
-    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::csGprR0 + 4);
+    EXPECT_EQ(lrrCmd->getSourceRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR3 + 4);
+    EXPECT_EQ(lrrCmd->getDestinationRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::csGprR0 + 4);
 
     auto bbStartCmd = reinterpret_cast<MI_BATCH_BUFFER_START *>(++lrrCmd);
     EXPECT_EQ(1u, bbStartCmd->getIndirectAddressEnable());
@@ -2275,9 +2302,14 @@ HWTEST2_F(DirectSubmissionRelaxedOrderingTests, givenBbWithoutRelaxedOrderingDep
 
     auto endingPtr = commandStream.getSpace(0);
 
-    ultCsr->programEndingCmd(commandStream, &endingPtr, true, false);
+    ultCsr->programEndingCmd(commandStream, &endingPtr, true, false, false);
 
-    auto bbStartCmd = genCmdCast<MI_BATCH_BUFFER_START *>(commandStream.getCpuBase());
+    HardwareParse hwParser;
+    hwParser.parseCommands<FamilyType>(commandStream, 0);
+    hwParser.findHardwareCommands<FamilyType>();
+    auto bbStartCmdIt = find<MI_BATCH_BUFFER_START *>(hwParser.cmdList.begin(), hwParser.cmdList.end());
+    auto bbStartCmd = genCmdCast<MI_BATCH_BUFFER_START *>(*bbStartCmdIt);
+
     ASSERT_NE(nullptr, bbStartCmd);
     EXPECT_EQ(0u, bbStartCmd->getIndirectAddressEnable());
 }

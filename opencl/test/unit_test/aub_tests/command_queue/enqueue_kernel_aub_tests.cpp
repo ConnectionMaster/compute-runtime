@@ -113,7 +113,7 @@ struct AUBHelloWorldFixture
 
 using AUBHelloWorld = Test<AUBHelloWorldFixture<AUBHelloWorldFixtureFactory>>;
 
-HWCMDTEST_F(IGFX_GEN8_CORE, AUBHelloWorld, WhenEnqueuingKernelThenAddressesAreAligned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, AUBHelloWorld, WhenEnqueuingKernelThenAddressesAreAligned) {
     typedef typename FamilyType::GPGPU_WALKER GPGPU_WALKER;
     typedef typename FamilyType::STATE_BASE_ADDRESS STATE_BASE_ADDRESS;
     typedef typename FamilyType::MEDIA_INTERFACE_DESCRIPTOR_LOAD MEDIA_INTERFACE_DESCRIPTOR_LOAD;
@@ -276,7 +276,7 @@ struct AUBSimpleArg
     }
 };
 
-HWCMDTEST_F(IGFX_GEN8_CORE, AUBSimpleArg, WhenEnqueingKernelThenAddressesAreAligned) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, AUBSimpleArg, WhenEnqueingKernelThenAddressesAreAligned) {
     typedef typename FamilyType::GPGPU_WALKER GPGPU_WALKER;
     typedef typename FamilyType::STATE_BASE_ADDRESS STATE_BASE_ADDRESS;
     typedef typename FamilyType::MEDIA_INTERFACE_DESCRIPTOR_LOAD MEDIA_INTERFACE_DESCRIPTOR_LOAD;
@@ -429,7 +429,6 @@ INSTANTIATE_TEST_SUITE_P(
 
 struct AUBSimpleArgNonUniformFixture : public KernelAUBFixture<SimpleArgNonUniformKernelFixture> {
     void setUp() {
-        REQUIRE_OCL_21_OR_SKIP(NEO::defaultHwInfo);
         KernelAUBFixture<SimpleArgNonUniformKernelFixture>::setUp();
 
         sizeUserMemory = alignUp(typeItems * typeSize, 64);
@@ -487,9 +486,6 @@ struct AUBSimpleArgNonUniformFixture : public KernelAUBFixture<SimpleArgNonUnifo
     }
 
     void tearDown() {
-        if (NEO::defaultHwInfo->capabilityTable.supportsOcl21Features == false) {
-            return;
-        }
         if (destMemory) {
             alignedFree(destMemory);
             destMemory = nullptr;
@@ -929,7 +925,7 @@ struct AUBBindlessKernel : public KernelAUBFixture<BindlessKernelFixture>,
     DebugManagerStateRestore restorer;
 };
 
-HWTEST2_F(AUBBindlessKernel, DISABLED_givenBindlessCopyKernelWhenEnqueuedThenResultsValidate, IsAtLeastSkl) {
+HWTEST2_F(AUBBindlessKernel, DISABLED_givenBindlessCopyKernelWhenEnqueuedThenResultsValidate, MatchAny) {
     constexpr size_t bufferSize = MemoryConstants::pageSize;
     auto simulatedCsr = AUBFixture::getSimulatedCsr<FamilyType>();
     simulatedCsr->initializeEngine();
@@ -1007,7 +1003,7 @@ HWTEST2_F(AUBBindlessKernel, DISABLED_givenBindlessCopyKernelWhenEnqueuedThenRes
                              bufferDataSrc, bufferSize);
 }
 
-HWTEST2_F(AUBBindlessKernel, DISABLED_givenBindlessCopyImageKernelWhenEnqueuedThenResultsValidate, IsAtLeastSkl) {
+HWTEST2_F(AUBBindlessKernel, DISABLED_givenBindlessCopyImageKernelWhenEnqueuedThenResultsValidate, MatchAny) {
     constexpr unsigned int testWidth = 5;
     constexpr unsigned int testHeight = 1;
     constexpr unsigned int testDepth = 1;

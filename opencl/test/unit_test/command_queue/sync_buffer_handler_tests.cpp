@@ -6,8 +6,8 @@
  */
 
 #include "shared/source/helpers/gfx_core_helper.h"
-#include "shared/source/program/sync_buffer_handler.h"
 #include "shared/source/release_helper/release_helper.h"
+#include "shared/test/common/mocks/mock_sync_buffer_handler.h"
 #include "shared/test/common/mocks/ult_device_factory.h"
 #include "shared/test/common/test_macros/hw_test.h"
 
@@ -21,13 +21,6 @@
 #include "aubstream/engine_node.h"
 
 using namespace NEO;
-
-class MockSyncBufferHandler : public SyncBufferHandler {
-  public:
-    using SyncBufferHandler::bufferSize;
-    using SyncBufferHandler::graphicsAllocation;
-    using SyncBufferHandler::usedBufferSize;
-};
 
 class SyncBufferEnqueueHandlerTest : public EnqueueHandlerTest {
   public:
@@ -142,10 +135,11 @@ HWTEST_TEMPLATED_F(SyncBufferHandlerTest, GivenAllocateSyncBufferPatchAndConcurr
     enqueueNDCount();
 
     auto syncBufferHandler = getSyncBufferHandler();
-    EXPECT_EQ(CommonConstants::maximalSizeOfAtomicType, syncBufferHandler->usedBufferSize);
+    auto minimalSyncBufferSize = alignUp(CommonConstants::minimalSyncBufferSize, CommonConstants::maximalSizeOfAtomicType);
+    EXPECT_EQ(minimalSyncBufferSize, syncBufferHandler->usedBufferSize);
 
     enqueueNDCount();
-    EXPECT_EQ(2u * CommonConstants::maximalSizeOfAtomicType, syncBufferHandler->usedBufferSize);
+    EXPECT_EQ(2u * minimalSyncBufferSize, syncBufferHandler->usedBufferSize);
 }
 
 HWTEST_TEMPLATED_F(SyncBufferHandlerTest, GivenConcurrentKernelWithoutAllocateSyncBufferPatchWhenEnqueuingConcurrentKernelThenSyncBufferIsNotCreated) {
@@ -171,7 +165,7 @@ HWTEST_TEMPLATED_F(SyncBufferHandlerTest, GivenConcurrentKernelWithAllocateSyncB
 }
 
 HWTEST_TEMPLATED_F(SyncBufferHandlerTest, GivenMaxWorkgroupCountWhenEnqueuingConcurrentKernelThenSuccessIsReturned) {
-    auto maxWorkGroupCount = kernel->getMaxWorkGroupCount(workDim, lws, commandQueue);
+    auto maxWorkGroupCount = kernel->getMaxWorkGroupCount(workDim, lws, commandQueue, false);
     workgroupCount[0] = maxWorkGroupCount;
 
     auto retVal = enqueueNDCount();
@@ -179,7 +173,7 @@ HWTEST_TEMPLATED_F(SyncBufferHandlerTest, GivenMaxWorkgroupCountWhenEnqueuingCon
 }
 
 HWTEST_TEMPLATED_F(SyncBufferHandlerTest, GivenTooHighWorkgroupCountWhenEnqueuingConcurrentKernelThenErrorIsReturned) {
-    size_t maxWorkGroupCount = kernel->getMaxWorkGroupCount(workDim, lws, commandQueue);
+    size_t maxWorkGroupCount = kernel->getMaxWorkGroupCount(workDim, lws, commandQueue, false);
     workgroupCount[0] = maxWorkGroupCount + 1;
 
     auto retVal = enqueueNDCount();

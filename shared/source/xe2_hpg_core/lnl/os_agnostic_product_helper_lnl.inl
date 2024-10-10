@@ -26,16 +26,6 @@ bool ProductHelperHw<gfxProduct>::isResolveDependenciesByPipeControlsSupported(c
 }
 
 template <>
-bool ProductHelperHw<gfxProduct>::isEvictionIfNecessaryFlagSupported() const {
-    return true;
-}
-
-template <>
-bool ProductHelperHw<gfxProduct>::isMidThreadPreemptionDisallowedForRayTracingKernels() const {
-    return true;
-}
-
-template <>
 std::optional<aub_stream::ProductFamily> ProductHelperHw<gfxProduct>::getAubStreamProductFamily() const {
     return aub_stream::ProductFamily::Lnl;
 }

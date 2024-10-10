@@ -110,7 +110,7 @@ NEO::SVMAllocsManager *DriverHandleImp::getSvmAllocsManager() {
 }
 
 ze_result_t DriverHandleImp::getApiVersion(ze_api_version_t *version) {
-    *version = ZE_API_VERSION_1_5;
+    *version = ZE_API_VERSION_1_6;
     return ZE_RESULT_SUCCESS;
 }
 
@@ -349,7 +349,7 @@ ze_result_t DriverHandleImp::parseAffinityMaskCombined(uint32_t *pCount, ze_devi
             continue;
         }
 
-        // Combined Device Hierarchy not supported with AllowSingleTileEngineInstancedSubDevices
+        // Combined Device Hierarchy
         // so ignore X.Y
         if (subEntries.size() > 1) {
             continue;
@@ -404,7 +404,7 @@ void DriverHandleImp::initHostUsmAllocPool() {
     if (usmHostAllocPoolingEnabled) {
         NEO::SVMAllocsManager::UnifiedMemoryProperties memoryProperties(InternalMemoryType::hostUnifiedMemory, MemoryConstants::pageSize2M,
                                                                         rootDeviceIndices, deviceBitfields);
-        usmHostMemAllocPool.initialize(svmAllocsManager, memoryProperties, poolSize);
+        usmHostMemAllocPool.initialize(svmAllocsManager, memoryProperties, poolSize, 0u, 1 * MemoryConstants::megaByte);
     }
 }
 

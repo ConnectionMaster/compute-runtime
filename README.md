@@ -77,7 +77,7 @@ Release Notes on the [release page](https://github.com/intel/compute-runtime/rel
 
 Directly linking to the runtime library is not supported:
 * Level Zero applications should link with [Level Zero loader](https://github.com/oneapi-src/level-zero)
-* OpenCL applications should link with [ICD loader library (ocl-icd)](https://github.com/OCL-dev/ocl-icd)
+* OpenCL applications should link with [ICD loader library](https://github.com/KhronosGroup/OpenCL-ICD-Loader)
 
 ## Dependencies
 
@@ -107,7 +107,7 @@ for more details.
 * [Frequently Asked Questions](https://github.com/intel/compute-runtime/blob/master/FAQ.md)
 
 ### Level Zero specific
-* [oneAPI Level Zero specification](https://spec.oneapi.com/versions/latest/elements/l0/source/index.html)
+* [oneAPI Level Zero specification](https://oneapi-src.github.io/level-zero-spec/level-zero/latest/index.html)
 * [Intel(R) OneApi Level Zero Specification API C/C++ header files](https://github.com/oneapi-src/level-zero/)
 * [oneAPI Level Zero tests](https://github.com/oneapi-src/level-zero-tests/)
 

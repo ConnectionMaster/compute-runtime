@@ -38,6 +38,7 @@
 #include "shared/test/common/os_interface/linux/sys_calls_linux_ult.h"
 #include "shared/test/common/test_macros/hw_test.h"
 
+#include "clos_matchers.h"
 #include "gtest/gtest.h"
 
 #include <array>
@@ -1092,7 +1093,7 @@ TEST_F(DrmMemoryManagerTest, GivenAllocationWhenTryingToRegisterIpcExportedThenI
     for (auto *bo : bos) {
         if (bo) {
             EXPECT_TRUE(bo->isBoHandleShared());
-            EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(bo->getHandle()));
+            EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(bo->getHandle(), rootDeviceIndex)));
         }
     }
 
@@ -1104,26 +1105,64 @@ TEST_F(DrmMemoryManagerTest, GivenEmptySharedBoHandlesContainerWhenTryingToGetSh
     ASSERT_TRUE(memoryManager->sharedBoHandles.empty());
 
     const int someNonregisteredHandle{123};
-    auto boHandleWrapper = memoryManager->tryToGetBoHandleWrapperWithSharedOwnership(someNonregisteredHandle);
+    auto boHandleWrapper = memoryManager->tryToGetBoHandleWrapperWithSharedOwnership(someNonregisteredHandle, rootDeviceIndex);
     EXPECT_EQ(someNonregisteredHandle, boHandleWrapper.getBoHandle());
     EXPECT_TRUE(memoryManager->sharedBoHandles.empty());
 }
 
 TEST_F(DrmMemoryManagerTest, GivenWrapperInBoHandlesContainerWhenTryingToGetSharedOwnershipOfWrappedHandleThenGetSharedOwnership) {
     const int boHandle{27};
-    BufferObjectHandleWrapper boHandleWrapper{boHandle};
+    BufferObjectHandleWrapper boHandleWrapper{boHandle, rootDeviceIndex};
 
-    memoryManager->sharedBoHandles.emplace(boHandle, boHandleWrapper.acquireWeakOwnership());
-    ASSERT_EQ(1u, memoryManager->sharedBoHandles.count(boHandle));
+    memoryManager->sharedBoHandles.emplace(std::make_pair(boHandle, rootDeviceIndex), boHandleWrapper.acquireWeakOwnership());
+    ASSERT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex)));
 
     {
-        auto newBoHandleWrapper = memoryManager->tryToGetBoHandleWrapperWithSharedOwnership(boHandle);
+        auto newBoHandleWrapper = memoryManager->tryToGetBoHandleWrapperWithSharedOwnership(boHandle, rootDeviceIndex);
         EXPECT_EQ(boHandle, newBoHandleWrapper.getBoHandle());
-        EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(boHandle));
+        EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex)));
         EXPECT_FALSE(newBoHandleWrapper.canCloseBoHandle());
     }
 
-    EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(boHandle));
+    EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex)));
+    EXPECT_TRUE(boHandleWrapper.canCloseBoHandle());
+}
+
+TEST_F(DrmMemoryManagerTest, GivenWrapperInBoHandlesContainerWhenTryingToGetSharedOwnershipOfWrappedHandleWithDifferentDeviceIndexThenGetNonSharedOwnership) {
+    const int boHandle{27};
+    BufferObjectHandleWrapper boHandleWrapper{boHandle, rootDeviceIndex};
+
+    memoryManager->sharedBoHandles.emplace(std::make_pair(boHandle, rootDeviceIndex), boHandleWrapper.acquireWeakOwnership());
+    ASSERT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex)));
+
+    {
+        auto newBoHandleWrapper = memoryManager->tryToGetBoHandleWrapperWithSharedOwnership(boHandle, rootDeviceIndex + 1);
+        EXPECT_EQ(boHandle, newBoHandleWrapper.getBoHandle());
+        EXPECT_NE(rootDeviceIndex, newBoHandleWrapper.getRootDeviceIndex());
+        EXPECT_EQ(0u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex + 1)));
+        EXPECT_TRUE(newBoHandleWrapper.canCloseBoHandle());
+    }
+
+    EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex)));
+    EXPECT_TRUE(boHandleWrapper.canCloseBoHandle());
+}
+
+TEST_F(DrmMemoryManagerTest, GivenWrapperInBoHandlesContainerWhenTryingToGetSharedOwnershipOfWrappedHandleWithDifferentHandleIndexPairThenGetNonSharedOwnership) {
+    const int boHandle{27};
+    BufferObjectHandleWrapper boHandleWrapper{boHandle, rootDeviceIndex};
+
+    memoryManager->sharedBoHandles.emplace(std::make_pair(boHandle, rootDeviceIndex), boHandleWrapper.acquireWeakOwnership());
+    ASSERT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex)));
+
+    {
+        auto newBoHandleWrapper = memoryManager->tryToGetBoHandleWrapperWithSharedOwnership(boHandle + 1, rootDeviceIndex + 1);
+        EXPECT_NE(boHandle, newBoHandleWrapper.getBoHandle());
+        EXPECT_NE(rootDeviceIndex, newBoHandleWrapper.getRootDeviceIndex());
+        EXPECT_EQ(0u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle + 1, rootDeviceIndex + 1)));
+        EXPECT_TRUE(newBoHandleWrapper.canCloseBoHandle());
+    }
+
+    EXPECT_EQ(1u, memoryManager->sharedBoHandles.count(std::make_pair(boHandle, rootDeviceIndex)));
     EXPECT_TRUE(boHandleWrapper.canCloseBoHandle());
 }
 
@@ -1757,7 +1796,18 @@ TEST_F(DrmMemoryManagerTest, whenCallingAllocateAndReleaseInterruptThenCallIoctl
 }
 
 TEST_F(DrmMemoryManagerTest, whenCallingCreateAndReleaseMediaContextThenCallIoctlHelper) {
-    auto mockIoctlHelper = new MockIoctlHelper(*mock);
+    class MyMockIoctlHelper : public MockIoctlHelper {
+      public:
+        using MockIoctlHelper::MockIoctlHelper;
+
+        bool createMediaContext(uint32_t vmId, void *controlSharedMemoryBuffer, uint32_t controlSharedMemoryBufferSize, void *controlBatchBuffer, uint32_t controlBatchBufferSize, uint64_t &outDoorbell) override {
+            mediaContextVmId = vmId;
+            return MockIoctlHelper::createMediaContext(vmId, controlSharedMemoryBuffer, controlSharedMemoryBufferSize, controlBatchBuffer, controlBatchBufferSize, outDoorbell);
+        }
+
+        uint32_t mediaContextVmId = 0;
+    };
+    auto mockIoctlHelper = new MyMockIoctlHelper(*mock);
 
     auto &drm = static_cast<DrmMockCustom &>(memoryManager->getDrm(rootDeviceIndex));
     drm.ioctlHelper.reset(mockIoctlHelper);
@@ -1769,6 +1819,7 @@ TEST_F(DrmMemoryManagerTest, whenCallingCreateAndReleaseMediaContextThenCallIoct
 
     memoryManager->createMediaContext(rootDeviceIndex, nullptr, 0, nullptr, 0, handle);
     EXPECT_EQ(1u, mockIoctlHelper->createMediaContextCalled);
+    EXPECT_EQ(mock->getVirtualMemoryAddressSpace(0), mockIoctlHelper->mediaContextVmId);
     EXPECT_EQ(0u, mockIoctlHelper->releaseMediaContextCalled);
 
     memoryManager->releaseMediaContext(rootDeviceIndex, handle);
@@ -2999,6 +3050,22 @@ TEST_F(DrmMemoryManagerBasic, givenMemoryManagerWhenCreateAllocationFromHandleIs
     memoryManager->freeGraphicsMemory(allocation);
 }
 
+TEST_F(DrmMemoryManagerBasic, givenMemoryManagerWhenCreateAllocationFromHandleIsCalledThenAllocationIsNotRegisteredNorUnregistered) {
+    std::unique_ptr<TestedDrmMemoryManager> memoryManager(new (std::nothrow) TestedDrmMemoryManager(false,
+                                                                                                    false,
+                                                                                                    true,
+                                                                                                    executionEnvironment));
+    TestedDrmMemoryManager::OsHandleData osHandleData{1u};
+    AllocationProperties properties(rootDeviceIndex, false, MemoryConstants::pageSize, AllocationType::sharedBuffer, false, {});
+
+    auto allocation = memoryManager->createGraphicsAllocationFromSharedHandle(osHandleData, properties, false, false, true, nullptr);
+    EXPECT_NE(nullptr, allocation);
+    memoryManager->freeGraphicsMemory(allocation);
+    EXPECT_EQ(0u, memoryManager->registerSysMemAllocCalled);
+    EXPECT_EQ(0u, memoryManager->registerLocalMemAllocCalled);
+    EXPECT_EQ(0u, memoryManager->unregisterAllocationCalled);
+}
+
 TEST_F(DrmMemoryManagerWithExplicitExpectationsTest, givenDisabledForcePinAndEnabledValidateHostMemoryWhenPinBBAllocationFailsThenUnrecoverableIsCalled) {
     this->mock = static_cast<DrmMockCustom *>(executionEnvironment->rootDeviceEnvironments[0]->osInterface->getDriverModel()->as<Drm>());
     this->mock->reset();
@@ -3974,7 +4041,7 @@ TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
     EXPECT_NE(bo1, nullptr);
     EXPECT_EQ(static_cast<uint32_t>(bo1->getHandle()), mock->outputHandle);
     EXPECT_FALSE(bo1->isBoHandleShared());
-    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(mock->outputHandle);
+    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex));
     EXPECT_EQ(boHandleWrapperIt1, std::end(memoryManager->sharedBoHandles));
 
     memoryManager->freeGraphicsMemory(gfxAllocation1);
@@ -4001,7 +4068,7 @@ TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
     EXPECT_NE(bo1, nullptr);
     EXPECT_EQ(static_cast<uint32_t>(bo1->getHandle()), mock->outputHandle);
     EXPECT_FALSE(bo1->isBoHandleShared());
-    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(mock->outputHandle);
+    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex));
     EXPECT_EQ(boHandleWrapperIt1, std::end(memoryManager->sharedBoHandles));
 
     memoryManager->freeGraphicsMemory(gfxAllocation1);
@@ -4028,7 +4095,7 @@ TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
     EXPECT_NE(bo1, nullptr);
     EXPECT_EQ(static_cast<uint32_t>(bo1->getHandle()), mock->outputHandle);
     EXPECT_TRUE(bo1->isBoHandleShared());
-    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(mock->outputHandle);
+    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex));
     EXPECT_NE(boHandleWrapperIt1, std::end(memoryManager->sharedBoHandles));
     EXPECT_TRUE(boHandleWrapperIt1->second.canCloseBoHandle());
 
@@ -4041,7 +4108,7 @@ TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
     EXPECT_NE(bo2, nullptr);
     EXPECT_EQ(static_cast<uint32_t>(bo2->getHandle()), mock->outputHandle);
     EXPECT_TRUE(bo2->isBoHandleShared());
-    auto boHandleWrapperIt2 = memoryManager->sharedBoHandles.find(mock->outputHandle);
+    auto boHandleWrapperIt2 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex));
     EXPECT_EQ(boHandleWrapperIt2, boHandleWrapperIt1);
     EXPECT_FALSE(boHandleWrapperIt2->second.canCloseBoHandle());
 
@@ -4049,6 +4116,59 @@ TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
     // GEM_CLOSE can be called on BoHandle again
     EXPECT_TRUE(boHandleWrapperIt2->second.canCloseBoHandle());
     memoryManager->freeGraphicsMemory(gfxAllocation1);
+}
+
+TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
+       givenIPCBoHandleAndSharedAllocationReuseDisabledWhenMultipleAllocationsCreatedFromDifferentDevicesThenBoHandlesAreClosedSeparately) {
+    const bool reuseSharedAllocation = false;
+
+    mock->ioctlExpected.primeFdToHandle = 1;
+    mock->ioctlExpected.gemWait = 1;
+    mock->ioctlExpected.gemClose = 1;
+    mock->outputHandle = 88u;
+    bool isHostIpcAllocation = GetParam();
+    AllocationProperties properties(rootDeviceIndex, false, 4096u, AllocationType::sharedBuffer, false, {});
+
+    TestedDrmMemoryManager::OsHandleData osHandleData1{11u};
+    auto gfxAllocation1 = memoryManager->createGraphicsAllocationFromSharedHandle(&osHandleData1, properties, false, isHostIpcAllocation, reuseSharedAllocation, nullptr);
+    DrmAllocation *drmAllocation1 = static_cast<DrmAllocation *>(gfxAllocation1);
+    ASSERT_NE(nullptr, drmAllocation1);
+
+    // BoHandle registered as shared but with WEAK ownership - GEM_CLOSE can be called on it
+    auto bo1 = drmAllocation1->getBO();
+    EXPECT_NE(bo1, nullptr);
+    EXPECT_EQ(static_cast<uint32_t>(bo1->getHandle()), mock->outputHandle);
+    EXPECT_TRUE(bo1->isBoHandleShared());
+    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex));
+    EXPECT_NE(boHandleWrapperIt1, std::end(memoryManager->sharedBoHandles));
+    EXPECT_TRUE(boHandleWrapperIt1->second.canCloseBoHandle());
+
+    TestedDrmMemoryManager::OsHandleData osHandleData2{12u};
+    // two devices in the system, rootDeviceIndex is set to 1, so set rootDeviceInext to 0
+    auto rootDeviceIndex2 = 0;
+    auto rootDeviceEnvironment2 = executionEnvironment->rootDeviceEnvironments[rootDeviceIndex2].get();
+    auto mock2 = static_cast<DrmMockCustom *>(rootDeviceEnvironment2->osInterface->getDriverModel()->as<Drm>());
+    mock2->ioctlExpected.primeFdToHandle = 1;
+    mock2->ioctlExpected.gemWait = 1;
+    mock2->ioctlExpected.gemClose = 1;
+    mock2->outputHandle = 88u;
+    AllocationProperties properties2(rootDeviceIndex2, false, 4096u, AllocationType::sharedBuffer, false, {});
+    auto gfxAllocation2 = memoryManager->createGraphicsAllocationFromSharedHandle(&osHandleData2, properties2, false, isHostIpcAllocation, false, nullptr);
+    DrmAllocation *drmAllocation2 = static_cast<DrmAllocation *>(gfxAllocation2);
+    ASSERT_NE(nullptr, drmAllocation2);
+    // BoHandle registered as shared with WEAK ownership because it's from different root devices - GEM_CLOSE can be called on it
+    auto bo2 = drmAllocation2->getBO();
+    EXPECT_NE(bo2, nullptr);
+    EXPECT_EQ(static_cast<uint32_t>(bo2->getHandle()), mock->outputHandle);
+    EXPECT_TRUE(bo2->isBoHandleShared());
+    auto boHandleWrapperIt2 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex2));
+    EXPECT_NE(boHandleWrapperIt2, boHandleWrapperIt1);
+    EXPECT_TRUE(boHandleWrapperIt2->second.canCloseBoHandle());
+
+    memoryManager->freeGraphicsMemory(gfxAllocation2);
+    memoryManager->freeGraphicsMemory(gfxAllocation1);
+    mock2->testIoctls();
+    mock2->reset();
 }
 
 TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
@@ -4072,7 +4192,7 @@ TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
     EXPECT_NE(bo1, nullptr);
     EXPECT_EQ(static_cast<uint32_t>(bo1->getHandle()), mock->outputHandle);
     EXPECT_TRUE(bo1->isBoHandleShared());
-    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(mock->outputHandle);
+    auto boHandleWrapperIt1 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex));
     EXPECT_NE(boHandleWrapperIt1, std::end(memoryManager->sharedBoHandles));
     EXPECT_TRUE(boHandleWrapperIt1->second.canCloseBoHandle());
 
@@ -4085,7 +4205,7 @@ TEST_P(DrmMemoryManagerWithHostIpcAllocationParamTest,
     EXPECT_NE(bo2, nullptr);
     EXPECT_EQ(static_cast<uint32_t>(bo2->getHandle()), mock->outputHandle);
     EXPECT_TRUE(bo2->isBoHandleShared());
-    auto boHandleWrapperIt2 = memoryManager->sharedBoHandles.find(mock->outputHandle);
+    auto boHandleWrapperIt2 = memoryManager->sharedBoHandles.find(std::make_pair(mock->outputHandle, rootDeviceIndex));
     EXPECT_EQ(boHandleWrapperIt2, boHandleWrapperIt1);
     EXPECT_FALSE(boHandleWrapperIt2->second.canCloseBoHandle());
 
@@ -4908,7 +5028,7 @@ TEST_F(DrmMemoryManagerTest, givenDrmAllocationWithHostPtrWhenItIsCreatedWithCac
     memoryManager->cleanOsHandles(storage, rootDeviceIndex);
 }
 
-HWTEST2_F(DrmMemoryManagerTest, givenDrmAllocationWithHostPtrWhenItIsCreatedWithIncorrectCacheRegionThenReturnNull, IsNotPVC) {
+HWTEST2_F(DrmMemoryManagerTest, givenDrmAllocationWithHostPtrWhenItIsCreatedWithIncorrectCacheRegionThenReturnNull, IsClosUnsupported) {
     mock->ioctlExpected.total = -1;
     auto drm = static_cast<DrmMockCustom *>(executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->osInterface->getDriverModel()->as<Drm>());
     drm->setupCacheInfo(*defaultHwInfo.get());
@@ -4924,7 +5044,7 @@ HWTEST2_F(DrmMemoryManagerTest, givenDrmAllocationWithHostPtrWhenItIsCreatedWith
     EXPECT_EQ(allocation, nullptr);
 }
 
-HWTEST2_F(DrmMemoryManagerTest, givenDrmAllocationWithWithAlignmentFromUserptrWhenItIsCreatedWithIncorrectCacheRegionThenReturnNull, IsNotPVC) {
+HWTEST2_F(DrmMemoryManagerTest, givenDrmAllocationWithWithAlignmentFromUserptrWhenItIsCreatedWithIncorrectCacheRegionThenReturnNull, IsClosUnsupported) {
     mock->ioctlExpected.total = -1;
     auto drm = static_cast<DrmMockCustom *>(executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->osInterface->getDriverModel()->as<Drm>());
     drm->setupCacheInfo(*defaultHwInfo.get());
@@ -7272,6 +7392,28 @@ TEST_F(DrmMemoryManagerWithLocalMemoryTest, givenDrmWhenRetrieveMmapOffsetForBuf
 
     uint64_t offset = 0;
     auto ret = memoryManager->retrieveMmapOffsetForBufferObject(rootDeviceIndex, bo, 0, offset);
+
+    EXPECT_FALSE(ret);
+}
+
+TEST_F(DrmMemoryManagerWithLocalMemoryTest, givenDrmWhenRetrieveMmapOffsetForBufferObjectFailsThenReturnFalseTestErrorDescription) {
+    mock->ioctlExpected.gemMmapOffset = 2;
+    BufferObject bo(rootDeviceIndex, mock, 3, 1, 1024, 0);
+    mock->failOnMmapOffset = true;
+
+    // To set the error value used to create the debug string in retrieveMmapOffsetForBufferObject()
+    mock->errnoValue = -2;
+
+    uint64_t offset = 0;
+    auto ret = memoryManager->retrieveMmapOffsetForBufferObject(rootDeviceIndex, bo, 0, offset);
+
+    const char *systemErrorDescription = nullptr;
+    executionEnvironment->getErrorDescription(&systemErrorDescription);
+
+    char expectedErrorDescription[256];
+    snprintf(expectedErrorDescription, 256, "ioctl(DRM_IOCTL_I915_GEM_MMAP_OFFSET) failed with %d. errno=%d(%s)\n", -1, mock->getErrno(), strerror(mock->getErrno()));
+
+    EXPECT_STREQ(expectedErrorDescription, systemErrorDescription);
 
     EXPECT_FALSE(ret);
 }

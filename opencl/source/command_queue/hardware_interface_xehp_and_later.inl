@@ -153,6 +153,10 @@ inline void HardwareInterface<GfxFamily>::programWalker(
         printf("\nPID:%u, TSP used for Walker: 0x%" PRIX64 ", cmdBuffer pos: 0x%" PRIX64, SysCalls::getProcessId(), gpuVa, commandStream.getCurrentGpuAddressPosition());
     }
 
+    uint32_t workgroupSize = static_cast<uint32_t>(walkerArgs.localWorkSizes[0] * walkerArgs.localWorkSizes[1] * walkerArgs.localWorkSizes[2]);
+
+    uint32_t maxWgCountPerTile = kernel.getMaxWorkGroupCount(dim, walkerArgs.localWorkSizes, &commandQueue, true);
+
     if (partitionWalker) {
         const uint64_t workPartitionAllocationGpuVa = queueCsr.getWorkPartitionAllocationGpuAddress();
         uint32_t partitionCount = 0u;
@@ -164,11 +168,14 @@ inline void HardwareInterface<GfxFamily>::programWalker(
             nullptr,                             // outWalkerPtr
             requiredPartitionDim,                // requiredPartitionDim
             partitionCount,                      // partitionCount
+            workgroupSize,                       // workgroupSize
+            maxWgCountPerTile,                   // maxWgCountPerTile
             false,                               // useSecondaryBatchBuffer
             false,                               // apiSelfCleanup
             queueCsr.getDcFlushSupport(),        // dcFlush
             kernel.isSingleSubdevicePreferred(), // forceExecutionOnSingleTile
-            false};                              // blockDispatchToCommandBuffer
+            false,                               // blockDispatchToCommandBuffer
+            requiredWalkOrder != 0};             // isRequiredWorkGroupOrder
 
         ImplicitScalingDispatch<GfxFamily>::template dispatchCommands<WalkerType>(commandStream,
                                                                                   walkerCmd,
@@ -183,6 +190,7 @@ inline void HardwareInterface<GfxFamily>::programWalker(
             timestampPacketNode->setPacketsUsed(implicitScalingArgs.partitionCount);
         }
     } else {
+        EncodeDispatchKernel<GfxFamily>::setWalkerRegionSettings(walkerCmd, hwInfo, 1, workgroupSize, maxWgCountPerTile, requiredWalkOrder != 0);
         auto computeWalkerOnStream = commandStream.getSpaceForCmd<WalkerType>();
         *computeWalkerOnStream = walkerCmd;
     }

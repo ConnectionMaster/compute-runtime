@@ -29,6 +29,7 @@ struct StateSaveAreaHeader {
     union {
         struct SIP::intelgt_state_save_area regHeader;
         struct SIP::intelgt_state_save_area_V3 regHeaderV3;
+        uint64_t totalWmtpDataSize;
     };
 };
 
@@ -105,6 +106,7 @@ class DebuggerL0 : public NEO::Debugger, NEO::NonCopyableOrMovableClass {
 
     MOCKABLE_VIRTUAL bool attachZebinModuleToSegmentAllocations(const StackVec<NEO::GraphicsAllocation *, 32> &kernelAlloc, uint32_t &moduleHandle, uint32_t elfHandle);
     MOCKABLE_VIRTUAL bool removeZebinModule(uint32_t moduleHandle);
+    void initialize();
 
     void setSingleAddressSpaceSbaTracking(bool value) {
         singleAddressSpaceSbaTracking = value;
@@ -118,8 +120,6 @@ class DebuggerL0 : public NEO::Debugger, NEO::NonCopyableOrMovableClass {
 
   protected:
     static bool initDebuggingInOs(NEO::OSInterface *osInterface);
-
-    void initialize();
 
     NEO::Device *device = nullptr;
     NEO::GraphicsAllocation *sbaAllocation = nullptr;

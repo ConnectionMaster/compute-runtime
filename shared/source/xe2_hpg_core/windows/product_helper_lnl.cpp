@@ -28,12 +28,12 @@ int ProductHelperHw<gfxProduct>::configureHardwareCustom(HardwareInfo *hwInfo, O
 
 template <>
 uint64_t ProductHelperHw<gfxProduct>::overridePatIndex(bool isUncachedType, uint64_t patIndex, AllocationType allocationType) const {
-    if (this->overridePatAndUsageForDcFlushMitigation(allocationType)) {
+    if (this->overridePatToUCAndTwoWayCohForDcFlushMitigation(allocationType)) {
         return 2; // L3: WB, L4: UC, 2-Way coh
     }
 
-    if (allocationType == AllocationType::sharedImage && patIndex == 8u && debugManager.flags.OverrideUncachedSharedImages.get()) { // L3: UC
-        return 13;                                                                                                                  // L3, L4: WB, Non coh
+    if (this->overridePatToUCAndOneWayCohForDcFlushMitigation(allocationType)) {
+        return 1; // L3: WB, L4: UC, 1-Way coh
     }
 
     return patIndex;
@@ -41,6 +41,11 @@ uint64_t ProductHelperHw<gfxProduct>::overridePatIndex(bool isUncachedType, uint
 
 template <>
 bool ProductHelperHw<gfxProduct>::isDirectSubmissionSupported(ReleaseHelper *releaseHelper) const {
+    return true;
+}
+
+template <>
+bool ProductHelperHw<gfxProduct>::mitigateDcFlush() const {
     return true;
 }
 

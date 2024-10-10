@@ -1002,30 +1002,33 @@ TEST_F(DrmBufferObjectTest, whenBoRequiresExplicitResidencyThenTheCorrespondingQ
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperConstructedFromNonSharedHandleThenControlBlockIsNotCreatedAndInternalHandleIsStored) {
     constexpr int boHandle{5};
-    MockBufferObjectHandleWrapper boHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper boHandleWrapper{boHandle, 1u};
 
     EXPECT_EQ(nullptr, boHandleWrapper.controlBlock);
     EXPECT_EQ(boHandle, boHandleWrapper.getBoHandle());
+    EXPECT_EQ(1u, boHandleWrapper.getRootDeviceIndex());
 }
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperConstructedFromNonSharedHandleWhenAskingIfCanBeClosedThenReturnTrue) {
     constexpr int boHandle{21};
-    MockBufferObjectHandleWrapper boHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper boHandleWrapper{boHandle, 1u};
 
     EXPECT_TRUE(boHandleWrapper.canCloseBoHandle());
 }
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperWhenSettingNewValueThenStoreIt) {
     constexpr int boHandle{13};
-    MockBufferObjectHandleWrapper boHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper boHandleWrapper{boHandle, 1u};
 
     boHandleWrapper.setBoHandle(-1);
+    boHandleWrapper.setRootDeviceIndex(4u);
     EXPECT_EQ(-1, boHandleWrapper.getBoHandle());
+    EXPECT_EQ(4u, boHandleWrapper.getRootDeviceIndex());
 }
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperConstructedFromNonSharedHandleWhenMakingItSharedThenControlBlockIsCreatedAndReferenceCounterIsValid) {
     constexpr int boHandle{85};
-    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle, 1u};
     MockBufferObjectHandleWrapper secondBoHandleWrapper = firstBoHandleWrapper.acquireSharedOwnership();
 
     ASSERT_NE(nullptr, firstBoHandleWrapper.controlBlock);
@@ -1039,7 +1042,7 @@ TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperConstructedFromNonSharedHandl
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenMoreThanOneSharedHandleWrapperWhenAskingIfHandleCanBeClosedThenReturnFalse) {
     constexpr int boHandle{121};
-    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle, 1u};
     MockBufferObjectHandleWrapper secondBoHandleWrapper = firstBoHandleWrapper.acquireSharedOwnership();
 
     EXPECT_FALSE(firstBoHandleWrapper.canCloseBoHandle());
@@ -1048,7 +1051,7 @@ TEST(DrmBufferObjectHandleWrapperTest, GivenMoreThanOneSharedHandleWrapperWhenAs
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenControlBlockCreatedWhenOnlyOneReferenceLeftThenHandleCanBeClosed) {
     constexpr int boHandle{121};
-    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle, 1u};
 
     {
         MockBufferObjectHandleWrapper secondBoHandleWrapper = firstBoHandleWrapper.acquireSharedOwnership();
@@ -1065,7 +1068,7 @@ TEST(DrmBufferObjectHandleWrapperTest, GivenControlBlockCreatedWhenOnlyOneRefere
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenControlBlockCreatedWhenOnlyWeakReferencesLeftThenItIsNotDestroyed) {
     constexpr int boHandle{777};
-    auto firstBoHandleWrapper = std::make_unique<MockBufferObjectHandleWrapper>(boHandle);
+    auto firstBoHandleWrapper = std::make_unique<MockBufferObjectHandleWrapper>(boHandle, 1u);
     MockBufferObjectHandleWrapper weakHandleWrapper = firstBoHandleWrapper->acquireWeakOwnership();
 
     ASSERT_NE(nullptr, firstBoHandleWrapper->controlBlock);
@@ -1080,7 +1083,7 @@ TEST(DrmBufferObjectHandleWrapperTest, GivenControlBlockCreatedWhenOnlyWeakRefer
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenControlBlockCreatedWhenWeakReferencesLeftAndOnlyOneStrongReferenceLeftThenHandleCanBeClosed) {
     constexpr int boHandle{353};
-    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle, 1u};
     MockBufferObjectHandleWrapper firstWeakHandleWrapper = firstBoHandleWrapper.acquireWeakOwnership();
     MockBufferObjectHandleWrapper secondWeakHandleWrapper = firstBoHandleWrapper.acquireWeakOwnership();
 
@@ -1099,7 +1102,7 @@ TEST(DrmBufferObjectHandleWrapperTest, GivenControlBlockCreatedWhenWeakReference
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperWhenConstructingMoreThanTwoSharedResourcesControlBlockRemainsTheSameAndReferenceCounterIsUpdatedOnCreationAndDestruction) {
     constexpr int boHandle{85};
-    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle, 1u};
     MockBufferObjectHandleWrapper secondBoHandleWrapper = firstBoHandleWrapper.acquireSharedOwnership();
 
     ASSERT_EQ(firstBoHandleWrapper.controlBlock, secondBoHandleWrapper.controlBlock);
@@ -1121,7 +1124,7 @@ TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperWhenConstructingMoreThanTwoSh
 
 TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperWhenMoveConstructingAnotherObjectThenInternalDataIsCleared) {
     constexpr int boHandle{27};
-    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle};
+    MockBufferObjectHandleWrapper firstBoHandleWrapper{boHandle, 1u};
     MockBufferObjectHandleWrapper secondBoHandleWrapper = firstBoHandleWrapper.acquireSharedOwnership();
 
     auto oldControlBlock = firstBoHandleWrapper.controlBlock;
@@ -1135,59 +1138,4 @@ TEST(DrmBufferObjectHandleWrapperTest, GivenWrapperWhenMoveConstructingAnotherOb
     EXPECT_EQ(-1, firstBoHandleWrapper.boHandle);
 
     EXPECT_EQ(2, secondBoHandleWrapper.controlBlock->refCount);
-}
-
-TEST_F(DrmBufferObjectTest, givenDrmWhenBindOperationFailsWithENOMEMThenBindWithoutLockingIsTried) {
-    struct IoctlHelperPageFaultSupport : public MockIoctlHelper {
-        using MockIoctlHelper::MockIoctlHelper;
-        bool isPageFaultSupported() override { return true; }
-    };
-
-    auto executionEnvironment = new ExecutionEnvironment;
-    executionEnvironment->setDebuggingMode(NEO::DebuggingMode::online);
-    executionEnvironment->prepareRootDeviceEnvironments(1);
-    executionEnvironment->rootDeviceEnvironments[0]->setHwInfoAndInitHelpers(defaultHwInfo.get());
-    executionEnvironment->rootDeviceEnvironments[0]->initGmm();
-    executionEnvironment->rootDeviceEnvironments[0]->osInterface = std::make_unique<OSInterface>();
-
-    auto drm = new DrmMock(*executionEnvironment->rootDeviceEnvironments[0]);
-    drm->requirePerContextVM = false;
-    drm->isVMBindImmediateSupported = true;
-
-    auto ioctlHelper = std::make_unique<IoctlHelperPageFaultSupport>(*drm);
-    ioctlHelper->vmBindResult = -1;
-    ioctlHelper->isWaitBeforeBindRequiredResult = true;
-    drm->ioctlHelper.reset(ioctlHelper.release());
-
-    executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(drm));
-    executionEnvironment->rootDeviceEnvironments[0]->memoryOperationsInterface = DrmMemoryOperationsHandler::create(*drm, 0u, false);
-    uint64_t initFenceValue = 10u;
-    drm->fenceVal[0] = initFenceValue;
-    std::unique_ptr<Device> device(MockDevice::createWithExecutionEnvironment<MockDevice>(defaultHwInfo.get(), executionEnvironment, 0));
-    auto &engines = device->getExecutionEnvironment()->memoryManager->getRegisteredEngines(device->getRootDeviceIndex());
-    auto osContextCount = engines.size();
-    auto contextId = osContextCount / 2;
-    auto osContext = engines[contextId].osContext;
-
-    MockBufferObject bo(device->getRootDeviceIndex(), drm, 3, 0, 0, osContextCount);
-    EXPECT_EQ(bo.isLockable(), true);
-
-    drm->bindBufferObject(osContext, 0, &bo);
-    EXPECT_EQ(bo.isLockable(), true);
-
-    drm->errnoRetVal = ENOMEM;
-    drm->baseErrno = false;
-    drm->bindBufferObject(osContext, 0, &bo);
-    EXPECT_EQ(bo.isLockable(), false);
-}
-
-TEST_F(DrmBufferObjectTest, givenBufferObjectWhenSetIsLockableIsCalledThenIsLockableIsSet) {
-    MockExecutionEnvironment executionEnvironment(defaultHwInfo.get());
-    DrmMock drm(*(executionEnvironment.rootDeviceEnvironments[0].get()));
-    MockBufferObject bo(0, &drm, 3, 0, 0, 1);
-
-    for (auto isLockable : {false, true}) {
-        bo.setIsLockable(isLockable);
-        EXPECT_EQ(isLockable, bo.isLockable());
-    }
 }

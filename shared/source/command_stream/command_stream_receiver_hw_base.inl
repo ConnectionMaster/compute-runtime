@@ -75,7 +75,7 @@ CommandStreamReceiverHw<GfxFamily>::CommandStreamReceiverHw(ExecutionEnvironment
         flatBatchBufferHelper.reset(new FlatBatchBufferHelperHw<GfxFamily>(executionEnvironment));
     }
     defaultSshSize = HeapSize::getDefaultHeapSize(EncodeStates<GfxFamily>::getSshHeapSize());
-    canUse4GbHeaps = are4GbHeapsAvailable();
+    this->use4GbHeaps = are4GbHeapsAvailable();
 
     timestampPacketWriteEnabled = gfxCoreHelper.timestampPacketWriteSupported();
     if (debugManager.flags.EnableTimestampPacket.get() != -1) {
@@ -107,7 +107,7 @@ inline void CommandStreamReceiverHw<GfxFamily>::addBatchBufferEnd(LinearStream &
 
 template <typename GfxFamily>
 inline void CommandStreamReceiverHw<GfxFamily>::programEndingCmd(LinearStream &commandStream, void **patchLocation, bool directSubmissionEnabled,
-                                                                 bool hasRelaxedOrderingDependencies) {
+                                                                 bool hasRelaxedOrderingDependencies, bool isBcs) {
     if (directSubmissionEnabled) {
         uint64_t startAddress = commandStream.getGraphicsAllocation()->getGpuAddress() + commandStream.getUsed();
         if (debugManager.flags.BatchBufferStartPrepatchingWaEnabled.get() == 0) {
@@ -123,8 +123,8 @@ inline void CommandStreamReceiverHw<GfxFamily>::programEndingCmd(LinearStream &c
 
         bool indirect = false;
         if (relaxedOrderingEnabled && hasRelaxedOrderingDependencies) {
-            NEO::EncodeSetMMIO<GfxFamily>::encodeREG(commandStream, RegisterOffsets::csGprR0, RegisterOffsets::csGprR3);
-            NEO::EncodeSetMMIO<GfxFamily>::encodeREG(commandStream, RegisterOffsets::csGprR0 + 4, RegisterOffsets::csGprR3 + 4);
+            NEO::EncodeSetMMIO<GfxFamily>::encodeREG(commandStream, RegisterOffsets::csGprR0, RegisterOffsets::csGprR3, isBcs);
+            NEO::EncodeSetMMIO<GfxFamily>::encodeREG(commandStream, RegisterOffsets::csGprR0 + 4, RegisterOffsets::csGprR3 + 4, isBcs);
 
             indirect = true;
         }
@@ -249,7 +249,7 @@ CompletionStamp CommandStreamReceiverHw<GfxFamily>::flushBcsTask(LinearStream &c
     bool submitCSR = (commandStreamStartCSR != commandStreamCSR.getUsed());
     void *bbEndLocation = nullptr;
 
-    programEndingCmd(commandStreamTask, &bbEndLocation, isBlitterDirectSubmissionEnabled(), dispatchBcsFlags.hasRelaxedOrderingDependencies);
+    programEndingCmd(commandStreamTask, &bbEndLocation, isBlitterDirectSubmissionEnabled(), dispatchBcsFlags.hasRelaxedOrderingDependencies, true);
     EncodeNoop<GfxFamily>::alignToCacheLine(commandStreamTask);
 
     if (submitCSR) {
@@ -530,12 +530,12 @@ CompletionStamp CommandStreamReceiverHw<GfxFamily>::flushTask(
 
     this->makeResident(*tagAllocation);
 
-    if (globalFenceAllocation) {
-        makeResident(*globalFenceAllocation);
+    if (getGlobalFenceAllocation()) {
+        makeResident(*getGlobalFenceAllocation());
     }
 
-    if (preemptionAllocation) {
-        makeResident(*preemptionAllocation);
+    if (getPreemptionAllocation()) {
+        makeResident(*getPreemptionAllocation());
     }
 
     bool debuggingEnabled = device.getDebugger() != nullptr;
@@ -549,8 +549,8 @@ CompletionStamp CommandStreamReceiverHw<GfxFamily>::flushTask(
         makeResident(*debugSurface);
     }
 
-    if (workPartitionAllocation) {
-        makeResident(*workPartitionAllocation);
+    if (getWorkPartitionAllocation()) {
+        makeResident(*getWorkPartitionAllocation());
     }
 
     auto rtBuffer = device.getRTMemoryBackedBuffer();
@@ -846,7 +846,7 @@ inline WaitStatus CommandStreamReceiverHw<GfxFamily>::waitForTaskCountWithKmdNot
 
 template <typename GfxFamily>
 inline void CommandStreamReceiverHw<GfxFamily>::programPreemption(LinearStream &csr, DispatchFlags &dispatchFlags) {
-    PreemptionHelper::programCmdStream<GfxFamily>(csr, dispatchFlags.preemptionMode, this->lastPreemptionMode, preemptionAllocation);
+    PreemptionHelper::programCmdStream<GfxFamily>(csr, dispatchFlags.preemptionMode, this->lastPreemptionMode, getPreemptionAllocation());
     this->lastPreemptionMode = dispatchFlags.preemptionMode;
 }
 
@@ -866,7 +866,7 @@ inline void CommandStreamReceiverHw<GfxFamily>::programStateSip(LinearStream &cm
 template <typename GfxFamily>
 inline void CommandStreamReceiverHw<GfxFamily>::programPreamble(LinearStream &csr, Device &device, uint32_t &newL3Config) {
     if (!this->isPreambleSent) {
-        PreambleHelper<GfxFamily>::programPreamble(&csr, device, newL3Config, this->preemptionAllocation, EngineHelpers::isBcs(osContext->getEngineType()));
+        PreambleHelper<GfxFamily>::programPreamble(&csr, device, newL3Config, getPreemptionAllocation(), EngineHelpers::isBcs(osContext->getEngineType()));
         this->isPreambleSent = true;
         this->lastSentL3Config = newL3Config;
     }
@@ -885,7 +885,7 @@ inline void CommandStreamReceiverHw<GfxFamily>::programVFEState(LinearStream &cs
 
         auto isCooperative = dispatchFlags.kernelExecutionType == KernelExecutionType::concurrent;
         auto disableOverdispatch = (dispatchFlags.additionalKernelExecInfo != AdditionalKernelExecInfo::notSet);
-        this->streamProperties.frontEndState.setPropertiesAll(isCooperative, dispatchFlags.disableEUFusion, disableOverdispatch, osContext->isEngineInstanced());
+        this->streamProperties.frontEndState.setPropertiesAll(isCooperative, dispatchFlags.disableEUFusion, disableOverdispatch);
 
         auto &gfxCoreHelper = getGfxCoreHelper();
         auto engineGroupType = gfxCoreHelper.getEngineGroupType(getOsContext().getEngineType(), getOsContext().getEngineUsage(), hwInfo);
@@ -943,10 +943,6 @@ void CommandStreamReceiverHw<GfxFamily>::resetKmdNotifyHelper(KmdNotifyHelper *n
     if (kmdNotifyHelper->quickKmdSleepForSporadicWaitsEnabled()) {
         kmdNotifyHelper->updateLastWaitForCompletionTimestamp();
     }
-}
-
-template <typename GfxFamily>
-void CommandStreamReceiverHw<GfxFamily>::setClearSlmWorkAroundParameter(PipeControlArgs &args) {
 }
 
 template <typename GfxFamily>
@@ -1022,7 +1018,7 @@ TaskCountType CommandStreamReceiverHw<GfxFamily>::flushBcsTask(const BlitPropert
     }
 
     if (isRelaxedOrderingDispatch) {
-        RelaxedOrderingHelper::encodeRegistersBeforeDependencyCheckers<GfxFamily>(commandStream);
+        RelaxedOrderingHelper::encodeRegistersBeforeDependencyCheckers<GfxFamily>(commandStream, true);
     }
 
     NEO::EncodeDummyBlitWaArgs waArgs{false, rootDeviceEnvironment.get()};
@@ -1109,7 +1105,7 @@ TaskCountType CommandStreamReceiverHw<GfxFamily>::flushBcsTask(const BlitPropert
     }
 
     void *endingCmdPtr = nullptr;
-    programEndingCmd(commandStream, &endingCmdPtr, blitterDirectSubmission, isRelaxedOrderingDispatch);
+    programEndingCmd(commandStream, &endingCmdPtr, blitterDirectSubmission, isRelaxedOrderingDispatch, true);
 
     EncodeNoop<GfxFamily>::alignToCacheLine(commandStream);
 
@@ -1240,7 +1236,7 @@ SubmissionStatus CommandStreamReceiverHw<GfxFamily>::flushPipeControl(bool state
 template <typename GfxFamily>
 SubmissionStatus CommandStreamReceiverHw<GfxFamily>::flushSmallTask(LinearStream &commandStreamTask, size_t commandStreamStartTask) {
     void *endingCmdPtr = nullptr;
-    programEndingCmd(commandStreamTask, &endingCmdPtr, isAnyDirectSubmissionEnabled(), false);
+    programEndingCmd(commandStreamTask, &endingCmdPtr, isAnyDirectSubmissionEnabled(), false, EngineHelpers::isBcs(this->osContext->getEngineType()));
 
     auto bytesToPad = EncodeBatchBufferStartOrEnd<GfxFamily>::getBatchBufferStartSize() -
                       EncodeBatchBufferStartOrEnd<GfxFamily>::getBatchBufferEndSize();
@@ -1328,7 +1324,7 @@ inline void CommandStreamReceiverHw<GfxFamily>::programEpilogue(LinearStream &cs
 
         addBatchBufferStart(reinterpret_cast<typename GfxFamily::MI_BATCH_BUFFER_START *>(*batchBufferEndLocation), gpuAddress, false);
         this->programEpliogueCommands(csr, dispatchFlags);
-        programEndingCmd(csr, batchBufferEndLocation, isDirectSubmissionEnabled(), false);
+        programEndingCmd(csr, batchBufferEndLocation, isDirectSubmissionEnabled(), false, EngineHelpers::isBcs(this->osContext->getEngineType()));
         EncodeNoop<GfxFamily>::alignToCacheLine(csr);
     }
 }
@@ -1571,7 +1567,6 @@ inline void CommandStreamReceiverHw<GfxFamily>::programStateBaseAddress(const In
                                                                         bool stateBaseAddressDirty) {
 
     const auto bindlessHeapsHelper = device.getBindlessHeapsHelper();
-    const bool isBindlessKernel = !dispatchFlags.disableGlobalSSH;
 
     auto &hwInfo = this->peekHwInfo();
 
@@ -1586,8 +1581,8 @@ inline void CommandStreamReceiverHw<GfxFamily>::programStateBaseAddress(const In
     int64_t surfaceStateBaseAddress = 0;
     size_t surfaceStateSize = 0;
     if (ssh != nullptr) {
-        surfaceStateBaseAddress = NEO::getStateBaseAddress(*ssh, bindlessHeapsHelper, isBindlessKernel);
-        surfaceStateSize = NEO::getStateSize(*ssh, bindlessHeapsHelper, isBindlessKernel);
+        surfaceStateBaseAddress = NEO::getStateBaseAddressForSsh(*ssh, bindlessHeapsHelper);
+        surfaceStateSize = NEO::getStateSizeForSsh(*ssh, bindlessHeapsHelper);
     }
 
     bool dshDirty = hasDsh ? dshState.updateAndCheck(dsh, dynamicStateBaseAddress, dynamicStateSize) : false;
@@ -2120,12 +2115,12 @@ void CommandStreamReceiverHw<GfxFamily>::handleImmediateFlushAllocationsResidenc
                                                                                   LinearStream &csrStream) {
     this->makeResident(*tagAllocation);
 
-    if (globalFenceAllocation) {
-        makeResident(*globalFenceAllocation);
+    if (getGlobalFenceAllocation()) {
+        makeResident(*getGlobalFenceAllocation());
     }
 
-    if (workPartitionAllocation) {
-        makeResident(*workPartitionAllocation);
+    if (getWorkPartitionAllocation()) {
+        makeResident(*getWorkPartitionAllocation());
     }
 
     if (device.getRTMemoryBackedBuffer()) {
@@ -2136,8 +2131,8 @@ void CommandStreamReceiverHw<GfxFamily>::handleImmediateFlushAllocationsResidenc
         makeResident(*csrStream.getGraphicsAllocation());
     }
 
-    if (preemptionAllocation) {
-        makeResident(*preemptionAllocation);
+    if (getPreemptionAllocation()) {
+        makeResident(*getPreemptionAllocation());
     }
 
     if (device.isStateSipRequired()) {
@@ -2190,7 +2185,7 @@ void CommandStreamReceiverHw<GfxFamily>::dispatchImmediateFlushClientBufferComma
 
     makeResident(*immediateCommandStream.getGraphicsAllocation());
 
-    programEndingCmd(immediateCommandStream, &flushData.endPtr, isDirectSubmissionEnabled(), dispatchFlags.hasRelaxedOrderingDependencies);
+    programEndingCmd(immediateCommandStream, &flushData.endPtr, isDirectSubmissionEnabled(), dispatchFlags.hasRelaxedOrderingDependencies, EngineHelpers::isBcs(this->osContext->getEngineType()));
     EncodeNoop<GfxFamily>::alignToCacheLine(immediateCommandStream);
 }
 
@@ -2293,7 +2288,7 @@ inline BatchBuffer CommandStreamReceiverHw<GfxFamily>::prepareBatchBufferForSubm
     // If the CSR has work in its CS, flush it before the task
 
     if (submitTask) {
-        programEndingCmd(commandStreamTask, &bbEndLocation, directSubmissionEnabled, dispatchFlags.hasRelaxedOrderingDependencies);
+        programEndingCmd(commandStreamTask, &bbEndLocation, directSubmissionEnabled, dispatchFlags.hasRelaxedOrderingDependencies, EngineHelpers::isBcs(this->osContext->getEngineType()));
         EncodeNoop<GfxFamily>::emitNoop(commandStreamTask, bbEndPaddingSize);
         EncodeNoop<GfxFamily>::alignToCacheLine(commandStreamTask);
 
@@ -2306,7 +2301,7 @@ inline BatchBuffer CommandStreamReceiverHw<GfxFamily>::prepareBatchBufferForSubm
         this->programEpilogue(commandStreamCSR, device, &bbEndLocation, dispatchFlags);
 
     } else if (submitCSR) {
-        programEndingCmd(commandStreamCSR, &bbEndLocation, directSubmissionEnabled, dispatchFlags.hasRelaxedOrderingDependencies);
+        programEndingCmd(commandStreamCSR, &bbEndLocation, directSubmissionEnabled, dispatchFlags.hasRelaxedOrderingDependencies, EngineHelpers::isBcs(this->osContext->getEngineType()));
         EncodeNoop<GfxFamily>::emitNoop(commandStreamCSR, bbEndPaddingSize);
         EncodeNoop<GfxFamily>::alignToCacheLine(commandStreamCSR);
         DEBUG_BREAK_IF(commandStreamCSR.getUsed() > commandStreamCSR.getMaxAvailableSpace());

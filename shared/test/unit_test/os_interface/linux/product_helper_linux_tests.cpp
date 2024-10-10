@@ -8,6 +8,7 @@
 #include "shared/test/unit_test/os_interface/linux/product_helper_linux_tests.h"
 
 #include "shared/source/command_stream/preemption_mode.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/os_interface/linux/i915.h"
 #include "shared/source/os_interface/os_interface.h"
@@ -48,21 +49,6 @@ struct MockProductHelperTestLinux : ProductHelperTestLinux {
 TEST_F(MockProductHelperTestLinux, GivenDummyConfigWhenConfiguringHwInfoThenSucceeds) {
     int ret = mockProductHelper->configureHwInfoDrm(&pInHwInfo, &outHwInfo, *executionEnvironment->rootDeviceEnvironments[0].get());
     EXPECT_EQ(0, ret);
-}
-
-HWTEST2_F(MockProductHelperTestLinux, givenDebugFlagSetWhenEnablingBlitterOperationsSupportThenIgnore, IsAtMostGen11) {
-    DebugManagerStateRestore restore{};
-    HardwareInfo hardwareInfo = *defaultHwInfo;
-
-    debugManager.flags.EnableBlitterOperationsSupport.set(1);
-    mockProductHelper->configureHardwareCustom(&hardwareInfo, nullptr);
-    EXPECT_FALSE(hardwareInfo.capabilityTable.blitterOperationsSupported);
-}
-
-HWTEST2_F(MockProductHelperTestLinux, givenUnsupportedChipsetUniqueUUIDWhenGettingUuidThenReturnFalse, IsAtMostGen11) {
-    auto &productHelper = executionEnvironment->rootDeviceEnvironments[0]->getHelper<ProductHelper>();
-    std::array<uint8_t, ProductHelper::uuidSize> id;
-    EXPECT_FALSE(productHelper.getUuid(nullptr, 0u, 0u, id));
 }
 
 TEST_F(MockProductHelperTestLinux, GivenDummyConfigThenEdramIsDetected) {
@@ -160,11 +146,13 @@ HWTEST_F(MockProductHelperTestLinux, GivenPreemptionDrmEnabledMidThreadOnWhenCon
 
     mockProductHelper->enableMidThreadPreemption = true;
 
-    UnitTestHelper<FamilyType>::setExtraMidThreadPreemptionFlag(pInHwInfo, true);
+    pInHwInfo.featureTable.flags.ftrWalkerMTP = true;
 
     int ret = mockProductHelper->configureHwInfoDrm(&pInHwInfo, &outHwInfo, *executionEnvironment->rootDeviceEnvironments[0].get());
     EXPECT_EQ(0, ret);
-    EXPECT_EQ(PreemptionMode::MidThread, outHwInfo.capabilityTable.defaultPreemptionMode);
+    if (getRootDeviceEnvironment().compilerProductHelper->isMidThreadPreemptionSupported(outHwInfo)) {
+        EXPECT_EQ(PreemptionMode::MidThread, outHwInfo.capabilityTable.defaultPreemptionMode);
+    }
     EXPECT_TRUE(drm->isPreemptionSupported());
 }
 

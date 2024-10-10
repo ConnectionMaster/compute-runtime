@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2023 Intel Corporation
+ * Copyright (C) 2018-2024 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -46,7 +46,7 @@ TEST_F(LocalWorkSizeTest, givenDisableEUFusionWhenCreatingWorkSizeInfoThenCorrec
     bool fusedDispatchEnabled = gfxCoreHelper.isFusedEuDispatchEnabled(*defaultHwInfo, true);
     auto wgsMultiple = fusedDispatchEnabled ? 2 : 1;
 
-    uint32_t maxBarriersPerHSlice = (defaultHwInfo->platform.eRenderCoreFamily >= IGFX_GEN9_CORE) ? 32 : 16;
+    uint32_t maxBarriersPerHSlice = 32;
     uint32_t expectedMinWGS = wgsMultiple * simdSize * numThreadsPerSubS / maxBarriersPerHSlice;
     EXPECT_EQ(expectedMinWGS, wsInfo.minWorkGroupSize);
 }
@@ -829,24 +829,6 @@ TEST_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenItHasCor
     EXPECT_EQ(workSizeInfo.numThreadsPerSubSlice, threadsPerEu * euPerSubSlice);
 }
 
-HWTEST2_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenWorkgroupSizeIsCorrect, IsAtMostGen11) {
-    MockClDevice device{new MockDevice};
-    MockKernelWithInternals kernel(device);
-    kernel.kernelInfo.kernelDescriptor.kernelAttributes.barrierCount = 1;
-    DispatchInfo dispatchInfo;
-    dispatchInfo.setClDevice(&device);
-    dispatchInfo.setKernel(kernel.mockKernel);
-
-    const uint32_t maxBarriersPerHSlice = (defaultHwInfo->platform.eRenderCoreFamily >= IGFX_GEN9_CORE) ? 32 : 16;
-    const uint32_t nonFusedMinWorkGroupSize = static_cast<uint32_t>(device.getSharedDeviceInfo().maxNumEUsPerSubSlice) *
-                                              device.getSharedDeviceInfo().numThreadsPerEU *
-                                              static_cast<uint32_t>(kernel.mockKernel->getKernelInfo().getMaxSimdSize()) /
-                                              maxBarriersPerHSlice;
-    WorkSizeInfo workSizeInfo = createWorkSizeInfoFromDispatchInfo(dispatchInfo);
-
-    EXPECT_EQ(nonFusedMinWorkGroupSize, workSizeInfo.minWorkGroupSize);
-}
-
 using IsCoreWithFusedEu = IsWithinGfxCore<IGFX_GEN12LP_CORE, IGFX_XE_HP_CORE>;
 
 HWTEST2_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenTestEuFusionFtr, IsCoreWithFusedEu) {
@@ -857,7 +839,7 @@ HWTEST2_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenTestE
     dispatchInfo.setClDevice(&device);
     dispatchInfo.setKernel(kernel.mockKernel);
 
-    const uint32_t maxBarriersPerHSlice = (defaultHwInfo->platform.eRenderCoreFamily >= IGFX_GEN9_CORE) ? 32 : 16;
+    const uint32_t maxBarriersPerHSlice = 32;
     const uint32_t nonFusedMinWorkGroupSize = static_cast<uint32_t>(device.getSharedDeviceInfo().maxNumEUsPerSubSlice) *
                                               device.getSharedDeviceInfo().numThreadsPerEU *
                                               static_cast<uint32_t>(kernel.mockKernel->getKernelInfo().getMaxSimdSize()) /
@@ -869,7 +851,7 @@ HWTEST2_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenTestE
     EXPECT_EQ(fusedMinWorkGroupSize, workSizeInfo.minWorkGroupSize);
 }
 
-HWTEST2_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenTestEuFusionFtrForcedByDebugManager, IsAtLeastGen12lp) {
+HWTEST2_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenTestEuFusionFtrForcedByDebugManager, MatchAny) {
     DebugManagerStateRestore dbgRestore;
     MockClDevice device{new MockDevice};
     MockKernelWithInternals kernel(device);
@@ -900,7 +882,7 @@ HWTEST2_F(LocalWorkSizeTest, givenDispatchInfoWhenWorkSizeInfoIsCreatedThenTestE
     }
 }
 
-HWTEST2_F(LocalWorkSizeTest, givenWorkSizeInfoIsCreatedWithHwInfoThenTestEuFusionFtrForcedByDebugManager, IsAtLeastGen12lp) {
+HWTEST2_F(LocalWorkSizeTest, givenWorkSizeInfoIsCreatedWithHwInfoThenTestEuFusionFtrForcedByDebugManager, MatchAny) {
     DebugManagerStateRestore dbgRestore;
 
     const uint32_t nonFusedMinWorkGroupSize = 36 * 16 / 32;

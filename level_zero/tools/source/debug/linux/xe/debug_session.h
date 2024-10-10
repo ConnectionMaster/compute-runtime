@@ -71,6 +71,7 @@ struct DebugSessionLinuxXe : DebugSessionLinux {
     bool handleMetadataOpEvent(drm_xe_eudebug_event_vm_bind_op_metadata *vmBindOpMetadata);
     void updateContextAndLrcHandlesForThreadsWithAttention(EuThread::ThreadId threadId, AttentionEventFields &attention) override;
     int eventAckIoctl(EventToAck &event) override;
+    MOCKABLE_VIRTUAL int getEuControlCmdUnlock() const;
     Module &getModule(uint64_t moduleHandle) override {
         auto connection = clientHandleToConnection[clientHandle].get();
         DEBUG_BREAK_IF(connection->metaDataToModule.find(moduleHandle) == connection->metaDataToModule.end());
@@ -153,6 +154,9 @@ struct DebugSessionLinuxXe : DebugSessionLinux {
                                                                   uint64_t memoryHandle,
                                                                   const void *stateSaveArea,
                                                                   uint32_t tileIndex) override {}
+
+    void pushApiEventForTileSession(uint32_t tileIndex, zet_debug_event_t &debugEvent) override { UNRECOVERABLE_IF(true) }
+    void setPageFaultForTileSession(uint32_t tileIndex, EuThread::ThreadId threadId, bool hasPageFault) override{UNRECOVERABLE_IF(true)}
 
     uint64_t euControlInterruptSeqno = 0;
 

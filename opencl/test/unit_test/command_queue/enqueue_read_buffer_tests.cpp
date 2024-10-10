@@ -60,7 +60,7 @@ HWTEST_F(EnqueueReadBufferTypeTest, GivenNullUserPointerWhenReadingBufferThenInv
     EXPECT_EQ(CL_INVALID_VALUE, retVal);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenGpgpuWalkerIsProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenGpgpuWalkerIsProgrammedCorrectly) {
     typedef typename FamilyType::GPGPU_WALKER GPGPU_WALKER;
 
     srcBuffer->forceDisallowCPUCopy = true;
@@ -174,8 +174,18 @@ HWTEST_F(EnqueueReadBufferTypeTest, WhenReadingBufferThenIndirectDataIsAdded) {
     auto kernel = multiDispatchInfo.begin()->getKernel();
     auto kernelDescriptor = &kernel->getKernelInfo().kernelDescriptor;
 
+    auto crossThreadDatSize = kernel->getCrossThreadDataSize();
+    auto inlineDataSize = UnitTestHelper<FamilyType>::getInlineDataSize(pCmdQ->getHeaplessModeEnabled());
+    bool crossThreadDataFitsInInlineData = (crossThreadDatSize <= inlineDataSize);
+
     EXPECT_TRUE(UnitTestHelper<FamilyType>::evaluateDshUsage(dshBefore, pDSH->getUsed(), kernelDescriptor, rootDeviceIndex));
-    EXPECT_NE(iohBefore, pIOH->getUsed());
+
+    if (crossThreadDataFitsInInlineData) {
+        EXPECT_EQ(iohBefore, pIOH->getUsed());
+    } else {
+        EXPECT_NE(iohBefore, pIOH->getUsed());
+    }
+
     if (kernel->usesBindfulAddressingForBuffers()) {
         EXPECT_NE(sshBefore, pSSH->getUsed());
     }
@@ -187,7 +197,7 @@ HWTEST_F(EnqueueReadBufferTypeTest, WhenReadingBufferThenLoadRegisterImmediateL3
     validateL3Programming<FamilyType>(cmdList, itorWalker);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, WhenEnqueueIsDoneThenStateBaseAddressIsProperlyProgrammed) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadBufferTypeTest, WhenEnqueueIsDoneThenStateBaseAddressIsProperlyProgrammed) {
     srcBuffer->forceDisallowCPUCopy = true;
     enqueueReadBuffer<FamilyType>();
     auto &ultCsr = this->pDevice->getUltCommandStreamReceiver<FamilyType>();
@@ -198,7 +208,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, WhenEnqueueIsDoneThenStat
                                          pDSH, pIOH, pSSH, itorPipelineSelect, itorWalker, cmdList, 0llu);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenMediaInterfaceDescriptorLoadIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenMediaInterfaceDescriptorLoadIsCorrect) {
     typedef typename FamilyType::MEDIA_INTERFACE_DESCRIPTOR_LOAD MEDIA_INTERFACE_DESCRIPTOR_LOAD;
     typedef typename FamilyType::INTERFACE_DESCRIPTOR_DATA INTERFACE_DESCRIPTOR_DATA;
 
@@ -227,7 +237,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenMedi
     FamilyType::Parse::template validateCommand<MEDIA_INTERFACE_DESCRIPTOR_LOAD *>(cmdList.begin(), itorCmd);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenInterfaceDescriptorDataIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenInterfaceDescriptorDataIsCorrect) {
     typedef typename FamilyType::MEDIA_INTERFACE_DESCRIPTOR_LOAD MEDIA_INTERFACE_DESCRIPTOR_LOAD;
     typedef typename FamilyType::STATE_BASE_ADDRESS STATE_BASE_ADDRESS;
     typedef typename FamilyType::INTERFACE_DESCRIPTOR_DATA INTERFACE_DESCRIPTOR_DATA;
@@ -272,13 +282,13 @@ HWTEST2_F(EnqueueReadBufferTypeTest, WhenReadingBufferThenPipelineSelectIsProgra
     EXPECT_EQ(1, numCommands);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenMediaVfeStateIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadBufferTypeTest, WhenReadingBufferThenMediaVfeStateIsCorrect) {
     srcBuffer->forceDisallowCPUCopy = true;
     enqueueReadBuffer<FamilyType>();
     validateMediaVFEState<FamilyType>(&pDevice->getHardwareInfo(), cmdMediaVfeState, cmdList, itorMediaVfeState);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadBufferTypeTest, GivenBlockingWhenReadingBufferThenPipeControlAfterWalkerWithDcFlushSetIsAdded) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadBufferTypeTest, GivenBlockingWhenReadingBufferThenPipeControlAfterWalkerWithDcFlushSetIsAdded) {
     typedef typename FamilyType::PIPE_CONTROL PIPE_CONTROL;
 
     srcBuffer->forceDisallowCPUCopy = true;

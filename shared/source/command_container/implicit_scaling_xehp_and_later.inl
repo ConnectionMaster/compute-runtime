@@ -49,6 +49,10 @@ WalkerPartition::WalkerPartitionArgs prepareWalkerPartitionArgs(ImplicitScalingD
 
     args.blockDispatchToCommandBuffer = dispatchCommandArgs.blockDispatchToCommandBuffer;
 
+    args.workgroupSize = dispatchCommandArgs.workgroupSize;
+    args.maxWgCountPerTile = dispatchCommandArgs.maxWgCountPerTile;
+    args.isRequiredWorkGroupOrder = dispatchCommandArgs.isRequiredWorkGroupOrder;
+
     return args;
 }
 
@@ -214,7 +218,7 @@ inline void ImplicitScalingDispatch<GfxFamily>::dispatchRegisterConfiguration(Li
                                                                               bool isBcs) {
     EncodeSetMMIO<GfxFamily>::encodeMEM(commandStream,
                                         PartitionRegisters<GfxFamily>::wparidCCSOffset,
-                                        workPartitionSurfaceAddress);
+                                        workPartitionSurfaceAddress, isBcs);
     dispatchOffsetRegister(commandStream, addressOffset, isBcs);
 }
 

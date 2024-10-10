@@ -50,8 +50,28 @@ __kernel void kernel_copy(__global char *dst, __global char *src){
 )===";
 
 const char *source2 = R"===(
+typedef ulong8 TYPE;
+__attribute__((reqd_work_group_size(32, 1, 1)))  // force LWS to 32
+__attribute__((intel_reqd_sub_group_size(16)))   // force SIMD to 16
 __kernel void kernel_fill(__global char *dst, char value){
     uint gid = get_global_id(0);
+    __local TYPE locMem[32];
+    {
+        size_t lid = get_local_id(0);
+        size_t gid = get_global_id(0);
+
+        TYPE res1 = (TYPE)(dst[0]);
+        TYPE res2 = (TYPE)(dst[0] + 1);
+        TYPE res3 = (TYPE)(dst[0] + 2);
+
+        locMem[lid] = res1;
+        barrier(CLK_LOCAL_MEM_FENCE);
+        barrier(CLK_GLOBAL_MEM_FENCE);
+
+        TYPE res = (locMem[dst[lid] % 32] * res3) * res2 + res1;
+        dst[gid] += (char)res[lid % 16];
+    }
+    barrier(CLK_GLOBAL_MEM_FENCE);
     dst[gid] = value;
 }
 )===";
@@ -87,7 +107,7 @@ __kernel void image_read_sampler_oob(__global float4 *dst, image2d_t img, sample
     int2 coord = {get_global_id(0) + 1, get_global_id(1) + 1};
     size_t dstOffset = get_global_id(1) * get_image_width(img) + get_global_id(0);
     dst[dstOffset] = read_imagef(img, sampler, coord);
-    printf(" gid[ %d, %d]  %.2f , %.2f , %.2f , %.2f \n", get_global_id(0), get_global_id(1), dst[dstOffset].x, dst[dstOffset].y, dst[dstOffset].z, dst[dstOffset].w );
+    printf(" gid[ %zu, %zu]  %.2f , %.2f , %.2f , %.2f \n", get_global_id(0), get_global_id(1), dst[dstOffset].x, dst[dstOffset].y, dst[dstOffset].z, dst[dstOffset].w );
 }
 )===";
 
@@ -188,7 +208,8 @@ enum class ExecutionMode : uint32_t {
 enum class AddressingMode : uint32_t {
     defaultMode,
     bindless,
-    bindlessImages
+    bindlessImages,
+    bindful
 };
 
 typedef ze_result_t(ZE_APICALL *zeImageGetDeviceOffsetExp_pfn)(
@@ -208,18 +229,28 @@ typedef ze_result_t(ZE_APICALL *zeMemGetPitchFor2dImage_pfn)(
 zeMemGetPitchFor2dImage_pfn zeMemGetPitchFor2dImageFunctionPtr = nullptr;
 
 void createModule(const char *sourceCode, AddressingMode addressing, const ze_context_handle_t context, const ze_device_handle_t device,
-                  const std::string &deviceName, const std::string &revisionId, ze_module_handle_t &module, const std::string &internalOption) {
+                  const std::string &deviceName, const std::string &revisionId, ze_module_handle_t &module, const std::string &internalOption, bool forceScratch) {
     std::string buildLog;
     std::string bindlessOptions = "-cl-intel-use-bindless-mode -cl-intel-use-bindless-advanced-mode";
     std::string bindlessImagesOptions = "-cl-intel-use-bindless-images -cl-intel-use-bindless-advanced-mode";
-    std::string internalOptions = internalOption + " ";
+    std::string internalOptions = internalOption;
+    std::string statefulMode;
     if (addressing == AddressingMode::bindless) {
-        internalOptions += bindlessOptions;
+        statefulMode = "bindless";
+    }
+    if (addressing == AddressingMode::bindful) {
+        statefulMode = "bindful";
     }
     if (addressing == AddressingMode::bindlessImages) {
-        internalOptions += bindlessImagesOptions;
+        internalOptions += " " + bindlessImagesOptions;
     }
-    auto bin = LevelZeroBlackBoxTests::compileToNative(sourceCode, deviceName, revisionId, "-cl-std=CL3.0", internalOptions, buildLog);
+
+    std::string buildFlags = "-cl-std=CL3.0";
+    if (forceScratch) {
+        std::string scratchOpts(LevelZeroBlackBoxTests::scratchKernelBuildOptions);
+        buildFlags += " " + scratchOpts;
+    }
+    auto bin = LevelZeroBlackBoxTests::compileToNative(sourceCode, deviceName, revisionId, buildFlags, internalOptions, statefulMode, buildLog);
     LevelZeroBlackBoxTests::printBuildLog(buildLog);
     SUCCESS_OR_TERMINATE((0 == bin.size()));
 
@@ -227,7 +258,7 @@ void createModule(const char *sourceCode, AddressingMode addressing, const ze_co
     moduleDesc.format = ZE_MODULE_FORMAT_NATIVE;
     moduleDesc.pInputModule = bin.data();
     moduleDesc.inputSize = bin.size();
-    moduleDesc.pBuildFlags = "";
+    moduleDesc.pBuildFlags = buildFlags.c_str();
 
     SUCCESS_OR_TERMINATE(zeModuleCreate(context, device, &moduleDesc, &module, nullptr));
 }
@@ -321,8 +352,8 @@ bool testBindlessBufferCopy(ze_context_handle_t context, ze_device_handle_t devi
 
     ze_module_handle_t module = nullptr;
     ze_module_handle_t module2 = nullptr;
-    createModule(source, AddressingMode::bindless, context, device, deviceId, revisionId, module, "");
-    createModule(source2, AddressingMode::defaultMode, context, device, deviceId, revisionId, module2, "");
+    createModule(source, AddressingMode::bindless, context, device, deviceId, revisionId, module, "", false);
+    createModule(source2, AddressingMode::bindful, context, device, deviceId, revisionId, module2, "", false);
 
     ExecutionMode executionModes[] = {ExecutionMode::commandQueue, ExecutionMode::immSyncCmdList};
     ze_kernel_handle_t copyKernel = nullptr;
@@ -444,8 +475,8 @@ bool testBindlessBindfulKernel(ze_context_handle_t context, ze_device_handle_t d
 
     ze_module_handle_t module = nullptr;
     ze_module_handle_t module2 = nullptr;
-    createModule(source2, AddressingMode::bindless, context, device, deviceId, revisionId, module, "");
-    createModule(source2, AddressingMode::defaultMode, context, device, deviceId, revisionId, module2, "");
+    createModule(source2, AddressingMode::bindless, context, device, deviceId, revisionId, module, "", true);
+    createModule(source2, AddressingMode::bindful, context, device, deviceId, revisionId, module2, "", true);
 
     ExecutionMode executionModes[] = {ExecutionMode::commandQueue, ExecutionMode::immSyncCmdList};
     ze_kernel_handle_t bindlessKernel = nullptr;
@@ -453,19 +484,22 @@ bool testBindlessBindfulKernel(ze_context_handle_t context, ze_device_handle_t d
     createKernel(module, bindlessKernel, kernelName2.c_str());
     createKernel(module2, bindfulKernel, kernelName2.c_str());
 
-    std::pair<ze_kernel_handle_t, ze_kernel_handle_t> kernelOrder[2] = {{bindlessKernel, bindfulKernel},
-                                                                        {bindfulKernel, bindlessKernel}};
+    std::tuple<ze_kernel_handle_t, ze_kernel_handle_t, std::string> kernelOrder[2] = {{bindlessKernel, bindfulKernel, "First Bindless Then Bindful"},
+                                                                                      {bindfulKernel, bindlessKernel, "First Bindful Then Bindless"}};
 
     for (auto kernel : kernelOrder) {
 
         for (auto mode : executionModes) {
 
-            runBindlessBindful(kernel.first, kernel.second, context, device, mode, outputValidated);
+            runBindlessBindful(std::get<0>(kernel), std::get<1>(kernel), context, device, mode, outputValidated);
 
             if (!outputValidated) {
                 std::cout << "testBindlessBindfulKernel with mode " << static_cast<uint32_t>(mode) << " failed.\n"
                           << std::endl;
                 break;
+            } else {
+                std::cout << "testBindlessBindfulKernel with mode " << static_cast<uint32_t>(mode) << " " << std::get<2>(kernel) << " PASSED.\n"
+                          << std::endl;
             }
         }
     }
@@ -479,17 +513,17 @@ bool testBindlessBindfulKernel(ze_context_handle_t context, ze_device_handle_t d
 }
 
 bool testBindlessImages(ze_context_handle_t context, ze_device_handle_t device, const std::string &deviceId, const std::string &revisionId,
-                        int imageCount, AddressingMode mode) {
+                        int imageCount, AddressingMode mode, ExecutionMode execMode) {
     bool outputValidated = false;
 
     ze_module_handle_t module = nullptr;
     ze_kernel_handle_t copyKernel = nullptr;
 
-    createModule(source3, mode, context, device, deviceId, revisionId, module, "");
+    createModule(source3, mode, context, device, deviceId, revisionId, module, "", false);
     createKernel(module, copyKernel, kernelName3.c_str());
 
     LevelZeroBlackBoxTests::CommandHandler commandHandler;
-    bool isImmediateCmdList = false;
+    bool isImmediateCmdList = execMode == ExecutionMode::immSyncCmdList ? true : false;
 
     SUCCESS_OR_TERMINATE(commandHandler.create(context, device, isImmediateCmdList));
 
@@ -597,6 +631,33 @@ bool testBindlessImages(ze_context_handle_t context, ze_device_handle_t device, 
     return outputValidated;
 }
 
+bool testBindlessBindfulImageKernel(ze_context_handle_t context, ze_device_handle_t device, const std::string &deviceId, const std::string &revisionId) {
+
+    ExecutionMode executionModes[] = {ExecutionMode::commandQueue, ExecutionMode::immSyncCmdList};
+
+    std::tuple<AddressingMode, AddressingMode, std::string> kernelOrder[2] = {{AddressingMode::bindless, AddressingMode::bindful, "First Bindless Then Bindful"},
+                                                                              {AddressingMode::bindful, AddressingMode::bindless, "First Bindful Then Bindless"}};
+
+    for (auto kernelMode : kernelOrder) {
+
+        for (auto mode : executionModes) {
+
+            bool result1 = testBindlessImages(context, device, deviceId, revisionId, 0, std::get<0>(kernelMode), mode);
+            bool result2 = testBindlessImages(context, device, deviceId, revisionId, 0, std::get<1>(kernelMode), mode);
+
+            if (!result1 || !result2) {
+                std::cout << "testBindlessBindfulImageKernel with mode " << static_cast<uint32_t>(mode) << " " << std::get<2>(kernelMode) << " FAILED.\n"
+                          << std::endl;
+                return false;
+            } else {
+                std::cout << "testBindlessBindfulKernel with mode " << static_cast<uint32_t>(mode) << " " << std::get<2>(kernelMode) << " PASSED.\n"
+                          << std::endl;
+            }
+        }
+    }
+    return true;
+}
+
 bool testBindlessImageSampled(ze_context_handle_t context, ze_device_handle_t device, const std::string &deviceId,
                               const std::string &revisionId, AddressingMode mode) {
     bool outputValidated = true;
@@ -604,7 +665,7 @@ bool testBindlessImageSampled(ze_context_handle_t context, ze_device_handle_t de
     ze_module_handle_t module = nullptr;
     ze_kernel_handle_t kernel = nullptr;
 
-    createModule(source4, mode, context, device, deviceId, revisionId, module, "");
+    createModule(source4, mode, context, device, deviceId, revisionId, module, "", false);
     createKernel(module, kernel, kernelName4.c_str());
 
     LevelZeroBlackBoxTests::CommandHandler commandHandler;
@@ -712,7 +773,7 @@ bool testBindlessImageSampledBorderColor(ze_context_handle_t context, ze_device_
     ze_module_handle_t module = nullptr;
     ze_kernel_handle_t kernel = nullptr;
 
-    createModule(source4, mode, context, device, deviceId, revisionId, module, "");
+    createModule(source4, mode, context, device, deviceId, revisionId, module, "", false);
     createKernel(module, kernel, kernelName4a.c_str());
 
     LevelZeroBlackBoxTests::CommandHandler commandHandler;
@@ -887,7 +948,7 @@ bool testBindlessImageQuery(ze_context_handle_t context, ze_device_handle_t devi
                             const std::string &revisionId, AddressingMode mode,
                             bool is1dImageSupported, bool is2dImageSupported, bool is3dImageSupported, bool isImageArraySupported) {
     ze_module_handle_t module = nullptr;
-    createModule(source5, mode, context, device, deviceId, revisionId, module, "-cl-ext=+cl_khr_gl_msaa_sharing");
+    createModule(source5, mode, context, device, deviceId, revisionId, module, "-cl-ext=+cl_khr_gl_msaa_sharing", false);
 
     ze_image_desc_t desc1D = {ZE_STRUCTURE_TYPE_IMAGE_DESC,
                               nullptr,
@@ -1044,7 +1105,7 @@ bool testZeExperimentalBindlessImages(ze_context_handle_t context, ze_device_han
     bool outputValidated = false;
 
     ze_module_handle_t module = nullptr;
-    createModule(source3, mode, context, device, deviceId, revisionId, module, "");
+    createModule(source3, mode, context, device, deviceId, revisionId, module, "", false);
 
     ze_device_compute_properties_t computeProperties = {};
     zeDeviceGetComputeProperties(device, &computeProperties);
@@ -1267,15 +1328,13 @@ int main(int argc, char *argv[]) {
     ze_device_uuid_t uuid = deviceProperties.uuid;
     std::string revisionId = std::to_string(reinterpret_cast<uint16_t *>(uuid.id)[2]);
 
-    int numTests = 7;
+    int numTests = 8;
     int testCase = -1;
     testCase = LevelZeroBlackBoxTests::getParamValue(argc, argv, "", "--test-case", -1);
     if (testCase < -1 || testCase >= numTests) {
         std::cout << "\nInvalid test-case. Valid values are between [-1, " << (numTests - 1) << "]" << std::endl;
         return -1;
     }
-
-    bool isIntegratedGPU = (deviceProperties.flags & ZE_DEVICE_PROPERTY_FLAG_INTEGRATED);
 
     auto bindlessImages = LevelZeroBlackBoxTests::isParamEnabled(argc, argv, "", "--bindless-images");
     AddressingMode mode = bindlessImages ? AddressingMode::bindlessImages : AddressingMode::bindless;
@@ -1300,7 +1359,7 @@ int main(int argc, char *argv[]) {
         case 1:
             std::cout << "\ntest case: testBindlessImages\n"
                       << std::endl;
-            if (!isIntegratedGPU && is2dImageSupported) {
+            if (is2dImageSupported) {
                 int defaultImageCount = testCase == 1 ? 4 * 4096 + 8 : 4;
                 auto imageCount = LevelZeroBlackBoxTests::getParamValue(argc, argv, "", "--image-count", defaultImageCount);
 
@@ -1310,7 +1369,7 @@ int main(int argc, char *argv[]) {
                     std::cout << "--bindless-images " << std::endl;
                 }
 
-                outputValidated &= testBindlessImages(context, device, ss.str(), revisionId, imageCount, mode);
+                outputValidated &= testBindlessImages(context, device, ss.str(), revisionId, imageCount, mode, ExecutionMode::commandQueue);
             } else {
                 std::cout << "Skipped. testBindlessImages case not supported\n";
             }
@@ -1318,7 +1377,7 @@ int main(int argc, char *argv[]) {
         case 2:
             std::cout << "\ntest case: testBindlessImageSampled\n"
                       << std::endl;
-            if (!isIntegratedGPU && is2dImageSupported) {
+            if (is2dImageSupported) {
                 if (bindlessImages) {
                     std::cout << "--bindless-images " << std::endl;
                 }
@@ -1330,7 +1389,7 @@ int main(int argc, char *argv[]) {
         case 3:
             std::cout << "\ntest case: testBindlessImageQuery\n"
                       << std::endl;
-            if (!isIntegratedGPU && (is1dImageSupported || is2dImageSupported || is3dImageSupported)) {
+            if (is1dImageSupported || is2dImageSupported || is3dImageSupported) {
                 if (bindlessImages) {
                     std::cout << "--bindless-images " << std::endl;
                 }
@@ -1344,7 +1403,7 @@ int main(int argc, char *argv[]) {
             std::cout << "\ntest case: testZeExperimentalBindlessImages\n"
                       << std::endl;
 
-            if (isIntegratedGPU || !is2dImageSupported) {
+            if (!is2dImageSupported) {
                 std::cout << "Skipped. testZeExperimentalBindlessImages not supported\n";
                 break;
             }
@@ -1390,7 +1449,7 @@ int main(int argc, char *argv[]) {
             std::cout << "\ntest case: testBindlessImageSampledBorderColor\n"
                       << std::endl;
 
-            if (!isIntegratedGPU && is2dImageSupported) {
+            if (is2dImageSupported) {
                 if (bindlessImages) {
                     std::cout << "--bindless-images " << std::endl;
                 }
@@ -1403,11 +1462,19 @@ int main(int argc, char *argv[]) {
             std::cout << "\ntest case: testBindlessBindfulKernel\n"
                       << std::endl;
 
-            if (!isIntegratedGPU) {
-                outputValidated &= testBindlessBindfulKernel(context, device, ss.str(), revisionId);
+            outputValidated &= testBindlessBindfulKernel(context, device, ss.str(), revisionId);
+            break;
+        case 7:
+
+            if (is2dImageSupported) {
+                std::cout << "\ntest case: testBindlessBindfulImageKernel\n"
+                          << std::endl;
+
+                outputValidated &= testBindlessBindfulImageKernel(context, device, ss.str(), revisionId);
             } else {
-                std::cout << "Skipped. testBindlessBindfulKernel not supported\n";
+                std::cout << "Skipped. testBindlessBindfulImageKernel case not supported\n";
             }
+
             break;
         }
 

@@ -142,6 +142,16 @@ HeapIndex MemoryManager::selectExternalHeap(bool useLocalMemory) {
     return useLocalMemory ? HeapIndex::heapExternalDeviceMemory : HeapIndex::heapExternal;
 }
 
+inline MemoryManager::AllocationStatus MemoryManager::registerSysMemAlloc(GraphicsAllocation *allocation) {
+    this->sysMemAllocsSize += allocation->getUnderlyingBufferSize();
+    return AllocationStatus::Success;
+}
+
+inline MemoryManager::AllocationStatus MemoryManager::registerLocalMemAlloc(GraphicsAllocation *allocation, uint32_t rootDeviceIndex) {
+    this->localMemAllocsSize[rootDeviceIndex] += allocation->getUnderlyingBufferSize();
+    return AllocationStatus::Success;
+}
+
 void MemoryManager::zeroCpuMemoryIfRequested(const AllocationData &allocationData, void *cpuPtr, size_t size) {
     if (allocationData.flags.zeroMemory) {
         memset(cpuPtr, 0, size);
@@ -180,7 +190,7 @@ void *MemoryManager::allocateSystemMemory(size_t size, size_t alignment) {
 
 GraphicsAllocation *MemoryManager::allocateGraphicsMemoryWithHostPtr(const AllocationData &allocationData) {
     if (deferredDeleter) {
-        deferredDeleter->drain(true);
+        deferredDeleter->drain(true, false);
     }
     GraphicsAllocation *graphicsAllocation = nullptr;
     auto osStorage = hostPtrManager->prepareOsStorageForAllocation(*this, allocationData.size, allocationData.hostPtr, allocationData.rootDeviceIndex);
@@ -297,7 +307,7 @@ void MemoryManager::checkGpuUsageAndDestroyGraphicsAllocations(GraphicsAllocatio
     if (gfxAllocation->isUsed()) {
         if (gfxAllocation->isUsedByManyOsContexts()) {
             multiContextResourceDestructor->deferDeletion(new DeferrableAllocationDeletion{*this, *gfxAllocation});
-            multiContextResourceDestructor->drain(false);
+            multiContextResourceDestructor->drain(false, false);
             return;
         }
         for (auto &engine : getRegisteredEngines(gfxAllocation->getRootDeviceIndex())) {
@@ -327,7 +337,7 @@ bool MemoryManager::isLimitedRange(uint32_t rootDeviceIndex) {
 
 void MemoryManager::waitForDeletions() {
     if (deferredDeleter) {
-        deferredDeleter->drain(false);
+        deferredDeleter->drain(false, false);
     }
     deferredDeleter.reset(nullptr);
 }
@@ -356,6 +366,14 @@ void MemoryManager::updateLatestContextIdForRootDevice(uint32_t rootDeviceIndex)
             latestContextId = entry.first->second;
         }
     }
+}
+
+uint32_t MemoryManager::getFirstContextIdForRootDevice(uint32_t rootDeviceIndex) {
+    auto entry = rootDeviceIndexToContextId.find(rootDeviceIndex);
+    if (entry != rootDeviceIndexToContextId.end()) {
+        return entry->second + 1;
+    }
+    return 0;
 }
 
 OsContext *MemoryManager::createAndRegisterOsContext(CommandStreamReceiver *commandStreamReceiver,
@@ -604,9 +622,7 @@ bool MemoryManager::getAllocationData(AllocationData &allocationData, const Allo
     case AllocationType::buffer:
     case AllocationType::svmGpu:
     case AllocationType::image:
-        if (false == allocationData.flags.uncacheable &&
-            useLocalPreferredForCacheableBuffers &&
-            false == allocationData.flags.isUSMDeviceMemory) {
+        if (false == allocationData.flags.uncacheable && useLocalPreferredForCacheableBuffers) {
             if (!allocationData.flags.preferCompressed) {
                 allocationData.storageInfo.localOnlyRequired = false;
             }
@@ -646,7 +662,7 @@ GraphicsAllocation *MemoryManager::allocatePhysicalGraphicsMemory(const Allocati
         return nullptr;
     }
 
-    fileLoggerInstance().logAllocation(allocation);
+    fileLoggerInstance().logAllocation(allocation, this);
     registerAllocationInOs(allocation);
     return allocation;
 }
@@ -684,7 +700,7 @@ GraphicsAllocation *MemoryManager::allocateGraphicsMemoryInPreferredPool(const A
         allocation->setAsReadOnly();
     }
 
-    fileLoggerInstance().logAllocation(allocation);
+    fileLoggerInstance().logAllocation(allocation, this);
     registerAllocationInOs(allocation);
     return allocation;
 }
@@ -719,6 +735,12 @@ bool MemoryManager::mapAuxGpuVA(GraphicsAllocation *graphicsAllocation) {
 }
 
 GraphicsAllocation *MemoryManager::allocateGraphicsMemory(const AllocationData &allocationData) {
+    if (allocationData.type == AllocationType::externalHostPtr &&
+        allocationData.hostPtr &&
+        this->getDeferredDeleter()) {
+        this->getDeferredDeleter()->drain(true, true);
+    }
+
     if (allocationData.type == AllocationType::image || allocationData.type == AllocationType::sharedResourceCopy) {
         UNRECOVERABLE_IF(allocationData.imgInfo == nullptr);
         return allocateGraphicsMemoryForImage(allocationData);
@@ -891,6 +913,8 @@ bool MemoryManager::copyMemoryToAllocation(GraphicsAllocation *graphicsAllocatio
 }
 
 bool MemoryManager::copyMemoryToAllocationBanks(GraphicsAllocation *graphicsAllocation, size_t destinationOffset, const void *memoryToCopy, size_t sizeToCopy, DeviceBitfield handleMask) {
+    DEBUG_BREAK_IF(graphicsAllocation->storageInfo.getNumBanks() > 1 && handleMask.count() > 0);
+
     memcpy_s(ptrOffset(static_cast<uint8_t *>(graphicsAllocation->getUnderlyingBuffer()), destinationOffset),
              (graphicsAllocation->getUnderlyingBufferSize() - destinationOffset), memoryToCopy, sizeToCopy);
     return true;

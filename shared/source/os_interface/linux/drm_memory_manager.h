@@ -6,6 +6,7 @@
  */
 
 #pragma once
+#include "shared/source/command_stream/submission_status.h"
 #include "shared/source/memory_manager/memory_manager.h"
 #include "shared/source/os_interface/linux/drm_buffer_object.h"
 
@@ -23,6 +24,12 @@ class OsContextLinux;
 enum class AtomicAccessMode : uint32_t;
 
 enum class GemCloseWorkerMode;
+
+struct BoHandleDeviceIndexPairComparer {
+    bool operator()(std::pair<int, uint32_t> const &lhs, std::pair<int, uint32_t> const &rhs) const {
+        return (lhs.first < rhs.first) || (lhs.second < rhs.second);
+    }
+};
 
 class DrmMemoryManager : public MemoryManager {
   public:
@@ -84,7 +91,7 @@ class DrmMemoryManager : public MemoryManager {
     std::vector<GraphicsAllocation *> &getLocalMemAllocs(uint32_t rootDeviceIndex);
     AllocationStatus registerSysMemAlloc(GraphicsAllocation *allocation) override;
     AllocationStatus registerLocalMemAlloc(GraphicsAllocation *allocation, uint32_t rootDeviceIndex) override;
-    void unregisterAllocation(GraphicsAllocation *allocation);
+    MOCKABLE_VIRTUAL void unregisterAllocation(GraphicsAllocation *allocation);
 
     static std::unique_ptr<MemoryManager> create(ExecutionEnvironment &executionEnvironment);
 
@@ -109,11 +116,12 @@ class DrmMemoryManager : public MemoryManager {
 
     bool isCompressionSupportedForShareable(bool isShareable) override;
     bool usmCompressionSupported(Device *device) override;
+    MOCKABLE_VIRTUAL SubmissionStatus emitPinningRequestForBoContainer(BufferObject **bo, uint32_t boCount, uint32_t rootDeviceIndex) const;
 
   protected:
     void registerSharedBoHandleAllocation(DrmAllocation *drmAllocation);
-    BufferObjectHandleWrapper tryToGetBoHandleWrapperWithSharedOwnership(int boHandle);
-    void eraseSharedBoHandleWrapper(int boHandle);
+    BufferObjectHandleWrapper tryToGetBoHandleWrapperWithSharedOwnership(int boHandle, uint32_t rootDeviceIndex);
+    void eraseSharedBoHandleWrapper(int boHandle, uint32_t rootDeviceIndex);
 
     MOCKABLE_VIRTUAL BufferObject *findAndReferenceSharedBufferObject(int boHandle, uint32_t rootDeviceIndex);
     void eraseSharedBufferObject(BufferObject *bo);
@@ -184,7 +192,7 @@ class DrmMemoryManager : public MemoryManager {
     std::vector<BufferObject *> sharingBufferObjects;
     std::mutex mtx;
 
-    std::map<int, BufferObjectHandleWrapper> sharedBoHandles;
+    std::map<std::pair<int, uint32_t>, BufferObjectHandleWrapper, BoHandleDeviceIndexPairComparer> sharedBoHandles;
     std::vector<std::vector<GraphicsAllocation *>> localMemAllocs;
     std::vector<size_t> localMemBanksCount;
     std::vector<GraphicsAllocation *> sysMemAllocs;

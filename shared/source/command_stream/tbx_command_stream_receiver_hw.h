@@ -31,6 +31,9 @@ class TbxCommandStreamReceiverHw : public CommandStreamReceiverSimulatedHw<GfxFa
     uint32_t getMaskAndValueForPollForCompletion() const;
     bool getpollNotEqualValueForPollForCompletion() const;
     void flushSubmissionsAndDownloadAllocations(TaskCountType taskCount, bool skipAllocationsDownload);
+    MOCKABLE_VIRTUAL uint64_t getNonBlockingDownloadTimeoutMs() const {
+        return 2000; // 2s
+    }
 
   public:
     using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::initAdditionalMMIO;
@@ -45,12 +48,12 @@ class TbxCommandStreamReceiverHw : public CommandStreamReceiverSimulatedHw<GfxFa
 
     WaitStatus waitForTaskCountWithKmdNotifyFallback(TaskCountType taskCountToWait, FlushStamp flushStampToWait, bool useQuickKmdSleep, QueueThrottle throttle) override;
     WaitStatus waitForCompletionWithTimeout(const WaitParams &params, TaskCountType taskCountToWait) override;
-    void downloadAllocations() override;
+    void downloadAllocations(bool blockingWait, TaskCountType taskCount) override;
     void downloadAllocationTbx(GraphicsAllocation &gfxAllocation);
     void removeDownloadAllocation(GraphicsAllocation *alloc) override;
 
     void processEviction() override;
-    SubmissionStatus processResidency(const ResidencyContainer &allocationsForResidency, uint32_t handleId) override;
+    SubmissionStatus processResidency(ResidencyContainer &allocationsForResidency, uint32_t handleId) override;
     void writeMemory(uint64_t gpuAddress, void *cpuAddress, size_t size, uint32_t memoryBank, uint64_t entryBits) override;
     bool writeMemory(GraphicsAllocation &gfxAllocation, bool isChunkCopy, uint64_t gpuVaChunkOffset, size_t chunkSize) override;
     void writeMMIO(uint32_t offset, uint32_t value) override;

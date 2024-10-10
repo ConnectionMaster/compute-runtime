@@ -32,6 +32,8 @@ struct RootDeviceEnvironment;
 struct UnitTestSetter {
     static void disableHeapless(const DebugManagerStateRestore &restorer);
     static void disableHeaplessStateInit(const DebugManagerStateRestore &restorer);
+    static void setCcsExposure(RootDeviceEnvironment &rootDeviceEnvironment);
+    static void setRcsExposure(RootDeviceEnvironment &rootDeviceEnvironment);
 };
 
 template <typename GfxFamily>
@@ -67,8 +69,6 @@ struct UnitTestHelper {
     static uint64_t getAtomicMemoryAddress(const typename GfxFamily::MI_ATOMIC &atomic);
 
     static bool requiresTimestampPacketsInSystemMemory(HardwareInfo &hwInfo);
-
-    static void setExtraMidThreadPreemptionFlag(HardwareInfo &hwInfo, bool value);
 
     static uint32_t getDebugModeRegisterOffset();
     static uint32_t getDebugModeRegisterValue();
@@ -117,7 +117,8 @@ struct UnitTestHelper {
     static GenCmdList::iterator findWalkerTypeCmd(GenCmdList::iterator begin, GenCmdList::iterator end);
     static std::vector<GenCmdList::iterator> findAllWalkerTypeCmds(GenCmdList::iterator begin, GenCmdList::iterator end);
     static typename GfxFamily::WalkerVariant getWalkerVariant(void *walkerItor);
-
+    static void getSpaceAndInitWalkerCmd(LinearStream &stream, bool heapless);
+    static void *getInitWalkerCmd(bool heapless);
     static size_t getWalkerSize(bool isHeaplessEnabled);
 };
 

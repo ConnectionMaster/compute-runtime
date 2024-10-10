@@ -18,6 +18,7 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -87,6 +88,13 @@ struct ResetStatsFault {
     uint16_t flags;
 };
 
+using IoctlFunc = std::function<int(void *, int, unsigned long int, void *, bool)>;
+
+struct ExternalCtx {
+    void *handle = nullptr;
+    IoctlFunc ioctl = nullptr;
+};
+
 using MemRegionsVec = StackVec<MemoryClassInstance, 5>;
 using VmBindExtSetPatT = uint8_t[40];
 using VmBindExtUserFenceT = uint8_t[56];
@@ -98,6 +106,7 @@ class IoctlHelper {
     static std::unique_ptr<IoctlHelper> getI915Helper(const PRODUCT_FAMILY productFamily, const std::string &prelimVersion, Drm &drm);
     virtual int ioctl(DrmIoctl request, void *arg);
     virtual int ioctl(int fd, DrmIoctl request, void *arg);
+    virtual void setExternalContext(ExternalCtx *ctx);
 
     virtual bool initialize() = 0;
     virtual bool isSetPairAvailable() = 0;
@@ -158,7 +167,7 @@ class IoctlHelper {
 
     virtual bool checkIfIoctlReinvokeRequired(int error, DrmIoctl ioctlRequest) const;
     virtual int createDrmContext(Drm &drm, OsContextLinux &osContext, uint32_t drmVmId, uint32_t deviceIndex, bool allocateInterrupt) = 0;
-    virtual bool createMediaContext(void *controlSharedMemoryBuffer, uint32_t controlSharedMemoryBufferSize, void *controlBatchBuffer, uint32_t controlBatchBufferSize, uint64_t &outDoorbell) { return false; }
+    virtual bool createMediaContext(uint32_t vmId, void *controlSharedMemoryBuffer, uint32_t controlSharedMemoryBufferSize, void *controlBatchBuffer, uint32_t controlBatchBufferSize, uint64_t &outDoorbell) { return false; }
     virtual bool releaseMediaContext(uint64_t doorbellHandle) { return false; }
 
     virtual uint32_t getNumMediaDecoders() const { return 0; }
@@ -212,8 +221,11 @@ class IoctlHelper {
     virtual bool allocateInterrupt(uint32_t &outHandle) { return false; }
     virtual bool releaseInterrupt(uint32_t handle) { return false; }
 
+    virtual uint64_t *getPagingFenceAddress(uint32_t vmHandleId, OsContextLinux *osContext);
+
   protected:
     Drm &drm;
+    ExternalCtx *externalCtx = nullptr;
 };
 
 class IoctlHelperI915 : public IoctlHelper {

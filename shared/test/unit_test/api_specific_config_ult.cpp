@@ -15,7 +15,11 @@ namespace NEO {
 class ReleaseHelper;
 
 ApiSpecificConfig::ApiType apiTypeForUlts = ApiSpecificConfig::OCL;
+
+bool globalStatelessL0 = false;
+bool globalStatelessOcl = false;
 bool isStatelessCompressionSupportedForUlts = true;
+bool isDeviceUsmPoolingEnabledForUlts = true;
 
 StackVec<const char *, 4> validUltL0Prefixes = {"NEO_L0_", "NEO_", ""};
 StackVec<NEO::DebugVarPrefix, 4> validUltL0PrefixTypes = {DebugVarPrefix::neoL0, DebugVarPrefix::neo, DebugVarPrefix::none};
@@ -31,7 +35,7 @@ bool ApiSpecificConfig::getGlobalBindlessHeapConfiguration(const ReleaseHelper *
     }
     return false;
 }
-bool ApiSpecificConfig::getBindlessMode(const ReleaseHelper *) {
+bool ApiSpecificConfig::getBindlessMode(const Device &device) {
     if (debugManager.flags.UseBindlessMode.get() != -1) {
         return debugManager.flags.UseBindlessMode.get();
     } else {
@@ -56,7 +60,7 @@ bool ApiSpecificConfig::isHostAllocationCacheEnabled() {
 }
 
 bool ApiSpecificConfig::isDeviceUsmPoolingEnabled() {
-    return false;
+    return isDeviceUsmPoolingEnabledForUlts;
 }
 
 bool ApiSpecificConfig::isHostUsmPoolingEnabled() {
@@ -111,6 +115,16 @@ std::string ApiSpecificConfig::compilerCacheFileExtension() {
 
 int64_t ApiSpecificConfig::compilerCacheDefaultEnabled() {
     return 1l;
+}
+
+bool ApiSpecificConfig::isGlobalStatelessEnabled(const RootDeviceEnvironment &rootDeviceEnvironment) {
+
+    if (apiTypeForUlts == ApiSpecificConfig::L0) {
+        return globalStatelessL0;
+
+    } else {
+        return globalStatelessOcl;
+    }
 }
 
 } // namespace NEO

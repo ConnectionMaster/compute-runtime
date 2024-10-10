@@ -107,7 +107,7 @@ HWTEST_F(CommandListAppendSignalEvent, givenEventWithScopeFlagDeviceWhenAppendin
     ASSERT_TRUE(postSyncFound);
 }
 
-HWTEST2_F(CommandListAppendSignalEvent, givenCommandListWhenAppendWriteGlobalTimestampCalledWithSignalEventThenPipeControlForTimestampAndSignalEncoded, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendSignalEvent, givenCommandListWhenAppendWriteGlobalTimestampCalledWithSignalEventThenPipeControlForTimestampAndSignalEncoded, MatchAny) {
     using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
     using POST_SYNC_OPERATION = typename PIPE_CONTROL::POST_SYNC_OPERATION;
     auto &commandContainer = commandList->getCmdContainer();
@@ -224,7 +224,131 @@ HWTEST2_F(CommandListAppendSignalEvent, givenImmediateCmdListAndAppendingRegular
     ASSERT_TRUE(postSyncFound);
 }
 
-HWTEST2_F(CommandListAppendSignalEvent, givenTimestampEventUsedInSignalThenPipeControlAppendedCorrectly, IsAtLeastSkl) {
+HWTEST2_F(CommandListAppendSignalEvent, givenImmediateCmdListWithComputeQueueAndAppendingRegularCommandlistThenCsrMakeNonTesidentSkippedFromCmdQueue, IsAtLeastXeHpcCore) {
+    ze_command_queue_desc_t desc = {};
+    desc.mode = ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS;
+
+    ze_result_t returnValue;
+
+    using cmdListImmediateHwType = typename L0::CommandListCoreFamilyImmediate<static_cast<GFXCORE_FAMILY>(NEO::HwMapper<productFamily>::gfxFamily)>;
+
+    std::unique_ptr<cmdListImmediateHwType> commandList0(static_cast<cmdListImmediateHwType *>(CommandList::createImmediate(productFamily,
+                                                                                                                            device,
+                                                                                                                            &desc,
+                                                                                                                            false,
+                                                                                                                            NEO::EngineGroupType::compute,
+                                                                                                                            returnValue)));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
+    ASSERT_NE(nullptr, commandList0);
+
+    auto &commandStreamReceiver = neoDevice->getUltCommandStreamReceiver<FamilyType>();
+    auto heaplessStateInit = commandStreamReceiver.heaplessStateInitialized;
+
+    std::unique_ptr<L0::CommandList> commandListRegular(CommandList::create(productFamily, device, NEO::EngineGroupType::compute, 0u, returnValue, false));
+    commandListRegular->close();
+    auto commandListHandle = commandListRegular->toHandle();
+
+    ze_result_t result = ZE_RESULT_SUCCESS;
+    result = commandList0->appendCommandLists(1u, &commandListHandle, nullptr, 0u, nullptr);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+    EXPECT_EQ(heaplessStateInit ? 2u : 1u, commandStreamReceiver.makeSurfacePackNonResidentCalled);
+}
+
+HWTEST2_F(CommandListAppendSignalEvent, givenCopyOnlyImmediateCmdListAndAppendingRegularCommandlistWithWaitOnEventsAndSignalEventThenUseSemaphoreAndFlushDw, IsAtLeastXeHpcCore) {
+    using MI_SEMAPHORE_WAIT = typename FamilyType::MI_SEMAPHORE_WAIT;
+    using MI_BATCH_BUFFER_START = typename FamilyType::MI_BATCH_BUFFER_START;
+    using MI_FLUSH_DW = typename FamilyType::MI_FLUSH_DW;
+
+    ze_event_pool_desc_t eventPoolDesc = {};
+    eventPoolDesc.count = 1;
+    eventPoolDesc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
+
+    ze_event_desc_t eventDesc = {};
+    eventDesc.index = 0;
+    eventDesc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
+
+    ze_result_t result = ZE_RESULT_SUCCESS;
+    auto eventPoolHostVisible = std::unique_ptr<L0::EventPool>(EventPool::create(driverHandle.get(), context, 0, nullptr, &eventPoolDesc, result));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+    auto eventHostVisible = std::unique_ptr<L0::Event>(Event::create<typename FamilyType::TimestampPacketType>(eventPoolHostVisible.get(), &eventDesc, device));
+
+    auto waitEventPool = std::unique_ptr<L0::EventPool>(EventPool::create(driverHandle.get(), context, 0, nullptr, &eventPoolDesc, result));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+    auto waitEvent = std::unique_ptr<L0::Event>(Event::create<typename FamilyType::TimestampPacketType>(waitEventPool.get(), &eventDesc, device));
+
+    ze_command_queue_desc_t desc = {};
+    desc.mode = ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS;
+    ze_result_t returnValue;
+    std::unique_ptr<L0::CommandList> immCommandList(CommandList::createImmediate(productFamily, device, &desc, false, NEO::EngineGroupType::copy, returnValue));
+    ASSERT_NE(nullptr, immCommandList);
+
+    ze_event_handle_t hSignalEventHandle = eventHostVisible->toHandle();
+    ze_event_handle_t hWaitEventHandle = waitEvent->toHandle();
+    std::unique_ptr<L0::CommandList> commandListRegular(CommandList::create(productFamily, device, NEO::EngineGroupType::copy, 0u, returnValue, false));
+    commandListRegular->close();
+    auto commandListHandle = commandListRegular->toHandle();
+    auto usedSpaceBefore = immCommandList->getCmdContainer().getCommandStream()->getUsed();
+    result = immCommandList->appendCommandLists(1u, &commandListHandle, hSignalEventHandle, 1u, &hWaitEventHandle);
+
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+
+    auto usedSpaceAfter = immCommandList->getCmdContainer().getCommandStream()->getUsed();
+    ASSERT_GT(usedSpaceAfter, usedSpaceBefore);
+
+    GenCmdList cmdList;
+    ASSERT_TRUE(FamilyType::Parse::parseCommandBuffer(cmdList,
+                                                      immCommandList->getCmdContainer().getCommandStream()->getCpuBase(),
+                                                      usedSpaceAfter));
+
+    auto itorSemaphore = find<MI_SEMAPHORE_WAIT *>(cmdList.begin(), cmdList.end());
+    ASSERT_NE(cmdList.end(), itorSemaphore);
+
+    auto itorBBStart = find<MI_BATCH_BUFFER_START *>(itorSemaphore, cmdList.end());
+    ASSERT_NE(cmdList.end(), itorBBStart);
+
+    uint32_t expectedMiFlushCount = 1;
+    NEO::EncodeDummyBlitWaArgs waArgs{false, &(device->getNEODevice()->getRootDeviceEnvironmentRef())};
+    if (MockEncodeMiFlushDW<FamilyType>::getWaSize(waArgs) > 0) {
+        expectedMiFlushCount = 2;
+    }
+    // Add pair of MIFlush for task count update
+    expectedMiFlushCount += 2;
+    auto itorMiFlush = findAll<MI_FLUSH_DW *>(cmdList.begin(), cmdList.end());
+
+    EXPECT_EQ(expectedMiFlushCount, static_cast<uint32_t>(itorMiFlush.size()));
+}
+
+HWTEST2_F(CommandListAppendSignalEvent, givenImmediateCmdListWithCopyQueueAndAppendingRegularCommandlistThenCsrMakeNonTesidentSkippedFromCmdQueue, IsAtLeastXeHpcCore) {
+    ze_command_queue_desc_t desc = {};
+    desc.mode = ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS;
+
+    ze_result_t returnValue;
+
+    using cmdListImmediateHwType = typename L0::CommandListCoreFamilyImmediate<static_cast<GFXCORE_FAMILY>(NEO::HwMapper<productFamily>::gfxFamily)>;
+
+    std::unique_ptr<cmdListImmediateHwType> commandList0(static_cast<cmdListImmediateHwType *>(CommandList::createImmediate(productFamily,
+                                                                                                                            device,
+                                                                                                                            &desc,
+                                                                                                                            false,
+                                                                                                                            NEO::EngineGroupType::copy,
+                                                                                                                            returnValue)));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
+    ASSERT_NE(nullptr, commandList0);
+
+    auto &commandStreamReceiver = neoDevice->getUltCommandStreamReceiver<FamilyType>();
+    auto heaplessStateInit = commandStreamReceiver.heaplessStateInitialized;
+
+    std::unique_ptr<L0::CommandList> commandListRegular(CommandList::create(productFamily, device, NEO::EngineGroupType::copy, 0u, returnValue, false));
+    commandListRegular->close();
+    auto commandListHandle = commandListRegular->toHandle();
+
+    ze_result_t result = ZE_RESULT_SUCCESS;
+    result = commandList0->appendCommandLists(1u, &commandListHandle, nullptr, 0u, nullptr);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+    EXPECT_EQ(heaplessStateInit ? 2u : 1u, commandStreamReceiver.makeSurfacePackNonResidentCalled);
+}
+
+HWTEST2_F(CommandListAppendSignalEvent, givenTimestampEventUsedInSignalThenPipeControlAppendedCorrectly, MatchAny) {
     using GfxFamily = typename NEO::GfxFamilyMapper<gfxCoreFamily>::GfxFamily;
     using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
     using POST_SYNC_OPERATION = typename PIPE_CONTROL::POST_SYNC_OPERATION;

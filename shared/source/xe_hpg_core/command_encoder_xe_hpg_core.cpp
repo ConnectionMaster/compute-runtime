@@ -28,66 +28,6 @@ using Family = NEO::XeHpgCoreFamily;
 namespace NEO {
 
 template <>
-template <typename InterfaceDescriptorType>
-void EncodeDispatchKernel<Family>::appendAdditionalIDDFields(InterfaceDescriptorType *pInterfaceDescriptor, const RootDeviceEnvironment &rootDeviceEnvironment, const uint32_t threadsPerThreadGroup, uint32_t slmTotalSize, SlmPolicy slmPolicy) {
-    using PREFERRED_SLM_ALLOCATION_SIZE = typename InterfaceDescriptorType::PREFERRED_SLM_ALLOCATION_SIZE;
-    auto &hwInfo = *rootDeviceEnvironment.getHardwareInfo();
-    const uint32_t threadsPerDssCount = hwInfo.gtSystemInfo.ThreadCount / hwInfo.gtSystemInfo.DualSubSliceCount;
-    const uint32_t workGroupCountPerDss = threadsPerDssCount / threadsPerThreadGroup;
-    auto &gfxCoreHelper = rootDeviceEnvironment.getHelper<GfxCoreHelper>();
-    const uint32_t workgroupSlmSize = gfxCoreHelper.alignSlmSize(slmTotalSize);
-
-    uint32_t slmSize = 0u;
-
-    switch (slmPolicy) {
-    case SlmPolicy::slmPolicyLargeData:
-        slmSize = workgroupSlmSize;
-        break;
-    case SlmPolicy::slmPolicyLargeSlm:
-    default:
-        slmSize = workgroupSlmSize * workGroupCountPerDss;
-        break;
-    }
-
-    struct SizeToPreferredSlmValue {
-        uint32_t upperLimit;
-        PREFERRED_SLM_ALLOCATION_SIZE valueToProgram;
-    };
-    const std::array<SizeToPreferredSlmValue, 6> ranges = {{
-        // upper limit, retVal
-        {0, PREFERRED_SLM_ALLOCATION_SIZE::PREFERRED_SLM_ALLOCATION_SIZE_0K},
-        {16 * MemoryConstants::kiloByte, PREFERRED_SLM_ALLOCATION_SIZE::PREFERRED_SLM_ALLOCATION_SIZE_16K},
-        {32 * MemoryConstants::kiloByte, PREFERRED_SLM_ALLOCATION_SIZE::PREFERRED_SLM_ALLOCATION_SIZE_32K},
-        {64 * MemoryConstants::kiloByte, PREFERRED_SLM_ALLOCATION_SIZE::PREFERRED_SLM_ALLOCATION_SIZE_64K},
-        {96 * MemoryConstants::kiloByte, PREFERRED_SLM_ALLOCATION_SIZE::PREFERRED_SLM_ALLOCATION_SIZE_96K},
-    }};
-
-    auto programmableIdPreferredSlmSize = PREFERRED_SLM_ALLOCATION_SIZE::PREFERRED_SLM_ALLOCATION_SIZE_128K;
-
-    auto *releaseHelper = rootDeviceEnvironment.getReleaseHelper();
-    programmableIdPreferredSlmSize = static_cast<PREFERRED_SLM_ALLOCATION_SIZE>(
-        releaseHelper->getProductMaxPreferredSlmSize(programmableIdPreferredSlmSize));
-
-    for (auto &range : ranges) {
-        if (slmSize <= range.upperLimit) {
-            programmableIdPreferredSlmSize = range.valueToProgram;
-            break;
-        }
-    }
-    auto &productHelper = rootDeviceEnvironment.getHelper<ProductHelper>();
-    if (productHelper.isAllocationSizeAdjustmentRequired(hwInfo)) {
-        pInterfaceDescriptor->setPreferredSlmAllocationSize(PREFERRED_SLM_ALLOCATION_SIZE::PREFERRED_SLM_ALLOCATION_SIZE_128K);
-    } else {
-        pInterfaceDescriptor->setPreferredSlmAllocationSize(programmableIdPreferredSlmSize);
-    }
-    if (debugManager.flags.OverridePreferredSlmAllocationSizePerDss.get() != -1) {
-        auto toProgram =
-            static_cast<PREFERRED_SLM_ALLOCATION_SIZE>(debugManager.flags.OverridePreferredSlmAllocationSizePerDss.get());
-        pInterfaceDescriptor->setPreferredSlmAllocationSize(toProgram);
-    }
-}
-
-template <>
 template <typename WalkerType, typename InterfaceDescriptorType>
 void EncodeDispatchKernel<Family>::adjustInterfaceDescriptorData(InterfaceDescriptorType &interfaceDescriptor, const Device &device, const HardwareInfo &hwInfo, const uint32_t threadGroupCount, const uint32_t grfCount, WalkerType &walkerCmd) {
     const auto &productHelper = device.getProductHelper();
@@ -193,6 +133,30 @@ void EncodeDispatchKernel<Family>::adjustWalkOrder(WalkerType &walkerCmd, uint32
             walkerCmd.setDispatchWalkOrder(WalkerType::DISPATCH_WALK_ORDER::Y_ORDER_WALKER);
         }
     }
+}
+
+template <>
+uint32_t EncodeDispatchKernel<Family>::alignSlmSize(uint32_t slmSize) {
+    if (slmSize == 0u) {
+        return 0u;
+    }
+    slmSize = std::max(slmSize, 1024u);
+    slmSize = Math::nextPowerOfTwo(slmSize);
+    UNRECOVERABLE_IF(slmSize > 64u * MemoryConstants::kiloByte);
+    return slmSize;
+}
+
+template <>
+uint32_t EncodeDispatchKernel<Family>::computeSlmValues(const HardwareInfo &hwInfo, uint32_t slmSize) {
+    using SHARED_LOCAL_MEMORY_SIZE = typename Family::INTERFACE_DESCRIPTOR_DATA::SHARED_LOCAL_MEMORY_SIZE;
+
+    auto slmValue = std::max(slmSize, 1024u);
+    slmValue = Math::nextPowerOfTwo(slmValue);
+    slmValue = Math::getMinLsbSet(slmValue);
+    slmValue = slmValue - 9;
+    DEBUG_BREAK_IF(slmValue > 7);
+    slmValue *= !!slmSize;
+    return slmValue;
 }
 
 template <>

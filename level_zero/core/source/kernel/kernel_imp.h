@@ -49,6 +49,7 @@ struct KernelImp : Kernel {
     }
 
     ze_result_t getBaseAddress(uint64_t *baseAddress) override;
+    ze_result_t getKernelProgramBinary(size_t *kernelSize, char *pKernelBinary) override;
     ze_result_t setIndirectAccess(ze_kernel_indirect_access_flags_t flags) override;
     ze_result_t getIndirectAccess(ze_kernel_indirect_access_flags_t *flags) override;
     ze_result_t getSourceAttributes(uint32_t *pSize, char **pString) override;
@@ -69,8 +70,15 @@ struct KernelImp : Kernel {
 
     ze_result_t getKernelName(size_t *pSize, char *pName) override;
 
-    ze_result_t suggestMaxCooperativeGroupCount(uint32_t *totalGroupCount, NEO::EngineGroupType engineGroupType,
-                                                bool isEngineInstanced) override;
+    uint32_t suggestMaxCooperativeGroupCount(NEO::EngineGroupType engineGroupType, bool forceSingleTileQuery) override {
+        UNRECOVERABLE_IF(0 == this->groupSize[0]);
+        UNRECOVERABLE_IF(0 == this->groupSize[1]);
+        UNRECOVERABLE_IF(0 == this->groupSize[2]);
+
+        return suggestMaxCooperativeGroupCount(engineGroupType, this->groupSize, forceSingleTileQuery);
+    }
+
+    uint32_t suggestMaxCooperativeGroupCount(NEO::EngineGroupType engineGroupType, uint32_t *groupSize, bool forceSingleTileQuery);
 
     const uint8_t *getCrossThreadData() const override { return crossThreadData.get(); }
     uint32_t getCrossThreadDataSize() const override { return crossThreadDataSize; }
@@ -215,10 +223,13 @@ struct KernelImp : Kernel {
     std::vector<KernelArgInfo> kernelArgInfos;
     std::vector<KernelImp::KernelArgHandler> kernelArgHandlers;
     std::vector<NEO::GraphicsAllocation *> argumentsResidencyContainer;
+    std::vector<size_t> implicitArgsResidencyContainerIndices;
     std::vector<NEO::GraphicsAllocation *> internalResidencyContainer;
 
     std::mutex *devicePrintfKernelMutex = nullptr;
     NEO::GraphicsAllocation *printfBuffer = nullptr;
+    size_t syncBufferIndex = std::numeric_limits<size_t>::max();
+    size_t regionGroupBarrierIndex = std::numeric_limits<size_t>::max();
 
     uint32_t groupSize[3] = {0u, 0u, 0u};
     uint32_t numThreadsPerThreadGroup = 1u;

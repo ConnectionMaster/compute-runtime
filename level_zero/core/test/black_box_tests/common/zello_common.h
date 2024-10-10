@@ -79,6 +79,8 @@ void selectQueueMode(ze_command_queue_desc_t &desc, bool useSync);
 
 uint32_t getBufferLength(int argc, char *argv[], uint32_t defaultLength);
 
+void getErrorMax(int argc, char *argv[]);
+
 void printResult(bool aubMode, bool outputValidationSuccessful, const std::string &blackBoxName, const std::string &currentTest);
 
 void printResult(bool aubMode, bool outputValidationSuccessful, const std::string &blackBoxName);
@@ -224,6 +226,8 @@ inline bool validate(const void *expected, const void *tested, size_t len) {
     return resultsAreOk;
 }
 
+extern uint32_t overrideErrorMax;
+
 template <typename T>
 inline bool validateToValue(const T expected, const void *tested, size_t len) {
     bool resultsAreOk = true;
@@ -232,7 +236,7 @@ inline bool validateToValue(const T expected, const void *tested, size_t len) {
     const T *testedT = reinterpret_cast<const T *>(tested);
     uint32_t errorsCount = 0;
     uint32_t errorsMax = verbose ? 20 : 1;
-
+    errorsMax = overrideErrorMax > 0 ? overrideErrorMax : errorsMax;
     while (offset < len) {
         if (expected != testedT[offset]) {
             resultsAreOk = false;
@@ -284,5 +288,8 @@ void printBuildLog(const char *strLog);
 void loadDriverExtensions(ze_driver_handle_t &driverHandle, std::vector<ze_driver_extension_properties_t> &driverExtensions);
 
 bool checkExtensionIsPresent(ze_driver_handle_t &driverHandle, std::vector<ze_driver_extension_properties_t> &extensionsToCheck);
+
+void prepareScratchTestValues(uint32_t &arraySize, uint32_t &vectorSize, uint32_t &expectedMemorySize, uint32_t &srcAdditionalMul, uint32_t &srcMemorySize, uint32_t &idxMemorySize);
+void prepareScratchTestBuffers(void *srcBuffer, void *idxBuffer, void *expectedMemory, uint32_t arraySize, uint32_t vectorSize, uint32_t expectedMemorySize, uint32_t srcAdditionalMul);
 
 } // namespace LevelZeroBlackBoxTests

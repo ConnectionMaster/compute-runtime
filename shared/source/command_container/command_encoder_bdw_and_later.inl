@@ -63,7 +63,6 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
     auto pImplicitArgs = args.dispatchInterface->getImplicitArgs();
 
     auto &hwInfo = args.device->getHardwareInfo();
-    auto &gfxCoreHelper = args.device->getGfxCoreHelper();
     auto &rootDeviceEnvironment = args.device->getRootDeviceEnvironment();
 
     LinearStream *listCmdBufferStream = container.getCommandStream();
@@ -95,8 +94,7 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
     EncodeDispatchKernel<Family>::programBarrierEnable(idd,
                                                        kernelDescriptor.kernelAttributes.barrierCount,
                                                        hwInfo);
-    auto slmSize = static_cast<uint32_t>(
-        gfxCoreHelper.computeSlmValues(hwInfo, args.dispatchInterface->getSlmTotalSize()));
+    auto slmSize = EncodeDispatchKernel<Family>::computeSlmValues(hwInfo, args.dispatchInterface->getSlmTotalSize());
     idd.setSharedLocalMemorySize(slmSize);
 
     uint32_t bindingTableStateCount = kernelDescriptor.payloadMappings.bindingTable.numEntries;
@@ -295,12 +293,9 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
         EncodeSemaphore<Family>::applyMiSemaphoreWaitCommand(*listCmdBufferStream, *args.additionalCommands);
     }
 
-    PreemptionHelper::applyPreemptionWaCmdsBegin<Family>(listCmdBufferStream, *args.device);
-
     auto buffer = listCmdBufferStream->getSpaceForCmd<DefaultWalkerType>();
     *buffer = cmd;
 
-    PreemptionHelper::applyPreemptionWaCmdsEnd<Family>(listCmdBufferStream, *args.device);
     {
         auto mediaStateFlush = listCmdBufferStream->getSpaceForCmd<MEDIA_STATE_FLUSH>();
         *mediaStateFlush = Family::cmdInitMediaStateFlush;
@@ -416,15 +411,11 @@ inline void EncodeDispatchKernel<Family>::encodeAdditionalWalkerFields(const Roo
 
 template <typename Family>
 template <typename InterfaceDescriptorType>
-void EncodeDispatchKernel<Family>::appendAdditionalIDDFields(InterfaceDescriptorType *pInterfaceDescriptor, const RootDeviceEnvironment &rootDeviceEnvironment, const uint32_t threadsPerThreadGroup, uint32_t slmTotalSize, SlmPolicy slmPolicy) {}
+void EncodeDispatchKernel<Family>::setupPreferredSlmSize(InterfaceDescriptorType *pInterfaceDescriptor, const RootDeviceEnvironment &rootDeviceEnvironment, const uint32_t threadsPerThreadGroup, uint32_t slmTotalSize, SlmPolicy slmPolicy) {}
 
 template <typename Family>
 inline bool EncodeDispatchKernel<Family>::isDshNeeded(const DeviceInfo &deviceInfo) {
     return true;
-}
-
-template <typename Family>
-inline void EncodeComputeMode<Family>::adjustPipelineSelect(CommandContainer &container, const NEO::KernelDescriptor &kernelDescriptor) {
 }
 
 template <typename Family>
@@ -500,24 +491,8 @@ size_t EncodeStateBaseAddress<Family>::getRequiredSizeForStateBaseAddress(Device
     return sizeof(typename Family::STATE_BASE_ADDRESS) + 2 * EncodeWA<Family>::getAdditionalPipelineSelectSize(device, isRcs);
 }
 
-template <typename Family>
-void EncodeL3State<Family>::encode(CommandContainer &container, bool enableSLM) {
-    auto offset = L3CNTLRegisterOffset<Family>::registerOffset;
-    auto data = PreambleHelper<Family>::getL3Config(container.getDevice()->getHardwareInfo(), enableSLM);
-    EncodeSetMMIO<Family>::encodeIMM(container, offset, data, false, false);
-}
-
 template <typename GfxFamily>
 void EncodeMiFlushDW<GfxFamily>::adjust(MI_FLUSH_DW *miFlushDwCmd, const ProductHelper &productHelper) {}
-
-template <typename GfxFamily>
-inline void EncodeWA<GfxFamily>::encodeAdditionalPipelineSelect(LinearStream &stream, const PipelineSelectArgs &args, bool is3DPipeline,
-                                                                const RootDeviceEnvironment &rootDeviceEnvironment, bool isRcs) {}
-
-template <typename GfxFamily>
-inline size_t EncodeWA<GfxFamily>::getAdditionalPipelineSelectSize(Device &device, bool isRcs) {
-    return 0;
-}
 
 template <typename GfxFamily>
 inline void EncodeWA<GfxFamily>::addPipeControlPriorToNonPipelinedStateCommand(LinearStream &commandStream, PipeControlArgs args,
@@ -526,28 +501,7 @@ inline void EncodeWA<GfxFamily>::addPipeControlPriorToNonPipelinedStateCommand(L
 }
 
 template <typename GfxFamily>
-inline void EncodeWA<GfxFamily>::addPipeControlBeforeStateBaseAddress(LinearStream &commandStream,
-                                                                      const RootDeviceEnvironment &rootDeviceEnvironment, bool isRcs, bool dcFlushRequired) {
-    PipeControlArgs args;
-    args.dcFlushEnable = dcFlushRequired;
-    args.textureCacheInvalidationEnable = true;
-
-    NEO::EncodeWA<GfxFamily>::addPipeControlPriorToNonPipelinedStateCommand(commandStream, args, rootDeviceEnvironment, isRcs);
-}
-
-template <typename GfxFamily>
 inline void EncodeWA<GfxFamily>::adjustCompressionFormatForPlanarImage(uint32_t &compressionFormat, int plane) {
-}
-
-template <typename GfxFamily>
-inline void EncodeSurfaceState<GfxFamily>::encodeExtraBufferParams(EncodeSurfaceStateArgs &args) {
-    auto surfaceState = reinterpret_cast<R_SURFACE_STATE *>(args.outMemory);
-    encodeExtraCacheSettings(surfaceState, args);
-}
-
-template <typename GfxFamily>
-bool EncodeSurfaceState<GfxFamily>::isBindingTablePrefetchPreferred() {
-    return true;
 }
 
 template <typename Family>
@@ -605,14 +559,6 @@ inline void EncodeStoreMemory<Family>::programStoreDataImm(MI_STORE_DATA_IMM *cm
 }
 
 template <typename Family>
-inline void EncodeStoreMemory<Family>::encodeForceCompletionCheck(MI_STORE_DATA_IMM &storeDataImmCmd) {
-}
-
-template <typename Family>
-inline void EncodeMiArbCheck<Family>::adjust(MI_ARB_CHECK &miArbCheck, std::optional<bool> preParserDisable) {
-}
-
-template <typename Family>
 template <typename WalkerType>
 void EncodeDispatchKernel<Family>::setupPostSyncMocs(WalkerType &walkerCmd, const RootDeviceEnvironment &rootDeviceEnvironment, bool dcFlush) {}
 
@@ -644,6 +590,32 @@ void EncodeDispatchKernel<Family>::forceComputeWalkerPostSyncFlushWithWrite(Walk
 }
 
 template <typename Family>
+uint32_t EncodeDispatchKernel<Family>::alignSlmSize(uint32_t slmSize) {
+    if (slmSize == 0u) {
+        return 0u;
+    }
+    slmSize = std::max(slmSize, 1024u);
+    slmSize = Math::nextPowerOfTwo(slmSize);
+    UNRECOVERABLE_IF(slmSize > 64u * MemoryConstants::kiloByte);
+    return slmSize;
+}
+
+template <typename Family>
+uint32_t EncodeDispatchKernel<Family>::computeSlmValues(const HardwareInfo &hwInfo, uint32_t slmSize) {
+    auto value = std::max(slmSize, 1024u);
+    value = Math::nextPowerOfTwo(value);
+    value = Math::getMinLsbSet(value);
+    value = value - 9;
+    DEBUG_BREAK_IF(value > 7);
+    return value * !!slmSize;
+}
+
+template <typename Family>
+bool EncodeDispatchKernel<Family>::singleTileExecImplicitScalingRequired(bool cooperativeKernel) {
+    return cooperativeKernel;
+}
+
+template <typename Family>
 size_t EncodeStates<Family>::getSshHeapSize() {
     return 64 * MemoryConstants::kiloByte;
 }
@@ -656,6 +628,11 @@ void EncodeBatchBufferStartOrEnd<Family>::appendBatchBufferStart(MI_BATCH_BUFFER
 template <typename Family>
 void InOrderPatchCommandHelpers::PatchCmd<Family>::patchComputeWalker(uint64_t appendCounterValue) {
     UNRECOVERABLE_IF(true);
+}
+
+template <typename Family>
+template <typename WalkerType, typename InterfaceDescriptorType>
+void EncodeDispatchKernel<Family>::overrideDefaultValues(WalkerType &walkerCmd, InterfaceDescriptorType &interfaceDescriptor) {
 }
 
 } // namespace NEO

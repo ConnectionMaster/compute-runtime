@@ -220,7 +220,7 @@ HWTEST2_F(CommandListTestsReserveSize, givenCommandListWhenGetReserveSshSizeThen
 using CommandListAppendLaunchKernel = Test<ModuleFixture>;
 HWTEST2_F(CommandListAppendLaunchKernel, givenVariousKernelsWhenUpdateStreamPropertiesIsCalledThenRequiredStateFinalStateAndCommandsToPatchAreCorrectlySet, IsAtLeastXeHpCore) {
     DebugManagerStateRestore restorer;
-    debugManager.flags.AllowMixingRegularAndCooperativeKernels.set(1);
+
     debugManager.flags.AllowPatchingVfeStateInCommandLists.set(1);
 
     Mock<::L0::KernelImp> defaultKernel;
@@ -296,7 +296,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenVariousKernelsWhenUpdateStreamProp
 
 HWTEST2_F(CommandListAppendLaunchKernel, givenVariousKernelsAndPatchingDisallowedWhenUpdateStreamPropertiesIsCalledThenCommandsToPatchAreEmpty, IsAtLeastXeHpCore) {
     DebugManagerStateRestore restorer;
-    debugManager.flags.AllowMixingRegularAndCooperativeKernels.set(1);
+
     Mock<::L0::KernelImp> defaultKernel;
     auto pMockModule1 = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
     defaultKernel.module = pMockModule1.get();
@@ -1121,7 +1121,7 @@ struct CommandListSignalAllEventPacketFixture : public ModuleFixture {
 
         size_t sizeBefore = cmdStream->getUsed();
         auto eventHandle = event->toHandle();
-        result = commandList->appendWaitOnEvents(1, &eventHandle, nullptr, false, true, false, false, false);
+        result = commandList->appendWaitOnEvents(1, &eventHandle, nullptr, false, true, false, false, false, false);
         size_t sizeAfter = cmdStream->getUsed();
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -1978,6 +1978,9 @@ HWTEST2_F(ImmediateFlushTaskGlobalStatelessCmdListTest,
 
     auto &csrImmediate = neoDevice->getUltCommandStreamReceiver<FamilyType>();
     csrImmediate.storeMakeResidentAllocations = true;
+    if (csrImmediate.heaplessStateInitialized) {
+        GTEST_SKIP();
+    }
     auto &csrStream = csrImmediate.commandStream;
 
     ze_group_count_t groupCount{1, 1, 1};
@@ -2093,6 +2096,9 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     auto bindlessHeapsHelper = neoDevice->getExecutionEnvironment()->rootDeviceEnvironments[neoDevice->getRootDeviceIndex()]->bindlessHeapsHelper.get();
     auto &csrImmediate = neoDevice->getUltCommandStreamReceiver<FamilyType>();
     csrImmediate.storeMakeResidentAllocations = true;
+    if (csrImmediate.heaplessModeEnabled) {
+        GTEST_SKIP();
+    }
     auto &csrStream = csrImmediate.commandStream;
 
     ze_group_count_t groupCount{1, 1, 1};
@@ -2235,6 +2241,9 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     auto &csrImmediate = neoDevice->getUltCommandStreamReceiver<FamilyType>();
+    if (csrImmediate.heaplessModeEnabled) {
+        GTEST_SKIP();
+    }
     csrImmediate.storeMakeResidentAllocations = true;
     auto &csrStream = csrImmediate.commandStream;
 
@@ -2297,7 +2306,9 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
 
     auto &csrImmediate = neoDevice->getUltCommandStreamReceiver<FamilyType>();
     auto &csrStream = csrImmediate.commandStream;
-
+    if (csrImmediate.heaplessModeEnabled) {
+        GTEST_SKIP();
+    }
     size_t csrUsedBefore = csrStream.getUsed();
     auto result = commandListImmediate->appendBarrier(nullptr, 0, nullptr, false);
     size_t csrUsedAfter = csrStream.getUsed();
@@ -2326,6 +2337,9 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
 
     auto bindlessHeapsHelper = neoDevice->getExecutionEnvironment()->rootDeviceEnvironments[neoDevice->getRootDeviceIndex()]->bindlessHeapsHelper.get();
     auto &csrImmediate = neoDevice->getUltCommandStreamReceiver<FamilyType>();
+    if (csrImmediate.heaplessModeEnabled) {
+        GTEST_SKIP();
+    }
     auto &csrStream = csrImmediate.commandStream;
 
     ze_group_count_t groupCount{1, 1, 1};
@@ -2422,6 +2436,10 @@ HWTEST2_F(ImmediateFlushTaskPrivateHeapCmdListTest,
 
     auto &csrImmediate = neoDevice->getUltCommandStreamReceiver<FamilyType>();
     csrImmediate.storeMakeResidentAllocations = true;
+
+    if (csrImmediate.heaplessModeEnabled) {
+        GTEST_SKIP();
+    }
     auto &csrStream = csrImmediate.commandStream;
 
     commandListImmediate->getCmdContainer().prepareBindfulSsh();
@@ -2546,7 +2564,7 @@ HWTEST2_F(CommandListCreate, givenAppendSignalEventWhenSkipAddToResidencyTrueThe
     ASSERT_NE(nullptr, event.get());
 
     auto &residencyContainer = commandContainer.getResidencyContainer();
-    auto eventAllocation = event->getPoolAllocation(device);
+    auto eventAllocation = event->getAllocation(device);
 
     void *pipeControlBuffer = nullptr;
 
@@ -2627,7 +2645,7 @@ HWTEST2_F(CommandListCreate,
     ASSERT_NE(nullptr, event.get());
 
     auto &residencyContainer = commandContainer.getResidencyContainer();
-    auto eventAllocation = event->getPoolAllocation(device);
+    auto eventAllocation = event->getAllocation(device);
     auto eventBaseAddress = event->getGpuAddress(device);
 
     CommandToPatchContainer outStoreRegMemCmdList;
@@ -2813,6 +2831,8 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     auto result = commandList->initialize(device, NEO::EngineGroupType::compute, ZE_COMMAND_LIST_FLAG_IN_ORDER);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
+    bool heapless = commandList->isHeaplessModeEnabled();
+
     auto &commandContainer = commandList->getCmdContainer();
     auto cmdStream = commandContainer.getCommandStream();
 
@@ -2848,24 +2868,26 @@ HWTEST2_F(CommandListAppendLaunchKernel,
 
     auto eventCompletionAddress = event->getCompletionFieldGpuAddress(device);
 
-    ASSERT_EQ(2u, outCbEventCmds.size());
-
-    size_t expectedSdi = commandList->inOrderAtomicSignalingEnabled ? 1 : 2;
+    ASSERT_EQ(heapless ? 0u : 2u, outCbEventCmds.size());
+    size_t expectedSdi = heapless ? 0 : commandList->inOrderAtomicSignalingEnabled ? 1
+                                                                                   : 2;
 
     auto storeDataImmList = findAll<MI_STORE_DATA_IMM *>(cmdList.begin(), cmdList.end());
     ASSERT_EQ(expectedSdi, storeDataImmList.size());
     auto computeWalkerList = NEO::UnitTestHelper<FamilyType>::findAllWalkerTypeCmds(cmdList.begin(), cmdList.end());
     ASSERT_EQ(1u, computeWalkerList.size());
     auto semaphoreWaitList = findAll<MI_SEMAPHORE_WAIT *>(cmdList.begin(), cmdList.end());
-    ASSERT_EQ(1u, semaphoreWaitList.size());
+    ASSERT_EQ(heapless ? 0u : 1u, semaphoreWaitList.size());
 
-    EXPECT_EQ(CommandToPatch::CbEventTimestampClearStoreDataImm, outCbEventCmds[0].type);
-    EXPECT_EQ(*storeDataImmList[0], outCbEventCmds[0].pDestination);
-    auto storeDataImmCmd = genCmdCast<MI_STORE_DATA_IMM *>(outCbEventCmds[0].pDestination);
-    ASSERT_NE(nullptr, storeDataImmCmd);
-    EXPECT_EQ(eventCompletionAddress, storeDataImmCmd->getAddress());
-
+    if (!heapless) {
+        EXPECT_EQ(CommandToPatch::CbEventTimestampClearStoreDataImm, outCbEventCmds[0].type);
+        EXPECT_EQ(*storeDataImmList[0], outCbEventCmds[0].pDestination);
+        auto storeDataImmCmd = genCmdCast<MI_STORE_DATA_IMM *>(outCbEventCmds[0].pDestination);
+        ASSERT_NE(nullptr, storeDataImmCmd);
+        EXPECT_EQ(eventCompletionAddress, storeDataImmCmd->getAddress());
+    }
     EXPECT_EQ(launchParams.outWalker, *computeWalkerList[0]);
+
     ASSERT_NE(nullptr, launchParams.outWalker);
     auto eventBaseAddress = event->getGpuAddress(device);
 
@@ -2880,11 +2902,14 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     },
                walkerVariant);
 
-    EXPECT_EQ(CommandToPatch::CbEventTimestampPostSyncSemaphoreWait, outCbEventCmds[1].type);
-    EXPECT_EQ(*semaphoreWaitList[0], outCbEventCmds[1].pDestination);
-    auto semaphoreWaitCmd = genCmdCast<MI_SEMAPHORE_WAIT *>(outCbEventCmds[1].pDestination);
-    ASSERT_NE(nullptr, semaphoreWaitCmd);
-    EXPECT_EQ(eventCompletionAddress, semaphoreWaitCmd->getSemaphoreGraphicsAddress());
+    if (!heapless) {
+
+        EXPECT_EQ(CommandToPatch::CbEventTimestampPostSyncSemaphoreWait, outCbEventCmds[1].type);
+        EXPECT_EQ(*semaphoreWaitList[0], outCbEventCmds[1].pDestination);
+        auto semaphoreWaitCmd = genCmdCast<MI_SEMAPHORE_WAIT *>(outCbEventCmds[1].pDestination);
+        ASSERT_NE(nullptr, semaphoreWaitCmd);
+        EXPECT_EQ(eventCompletionAddress, semaphoreWaitCmd->getSemaphoreGraphicsAddress());
+    }
 }
 
 HWTEST2_F(CommandListAppendLaunchKernel,
@@ -2994,7 +3019,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
 HWTEST2_F(CommandListAppendLaunchKernel,
           givenCmdListParamHasWalkerCpuBufferWhenAppendingKernelThenCopiedWalkerHasTheSameContentAsInGfxMemory,
           IsAtLeastXeHpCore) {
-    using DefaultWalkerType = typename FamilyType::DefaultWalkerType;
+    using WalkerVariant = typename FamilyType::WalkerVariant;
 
     Mock<::L0::KernelImp> kernel;
     auto mockModule = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
@@ -3003,15 +3028,16 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     auto commandList = std::make_unique<WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>>();
     auto result = commandList->initialize(device, NEO::EngineGroupType::compute, 0);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
+    bool heapless = commandList->isHeaplessModeEnabled();
 
     auto &commandContainer = commandList->getCmdContainer();
     auto cmdStream = commandContainer.getCommandStream();
 
-    auto walkerBuffer = std::make_unique<DefaultWalkerType>();
+    auto *walkerBuffer = NEO::UnitTestHelper<FamilyType>::getInitWalkerCmd(heapless);
 
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
-    launchParams.cmdWalkerBuffer = walkerBuffer.get();
+    launchParams.cmdWalkerBuffer = walkerBuffer;
     auto commandStreamOffset = cmdStream->getUsed();
     result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
@@ -3025,8 +3051,13 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     auto computeWalkerList = NEO::UnitTestHelper<FamilyType>::findAllWalkerTypeCmds(cmdList.begin(), cmdList.end());
     ASSERT_EQ(1u, computeWalkerList.size());
 
-    auto walkerGfxMemory = reinterpret_cast<DefaultWalkerType *>(*computeWalkerList[0]);
-    EXPECT_EQ(0, memcmp(walkerGfxMemory, launchParams.cmdWalkerBuffer, sizeof(DefaultWalkerType)));
+    WalkerVariant walkerVariant = NEO::UnitTestHelper<FamilyType>::getWalkerVariant(*computeWalkerList[0]);
+    std::visit([&launchParams, &walkerBuffer](auto &&walker) {
+        using WalkerType = std::decay_t<decltype(*walker)>;
+        EXPECT_EQ(0, memcmp(walker, launchParams.cmdWalkerBuffer, sizeof(WalkerType)));
+        delete static_cast<WalkerType *>(walkerBuffer);
+    },
+               walkerVariant);
 }
 
 HWTEST2_F(CommandListAppendLaunchKernel,
@@ -3084,7 +3115,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     ASSERT_NE(nullptr, event.get());
 
     auto eventBaseAddress = event->getGpuAddress(device);
-    auto eventAlloaction = event->getPoolAllocation(device);
+    auto eventAlloaction = event->getAllocation(device);
 
     uint8_t computeWalkerHostBuffer[512];
     uint8_t payloadHostBuffer[256];

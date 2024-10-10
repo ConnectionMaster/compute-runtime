@@ -122,6 +122,7 @@ TEST_F(CommandListCreate, whenCommandListIsCreatedThenItIsInitialized) {
     ze_result_t returnValue;
     std::unique_ptr<L0::CommandList> commandList(CommandList::create(productFamily, device, NEO::EngineGroupType::renderCompute, 0u, returnValue, false));
     ASSERT_NE(nullptr, commandList);
+    EXPECT_EQ(NEO::EngineGroupType::renderCompute, commandList->getEngineGroupType());
 
     ze_device_handle_t hDevice;
     EXPECT_EQ(device, commandList->getDevice());
@@ -840,7 +841,7 @@ TEST_F(CommandListMemAdvisePageFault, givenUnifiedMemoryAllocWhenAllowCPUMemoryE
     NEO::PageFaultManager::PageFaultData pageData;
     pageData.cmdQ = deviceImp;
 
-    mockPageFaultManager->baseAllowCPUMemoryEviction(ptr, pageData);
+    mockPageFaultManager->baseAllowCPUMemoryEviction(true, ptr, pageData);
     EXPECT_EQ(mockPageFaultManager->allowCPUMemoryEvictionImplCalled, 1);
 
     CommandStreamReceiver *csr = nullptr;
@@ -1180,7 +1181,7 @@ HWTEST2_F(CommandListCreate, givenDirectSubmissionAndImmCmdListWhenDispatchingTh
 
     verifyFlags(commandList->appendPageFaultCopy(kernel.getIsaAllocation(), kernel.getIsaAllocation(), 1, false), false, false);
 
-    verifyFlags(commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false), true, true);
+    verifyFlags(commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false, false), true, true);
 
     verifyFlags(commandList->appendWriteGlobalTimestamp(reinterpret_cast<uint64_t *>(dstPtr), nullptr, 0, nullptr), true, true);
 
@@ -1583,7 +1584,7 @@ HWTEST2_F(CommandListCreate, givenDirectSubmissionAndImmCmdListWhenDispatchingTh
         verifyFlags(commandList->appendPageFaultCopy(kernel.getIsaAllocation(), kernel.getIsaAllocation(), 1, false),
                     false, false);
 
-        verifyFlags(commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false), false, false);
+        verifyFlags(commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false, false), false, false);
 
         verifyFlags(commandList->appendWriteGlobalTimestamp(reinterpret_cast<uint64_t *>(dstPtr), nullptr, numWaitlistEvents, waitlist),
                     false, false);
@@ -1973,7 +1974,7 @@ HWTEST_F(CommandListCreate, GivenGpuHangWhenCreatingImmediateCommandListAndAppen
     ASSERT_NE(nullptr, eventObject->csrs[0]);
     ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
 
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
+    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false, false);
     EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
 
     returnValue = commandList->appendBarrier(nullptr, 1, &event, false);
@@ -1988,56 +1989,6 @@ HWTEST_F(CommandListCreate, GivenGpuHangWhenCreatingImmediateCommandListAndAppen
     queue->csr = &mockCommandStreamReceiver;
 
     returnValue = commandList->appendSignalEvent(event);
-    EXPECT_EQ(ZE_RESULT_ERROR_DEVICE_LOST, returnValue);
-
-    queue->csr = oldCsr;
-}
-
-HWTEST2_F(CommandListCreate, GivenGpuHangOnExecutingCommandListsWhenCreatingImmediateCommandListAndWaitingOnEventsThenDeviceLostIsReturned, IsSKL) {
-    ze_command_queue_desc_t desc = {};
-    desc.mode = ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS;
-
-    ze_result_t returnValue;
-    std::unique_ptr<L0::CommandList> commandList(CommandList::createImmediate(productFamily, device, &desc, false, NEO::EngineGroupType::renderCompute, returnValue));
-
-    ASSERT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, commandList);
-    auto whiteBoxCmdList = static_cast<CommandList *>(commandList.get());
-
-    EXPECT_EQ(device, commandList->getDevice());
-    EXPECT_TRUE(commandList->isImmediateType());
-    EXPECT_NE(nullptr, whiteBoxCmdList->cmdQImmediate);
-
-    ze_event_pool_desc_t eventPoolDesc = {};
-    eventPoolDesc.count = 1;
-    eventPoolDesc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
-
-    ze_event_desc_t eventDesc = {};
-    eventDesc.index = 0;
-    eventDesc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
-    eventDesc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-
-    ze_event_handle_t event = nullptr;
-
-    std::unique_ptr<L0::EventPool> eventPool(EventPool::create(driverHandle.get(), context, 0, nullptr, &eventPoolDesc, returnValue));
-    EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, eventPool);
-
-    eventPool->createEvent(&eventDesc, &event);
-
-    std::unique_ptr<Event> eventObject(static_cast<Event *>(L0::Event::fromHandle(event)));
-    ASSERT_NE(nullptr, eventObject->csrs[0]);
-    ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
-
-    MockCommandStreamReceiver mockCommandStreamReceiver(*neoDevice->executionEnvironment, neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield());
-    mockCommandStreamReceiver.waitForCompletionWithTimeoutReturnValue = WaitStatus::gpuHang;
-
-    auto queue = static_cast<WhiteBox<::L0::CommandQueue> *>(whiteBoxCmdList->cmdQImmediate);
-
-    const auto oldCsr = queue->csr;
-    queue->csr = &mockCommandStreamReceiver;
-
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
     EXPECT_EQ(ZE_RESULT_ERROR_DEVICE_LOST, returnValue);
 
     queue->csr = oldCsr;
@@ -2099,157 +2050,6 @@ TEST_F(CommandListCreate, givenCreatingRegularCommandlistAndppendCommandListsThe
     EXPECT_EQ(result, ZE_RESULT_ERROR_INVALID_ARGUMENT);
 }
 
-HWTEST2_F(CommandListCreate, GivenGpuHangOnSynchronizingWhenCreatingImmediateCommandListAndWaitingOnEventsThenDeviceLostIsReturned, IsSKL) {
-    DebugManagerStateRestore restorer;
-
-    ze_command_queue_desc_t desc = {};
-    desc.mode = ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS;
-
-    ze_result_t returnValue;
-    std::unique_ptr<L0::CommandList> commandList(CommandList::createImmediate(productFamily, device, &desc, false, NEO::EngineGroupType::renderCompute, returnValue));
-
-    ASSERT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, commandList);
-    auto whiteBoxCmdList = static_cast<CommandList *>(commandList.get());
-
-    EXPECT_EQ(device, commandList->getDevice());
-    EXPECT_TRUE(commandList->isImmediateType());
-    EXPECT_NE(nullptr, whiteBoxCmdList->cmdQImmediate);
-
-    ze_event_pool_desc_t eventPoolDesc = {};
-    eventPoolDesc.count = 1;
-    eventPoolDesc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
-
-    ze_event_desc_t eventDesc = {};
-    eventDesc.index = 0;
-    eventDesc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
-    eventDesc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-
-    ze_event_handle_t event = nullptr;
-
-    std::unique_ptr<L0::EventPool> eventPool(EventPool::create(driverHandle.get(), context, 0, nullptr, &eventPoolDesc, returnValue));
-    EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, eventPool);
-
-    eventPool->createEvent(&eventDesc, &event);
-
-    std::unique_ptr<Event> eventObject(static_cast<Event *>(L0::Event::fromHandle(event)));
-    ASSERT_NE(nullptr, eventObject->csrs[0]);
-    ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
-
-    MockCommandStreamReceiver mockCommandStreamReceiver(*neoDevice->executionEnvironment, neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield());
-    mockCommandStreamReceiver.waitForCompletionWithTimeoutReturnValue = WaitStatus::gpuHang;
-
-    auto queue = static_cast<WhiteBox<::L0::CommandQueue> *>(whiteBoxCmdList->cmdQImmediate);
-
-    const auto oldCsr = queue->csr;
-    queue->csr = &mockCommandStreamReceiver;
-
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
-    EXPECT_EQ(ZE_RESULT_ERROR_DEVICE_LOST, returnValue);
-    queue->csr = oldCsr;
-}
-
-HWTEST2_F(CommandListCreate, GivenGpuHangOnSynchronizingWhenCreatingImmediateCommandListWithoutFlushTaskAndWaitingOnEventsThenDeviceLostIsReturnedFromExecute, IsSKL) {
-    DebugManagerStateRestore restorer;
-    debugManager.flags.EnableFlushTaskSubmission.set(0);
-
-    ze_command_queue_desc_t desc = {};
-    desc.mode = ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS;
-
-    ze_result_t returnValue;
-    std::unique_ptr<L0::CommandList> commandList(CommandList::createImmediate(productFamily, device, &desc, false, NEO::EngineGroupType::renderCompute, returnValue));
-
-    ASSERT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, commandList);
-    auto whiteBoxCmdList = static_cast<CommandList *>(commandList.get());
-
-    EXPECT_EQ(device, commandList->getDevice());
-    EXPECT_TRUE(commandList->isImmediateType());
-    EXPECT_NE(nullptr, whiteBoxCmdList->cmdQImmediate);
-
-    ze_event_pool_desc_t eventPoolDesc = {};
-    eventPoolDesc.count = 1;
-    eventPoolDesc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
-
-    ze_event_desc_t eventDesc = {};
-    eventDesc.index = 0;
-    eventDesc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
-    eventDesc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-
-    ze_event_handle_t event = nullptr;
-
-    std::unique_ptr<L0::EventPool> eventPool(EventPool::create(driverHandle.get(), context, 0, nullptr, &eventPoolDesc, returnValue));
-    EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, eventPool);
-
-    eventPool->createEvent(&eventDesc, &event);
-
-    std::unique_ptr<Event> eventObject(static_cast<Event *>(L0::Event::fromHandle(event)));
-    ASSERT_NE(nullptr, eventObject->csrs[0]);
-    ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
-
-    MockCommandStreamReceiver mockCommandStreamReceiver(*neoDevice->executionEnvironment, neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield());
-    Mock<CommandQueue> mockCommandQueue(device, &mockCommandStreamReceiver, &desc);
-    mockCommandQueue.executeCommandListsResult = ZE_RESULT_ERROR_DEVICE_LOST;
-    auto oldCommandQueue = whiteBoxCmdList->cmdQImmediate;
-    whiteBoxCmdList->cmdQImmediate = &mockCommandQueue;
-
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
-    EXPECT_EQ(ZE_RESULT_ERROR_DEVICE_LOST, returnValue);
-    whiteBoxCmdList->cmdQImmediate = oldCommandQueue;
-}
-
-HWTEST2_F(CommandListCreate, GivenGpuHangOnSynchronizingWhenCreatingImmediateCommandListWithoutFlushTaskAndWaitingOnEventsThenDeviceLostIsReturnedFromSynchronize, IsSKL) {
-    DebugManagerStateRestore restorer;
-    debugManager.flags.EnableFlushTaskSubmission.set(0);
-
-    ze_command_queue_desc_t desc = {};
-    desc.mode = ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS;
-
-    ze_result_t returnValue;
-    std::unique_ptr<L0::CommandList> commandList(CommandList::createImmediate(productFamily, device, &desc, false, NEO::EngineGroupType::renderCompute, returnValue));
-
-    ASSERT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, commandList);
-    auto whiteBoxCmdList = static_cast<CommandList *>(commandList.get());
-
-    EXPECT_EQ(device, commandList->getDevice());
-    EXPECT_TRUE(commandList->isImmediateType());
-    EXPECT_NE(nullptr, whiteBoxCmdList->cmdQImmediate);
-
-    ze_event_pool_desc_t eventPoolDesc = {};
-    eventPoolDesc.count = 1;
-    eventPoolDesc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
-
-    ze_event_desc_t eventDesc = {};
-    eventDesc.index = 0;
-    eventDesc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
-    eventDesc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-
-    ze_event_handle_t event = nullptr;
-
-    std::unique_ptr<L0::EventPool> eventPool(EventPool::create(driverHandle.get(), context, 0, nullptr, &eventPoolDesc, returnValue));
-    EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
-    ASSERT_NE(nullptr, eventPool);
-
-    eventPool->createEvent(&eventDesc, &event);
-
-    std::unique_ptr<Event> eventObject(static_cast<Event *>(L0::Event::fromHandle(event)));
-    ASSERT_NE(nullptr, eventObject->csrs[0]);
-    ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
-
-    MockCommandStreamReceiver mockCommandStreamReceiver(*neoDevice->executionEnvironment, neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield());
-    Mock<CommandQueue> mockCommandQueue(device, &mockCommandStreamReceiver, &desc);
-    mockCommandQueue.synchronizeResult = ZE_RESULT_ERROR_DEVICE_LOST;
-    auto oldCommandQueue = whiteBoxCmdList->cmdQImmediate;
-    whiteBoxCmdList->cmdQImmediate = &mockCommandQueue;
-
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
-    EXPECT_EQ(ZE_RESULT_ERROR_DEVICE_LOST, returnValue);
-    whiteBoxCmdList->cmdQImmediate = oldCommandQueue;
-}
-
 HWTEST_F(CommandListCreate, GivenGpuHangWhenCreatingImmediateCommandListAndAppendingEventResetThenDeviceLostIsReturned) {
     DebugManagerStateRestore restorer;
     debugManager.flags.EnableFlushTaskSubmission.set(1);
@@ -2289,7 +2089,7 @@ HWTEST_F(CommandListCreate, GivenGpuHangWhenCreatingImmediateCommandListAndAppen
     ASSERT_NE(nullptr, eventObject->csrs[0]);
     ASSERT_EQ(static_cast<DeviceImp *>(device)->getNEODevice()->getDefaultEngine().commandStreamReceiver, eventObject->csrs[0]);
 
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
+    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false, false);
     EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
 
     returnValue = commandList->appendBarrier(nullptr, 1, &event, false);
@@ -2385,7 +2185,7 @@ HWTEST_F(CommandListCreate, GivenGpuHangAndEnabledFlushTaskSubmissionFlagWhenCre
     const auto oldCsr = queue->csr;
     queue->csr = &mockCommandStreamReceiver;
 
-    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false);
+    returnValue = commandList->appendWaitOnEvents(1, &event, nullptr, false, true, false, false, false, false);
     EXPECT_EQ(ZE_RESULT_ERROR_DEVICE_LOST, returnValue);
 
     queue->csr = oldCsr;
@@ -2721,7 +2521,7 @@ TEST_F(CommandListCreate, givenInvalidProductFamilyThenReturnsNullPointer) {
     EXPECT_EQ(nullptr, commandList);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, CommandListCreate, whenCommandListIsCreatedThenPCAndStateBaseAddressCmdsAreAddedAndCorrectlyProgrammed) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandListCreate, whenCommandListIsCreatedThenPCAndStateBaseAddressCmdsAreAddedAndCorrectlyProgrammed) {
     DebugManagerStateRestore dbgRestorer;
     debugManager.flags.UseBindlessMode.set(0);
     debugManager.flags.DispatchCmdlistCmdBufferPrimary.set(0);
@@ -2960,7 +2760,7 @@ HWTEST_F(CommandListCreate, givenCommandListWhenAppendingBarrierWithIncorrectWai
     EXPECT_EQ(returnValue, ZE_RESULT_ERROR_INVALID_ARGUMENT);
 }
 
-HWTEST2_F(CommandListCreate, givenCopyCommandListWhenProfilingBeforeCommandForCopyOnlyThenCommandsHaveCorrectEventOffsets, IsAtLeastSkl) {
+HWTEST2_F(CommandListCreate, givenCopyCommandListWhenProfilingBeforeCommandForCopyOnlyThenCommandsHaveCorrectEventOffsets, MatchAny) {
     using GfxFamily = typename NEO::GfxFamilyMapper<gfxCoreFamily>::GfxFamily;
     using MI_STORE_REGISTER_MEM = typename GfxFamily::MI_STORE_REGISTER_MEM;
     auto commandList = std::make_unique<WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>>();
@@ -2990,15 +2790,15 @@ HWTEST2_F(CommandListCreate, givenCopyCommandListWhenProfilingBeforeCommandForCo
     auto itor = find<MI_STORE_REGISTER_MEM *>(cmdList.begin(), cmdList.end());
     EXPECT_NE(cmdList.end(), itor);
     auto cmd = genCmdCast<MI_STORE_REGISTER_MEM *>(*itor);
-    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::globalTimestampLdw);
+    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::globalTimestampLdw);
     EXPECT_EQ(cmd->getMemoryAddress(), ptrOffset(baseAddr, globalOffset));
     EXPECT_NE(cmdList.end(), ++itor);
     cmd = genCmdCast<MI_STORE_REGISTER_MEM *>(*itor);
-    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::gpThreadTimeRegAddressOffsetLow);
+    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::gpThreadTimeRegAddressOffsetLow);
     EXPECT_EQ(cmd->getMemoryAddress(), ptrOffset(baseAddr, contextOffset));
 }
 
-HWTEST2_F(CommandListCreate, givenCopyCommandListWhenProfilingAfterCommandForCopyOnlyThenCommandsHaveCorrectEventOffsets, IsAtLeastSkl) {
+HWTEST2_F(CommandListCreate, givenCopyCommandListWhenProfilingAfterCommandForCopyOnlyThenCommandsHaveCorrectEventOffsets, MatchAny) {
     using GfxFamily = typename NEO::GfxFamilyMapper<gfxCoreFamily>::GfxFamily;
     using MI_STORE_REGISTER_MEM = typename GfxFamily::MI_STORE_REGISTER_MEM;
     auto commandList = std::make_unique<WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>>();
@@ -3025,15 +2825,15 @@ HWTEST2_F(CommandListCreate, givenCopyCommandListWhenProfilingAfterCommandForCop
     auto itor = find<MI_STORE_REGISTER_MEM *>(cmdList.begin(), cmdList.end());
     EXPECT_NE(cmdList.end(), itor);
     auto cmd = genCmdCast<MI_STORE_REGISTER_MEM *>(*itor);
-    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::globalTimestampLdw);
+    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::globalTimestampLdw);
     EXPECT_EQ(cmd->getMemoryAddress(), ptrOffset(baseAddr, globalOffset));
     EXPECT_NE(cmdList.end(), ++itor);
     cmd = genCmdCast<MI_STORE_REGISTER_MEM *>(*itor);
-    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::gpThreadTimeRegAddressOffsetLow);
+    EXPECT_EQ(cmd->getRegisterAddress(), RegisterOffsets::bcs0Base + RegisterOffsets::gpThreadTimeRegAddressOffsetLow);
     EXPECT_EQ(cmd->getMemoryAddress(), ptrOffset(baseAddr, contextOffset));
 }
 
-HWTEST2_F(CommandListCreate, givenNullEventWhenAppendEventAfterWalkerThenNothingAddedToStream, IsAtLeastSkl) {
+HWTEST2_F(CommandListCreate, givenNullEventWhenAppendEventAfterWalkerThenNothingAddedToStream, MatchAny) {
     using GfxFamily = typename NEO::GfxFamilyMapper<gfxCoreFamily>::GfxFamily;
     using MI_STORE_REGISTER_MEM = typename GfxFamily::MI_STORE_REGISTER_MEM;
     auto commandList = std::make_unique<WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>>();
@@ -3048,6 +2848,7 @@ HWTEST2_F(CommandListCreate, givenNullEventWhenAppendEventAfterWalkerThenNothing
 
 TEST_F(CommandListCreate, givenCreatedCommandListWhenGettingTrackingFlagsThenDefaultValuseIsHwSupported) {
     auto &rootDeviceEnvironment = device->getNEODevice()->getRootDeviceEnvironment();
+    auto &hwInfo = device->getNEODevice()->getHardwareInfo();
 
     auto &l0GfxCoreHelper = rootDeviceEnvironment.getHelper<L0GfxCoreHelper>();
     auto &productHelper = rootDeviceEnvironment.getHelper<NEO::ProductHelper>();
@@ -3081,6 +2882,7 @@ TEST_F(CommandListCreate, givenCreatedCommandListWhenGettingTrackingFlagsThenDef
 
     EXPECT_EQ(commandList->heaplessModeEnabled, commandList->scratchAddressPatchingEnabled);
     EXPECT_EQ(commandList->statelessBuiltinsEnabled, compilerProductHelper.isForceToStatelessRequired());
+    EXPECT_EQ((productHelper.getSupportedLocalDispatchSizes(hwInfo).size() > 0), commandList->getLocalDispatchSupport());
 }
 
 TEST(BuiltinTypeHelperTest, givenNonStatelessAndNonHeaplessWhenAdjustBuiltinTypeIsCalledThenCorrectBuiltinTypeIsReturned) {

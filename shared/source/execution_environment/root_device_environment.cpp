@@ -157,10 +157,17 @@ CompilerInterface *RootDeviceEnvironment::getCompilerInterface() {
 void RootDeviceEnvironment::initHelpers() {
     initProductHelper();
     initGfxCoreHelper();
+    initializeGfxCoreHelperFromHwInfo();
     initApiGfxCoreHelper();
     initCompilerProductHelper();
     initReleaseHelper();
     initAilConfigurationHelper();
+}
+
+void RootDeviceEnvironment::initializeGfxCoreHelperFromHwInfo() {
+    if (gfxCoreHelper != nullptr) {
+        gfxCoreHelper->initializeDefaultHpCopyEngine(*this->getHardwareInfo());
+    }
 }
 
 void RootDeviceEnvironment::initGfxCoreHelper() {

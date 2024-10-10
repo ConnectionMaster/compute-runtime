@@ -575,6 +575,9 @@ void testSysmanPci(ze_device_handle_t &device) {
         std::cout << "properties.maxSpeed.gen = " << std::dec << properties.maxSpeed.gen << std::endl;
         std::cout << "properties.maxSpeed.width = " << std::dec << properties.maxSpeed.width << std::endl;
         std::cout << "properties.maxSpeed.maxBandwidth = " << std::dec << properties.maxSpeed.maxBandwidth << std::endl;
+        std::cout << "properties.haveBandwidthCounters = " << static_cast<uint32_t>(properties.haveBandwidthCounters) << std::endl;
+        std::cout << "properties.havePacketCounters = " << static_cast<uint32_t>(properties.havePacketCounters) << std::endl;
+        std::cout << "properties.haveReplayCounters = " << static_cast<uint32_t>(properties.haveReplayCounters) << std::endl;
     }
 
     uint32_t count = 0;
@@ -595,10 +598,16 @@ void testSysmanPci(ze_device_handle_t &device) {
     zes_pci_stats_t pciStats = {};
     VALIDATECALL(zesDevicePciGetStats(device, &pciStats));
     if (verbose) {
-        std::cout << "pciStats.replayCounter = " << std::dec << pciStats.replayCounter << std::endl;
-        std::cout << "pciStats.packetCounter = " << std::dec << pciStats.packetCounter << std::endl;
-        std::cout << "pciStats.rxCounter = " << std::dec << pciStats.rxCounter << std::endl;
-        std::cout << "pciStats.txCounter = " << std::dec << pciStats.txCounter << std::endl;
+        if (properties.haveReplayCounters) {
+            std::cout << "pciStats.replayCounter = " << std::dec << pciStats.replayCounter << std::endl;
+        }
+        if (properties.havePacketCounters) {
+            std::cout << "pciStats.packetCounter = " << std::dec << pciStats.packetCounter << std::endl;
+        }
+        if (properties.haveBandwidthCounters) {
+            std::cout << "pciStats.rxCounter = " << std::dec << pciStats.rxCounter << std::endl;
+            std::cout << "pciStats.txCounter = " << std::dec << pciStats.txCounter << std::endl;
+        }
         std::cout << "pciStats.timestamp = " << std::dec << pciStats.timestamp << std::endl;
         std::cout << "pciStats.speed.gen = " << std::dec << pciStats.speed.gen << std::endl;
         std::cout << "pciStats.speed.width = " << std::dec << pciStats.speed.width << std::endl;
@@ -1396,14 +1405,26 @@ void testSysmanGlobalOperations(ze_device_handle_t &device) {
         std::cout << "properties.brandName = " << properties.brandName << std::endl;
         std::cout << "properties.modelName = " << properties.modelName << std::endl;
         std::cout << "properties.vendorName = " << properties.vendorName << std::endl;
-        std::cout << "properties.driverVersion= " << properties.driverVersion << std::endl;
-        std::cout << "properties.core.vendorId= " << properties.core.vendorId << std::endl;
-        std::cout << "properties.core.deviceId= " << properties.core.deviceId << std::endl;
-        std::cout << "properties.core.uuid= " << std::endl;
+        std::cout << "properties.driverVersion = " << properties.driverVersion << std::endl;
+        std::cout << "properties.core.type = " << properties.core.type << std::endl;
+        std::cout << "properties.core.vendorId = " << properties.core.vendorId << std::endl;
+        std::cout << "properties.core.deviceId = " << properties.core.deviceId << std::endl;
+        std::cout << "properties.core.flags = " << properties.core.flags << std::endl;
+        std::cout << "properties.core.coreClockRate = " << properties.core.coreClockRate << std::endl;
+        std::cout << "properties.core.maxHardwareContexts = " << properties.core.maxHardwareContexts << std::endl;
+        std::cout << "properties.core.maxCommandQueuePriority = " << properties.core.maxCommandQueuePriority << std::endl;
+        std::cout << "properties.core.numThreadsPerEU = " << properties.core.numThreadsPerEU << std::endl;
+        std::cout << "properties.core.numEUsPerSubslice = " << properties.core.numEUsPerSubslice << std::endl;
+        std::cout << "properties.core.numSubslicesPerSlice = " << properties.core.numSubslicesPerSlice << std::endl;
+        std::cout << "properties.core.numSlices = " << properties.core.numSlices << std::endl;
+        std::cout << "properties.core.timestampValidBits = " << properties.core.timestampValidBits << std::endl;
+        std::cout << "properties.core.kernelTimestampValidBits = " << properties.core.kernelTimestampValidBits << std::endl;
+        std::cout << "properties.core.uuid = " << std::endl;
         for (uint32_t i = 0; i < ZE_MAX_UUID_SIZE; i++) {
             std::cout << +properties.core.uuid.id[i] << " ";
         }
         std::cout << std::endl;
+        std::cout << "properties.core.name = " << properties.core.name << std::endl;
     }
 
     uint32_t count = 0;

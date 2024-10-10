@@ -245,8 +245,8 @@ cl_int CommandQueueHw<GfxFamily>::enqueueHandler(Surface **surfacesForResidency,
         DEBUG_BREAK_IF(relaxedOrderingForGpgpuAllowed(1)); // IOQ has >=1 dependencies
         PipeControlArgs args;
         args.csStallOnly = true;
-        args.hdcPipelineFlush = true;
-        args.unTypedDataPortCacheFlush = true;
+        args.hdcPipelineFlush = false;
+        args.unTypedDataPortCacheFlush = false;
         MemorySynchronizationCommands<GfxFamily>::addSingleBarrier(commandStream, args);
     }
 
@@ -316,7 +316,7 @@ cl_int CommandQueueHw<GfxFamily>::enqueueHandler(Surface **surfacesForResidency,
             }
 
             if (relaxedOrderingEnabled) {
-                RelaxedOrderingHelper::encodeRegistersBeforeDependencyCheckers<GfxFamily>(commandStream);
+                RelaxedOrderingHelper::encodeRegistersBeforeDependencyCheckers<GfxFamily>(commandStream, isCopyOnly);
             }
 
             TimestampPacketHelper::programCsrDependenciesForTimestampPacketContainer<GfxFamily>(commandStream, csrDeps, relaxedOrderingEnabled, isCopyOnly);
@@ -717,17 +717,17 @@ void CommandQueueHw<GfxFamily>::processDispatchForMarkerWithTimestampPacket(Comm
 
     auto timestampContextStartGpuAddress = TimestampPacketHelper::getContextStartGpuAddress(*currentTimestampPacketNode);
     auto timestampGlobalStartAddress = TimestampPacketHelper::getGlobalStartGpuAddress(*currentTimestampPacketNode);
-
-    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextStartGpuAddress, false, nullptr);
-    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::globalTimestampLdw, timestampGlobalStartAddress, false, nullptr);
-    MemorySynchronizationCommands<GfxFamily>::encodeAdditionalTimestampOffsets(*commandStream, timestampContextStartGpuAddress, timestampGlobalStartAddress);
+    bool isBcs = NEO::EngineHelpers::isBcs(getGpgpuCommandStreamReceiver().getOsContext().getEngineType());
+    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextStartGpuAddress, false, nullptr, isBcs);
+    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::globalTimestampLdw, timestampGlobalStartAddress, false, nullptr, isBcs);
+    MemorySynchronizationCommands<GfxFamily>::encodeAdditionalTimestampOffsets(*commandStream, timestampContextStartGpuAddress, timestampGlobalStartAddress, isBcs);
 
     auto timestampContextEndGpuAddress = TimestampPacketHelper::getContextEndGpuAddress(*currentTimestampPacketNode);
     auto timestampGlobalEndAddress = TimestampPacketHelper::getGlobalEndGpuAddress(*currentTimestampPacketNode);
 
-    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextEndGpuAddress, false, nullptr);
-    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::globalTimestampLdw, timestampGlobalEndAddress, false, nullptr);
-    MemorySynchronizationCommands<GfxFamily>::encodeAdditionalTimestampOffsets(*commandStream, timestampContextEndGpuAddress, timestampGlobalEndAddress);
+    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::gpThreadTimeRegAddressOffsetLow, timestampContextEndGpuAddress, false, nullptr, isBcs);
+    EncodeStoreMMIO<GfxFamily>::encode(*commandStream, RegisterOffsets::globalTimestampLdw, timestampGlobalEndAddress, false, nullptr, isBcs);
+    MemorySynchronizationCommands<GfxFamily>::encodeAdditionalTimestampOffsets(*commandStream, timestampContextEndGpuAddress, timestampGlobalEndAddress, isBcs);
 }
 
 template <typename GfxFamily>
@@ -844,6 +844,7 @@ CompletionStamp CommandQueueHw<GfxFamily>::enqueueNonBlocked(
             anyUncacheableArgs = true;
         }
     }
+    UNRECOVERABLE_IF(kernel == nullptr);
 
     if (mediaSamplerRequired) {
         DEBUG_BREAK_IF(device->getDeviceInfo().preemptionSupported != false);
@@ -877,7 +878,6 @@ CompletionStamp CommandQueueHw<GfxFamily>::enqueueNonBlocked(
 
     auto memoryCompressionState = csr.getMemoryCompressionState(auxTranslationRequired);
     bool hasStallingCmds = enqueueProperties.hasStallingCmds || (!relaxedOrderingEnabled && (eventsRequest.numEventsInWaitList > 0 || timestampPacketDependencies.previousEnqueueNodes.peekNodes().size() > 0));
-    bool isBindlessKernel = NEO::KernelDescriptor::isBindlessAddressingKernel(kernel->getDescriptor());
 
     DispatchFlags dispatchFlags(
         &timestampPacketDependencies.barrierNodes,                                  // barrierTimestampPacketNodes
@@ -909,8 +909,7 @@ CompletionStamp CommandQueueHw<GfxFamily>::enqueueNonBlocked(
         relaxedOrderingEnabled,                                                     // hasRelaxedOrderingDependencies
         false,                                                                      // stateCacheInvalidation
         isStallingCommandsOnNextFlushRequired(),                                    // isStallingCommandsOnNextFlushRequired
-        isDcFlushRequiredOnStallingCommandsOnNextFlush(),                           // isDcFlushRequiredOnStallingCommandsOnNextFlush
-        !isBindlessKernel                                                           // disableGlobalSSH
+        isDcFlushRequiredOnStallingCommandsOnNextFlush()                            // isDcFlushRequiredOnStallingCommandsOnNextFlush
     );
 
     dispatchFlags.pipelineSelectArgs.mediaSamplerRequired = mediaSamplerRequired;
@@ -1179,8 +1178,7 @@ CompletionStamp CommandQueueHw<GfxFamily>::enqueueCommandWithoutKernel(
             hasRelaxedOrderingDependencies,                                      // hasRelaxedOrderingDependencies
             stateCacheInvalidationNeeded,                                        // stateCacheInvalidation
             isStallingCommandsOnNextFlushRequired(),                             // isStallingCommandsOnNextFlushRequired
-            isDcFlushRequiredOnStallingCommandsOnNextFlush(),                    // isDcFlushRequiredOnStallingCommandsOnNextFlush
-            true                                                                 // disableGlobalSSH
+            isDcFlushRequiredOnStallingCommandsOnNextFlush()                     // isDcFlushRequiredOnStallingCommandsOnNextFlush
         );
 
         const bool isHandlingBarrier = isStallingCommandsOnNextFlushRequired();

@@ -442,67 +442,6 @@ bool IoctlHelperXe::setGpuCpuTimes(TimeStampData *pGpuCpuTime, OSTime *osTime) {
     return ret == 0;
 }
 
-void IoctlHelperXe::getTopologyData(size_t nTiles, std::vector<std::bitset<8>> *geomDss, std::vector<std::bitset<8>> *computeDss,
-                                    std::vector<std::bitset<8>> *euDss, DrmQueryTopologyData &topologyData, bool &isComputeDssEmpty) {
-    int subSliceCount = 0;
-    int euPerDss = 0;
-
-    for (auto tileId = 0u; tileId < nTiles; tileId++) {
-
-        int subSliceCountPerTile = 0;
-
-        for (auto byte = 0u; byte < computeDss[tileId].size(); byte++) {
-            subSliceCountPerTile += computeDss[tileId][byte].count();
-        }
-
-        if (subSliceCountPerTile == 0) {
-            isComputeDssEmpty = true;
-            for (auto byte = 0u; byte < geomDss[tileId].size(); byte++) {
-                subSliceCountPerTile += geomDss[tileId][byte].count();
-            }
-        }
-
-        int euPerDssPerTile = 0;
-        for (auto byte = 0u; byte < euDss[tileId].size(); byte++) {
-            euPerDssPerTile += euDss[tileId][byte].count();
-        }
-
-        // pick smallest config
-        subSliceCount = (subSliceCount == 0) ? subSliceCountPerTile : std::min(subSliceCount, subSliceCountPerTile);
-        euPerDss = (euPerDss == 0) ? euPerDssPerTile : std::min(euPerDss, euPerDssPerTile);
-
-        // pick max config
-        topologyData.maxSubSlicesPerSlice = std::max(topologyData.maxSubSlicesPerSlice, subSliceCountPerTile);
-        topologyData.maxEusPerSubSlice = std::max(topologyData.maxEusPerSubSlice, euPerDssPerTile);
-    }
-
-    topologyData.sliceCount = 1;
-    topologyData.subSliceCount = subSliceCount;
-    topologyData.euCount = subSliceCount * euPerDss;
-    topologyData.maxSlices = 1;
-}
-
-void IoctlHelperXe::getTopologyMap(size_t nTiles, std::vector<std::bitset<8>> *dssInfo, TopologyMap &topologyMap) {
-    for (auto tileId = 0u; tileId < nTiles; tileId++) {
-        std::vector<int> sliceIndices;
-        std::vector<int> subSliceIndices;
-
-        sliceIndices.push_back(0);
-
-        for (auto byte = 0u; byte < dssInfo[tileId].size(); byte++) {
-            for (auto bit = 0u; bit < 8u; bit++) {
-                if (dssInfo[tileId][byte].test(bit)) {
-                    auto subSliceIndex = byte * 8 + bit;
-                    subSliceIndices.push_back(subSliceIndex);
-                }
-            }
-        }
-
-        topologyMap[tileId].sliceIndices = std::move(sliceIndices);
-        topologyMap[tileId].subsliceIndices = std::move(subSliceIndices);
-    }
-}
-
 bool IoctlHelperXe::getTopologyDataAndMap(const HardwareInfo &hwInfo, DrmQueryTopologyData &topologyData, TopologyMap &topologyMap) {
 
     auto queryGtTopology = queryData<uint8_t>(DRM_XE_DEVICE_QUERY_GT_TOPOLOGY);
@@ -516,6 +455,7 @@ bool IoctlHelperXe::getTopologyDataAndMap(const HardwareInfo &hwInfo, DrmQueryTo
     StackVec<std::vector<std::bitset<8>>, 2> geomDss;
     StackVec<std::vector<std::bitset<8>>, 2> computeDss;
     StackVec<std::vector<std::bitset<8>>, 2> euDss;
+    StackVec<std::vector<std::bitset<8>>, 2> l3Banks;
 
     auto topologySize = queryGtTopology.size();
     auto dataPtr = queryGtTopology.data();
@@ -524,6 +464,7 @@ bool IoctlHelperXe::getTopologyDataAndMap(const HardwareInfo &hwInfo, DrmQueryTo
     geomDss.resize(numTiles);
     computeDss.resize(numTiles);
     euDss.resize(numTiles);
+    l3Banks.resize(numTiles);
     bool receivedDssInfo = false;
     while (topologySize >= sizeof(drm_xe_query_topology_mask)) {
         drm_xe_query_topology_mask *topo = reinterpret_cast<drm_xe_query_topology_mask *>(dataPtr);
@@ -542,11 +483,15 @@ bool IoctlHelperXe::getTopologyDataAndMap(const HardwareInfo &hwInfo, DrmQueryTo
                 fillMask(computeDss[tileId], topo);
                 receivedDssInfo = true;
                 break;
-            case DRM_XE_TOPO_EU_PER_DSS:
-                fillMask(euDss[tileId], topo);
+            case DRM_XE_TOPO_L3_BANK:
+                fillMask(l3Banks[tileId], topo);
                 break;
             default:
-                xeLog("Unhandle GT Topo type: %d\n", topo->type);
+                if (isEuPerDssTopologyType(topo->type)) {
+                    fillMask(euDss[tileId], topo);
+                } else {
+                    xeLog("Unhandle GT Topo type: %d\n", topo->type);
+                }
             }
         }
 
@@ -555,12 +500,74 @@ bool IoctlHelperXe::getTopologyDataAndMap(const HardwareInfo &hwInfo, DrmQueryTo
         dataPtr = ptrOffset(dataPtr, itemSize);
     }
 
-    bool isComputeDssEmpty = false;
-    getTopologyData(numTiles, geomDss.begin(), computeDss.begin(), euDss.begin(), topologyData, isComputeDssEmpty);
+    int sliceCount = 0;
+    int subSliceCount = 0;
+    int euPerDss = 0;
+    int l3BankCount = 0;
+    uint32_t hwMaxSubSliceCount = hwInfo.gtSystemInfo.MaxSubSlicesSupported;
+    topologyData.maxSlices = hwInfo.gtSystemInfo.MaxSlicesSupported ? hwInfo.gtSystemInfo.MaxSlicesSupported : 1;
+    topologyData.maxSubSlicesPerSlice = hwMaxSubSliceCount / topologyData.maxSlices;
 
-    auto &dssInfo = isComputeDssEmpty ? geomDss : computeDss;
-    getTopologyMap(numTiles, dssInfo.begin(), topologyMap);
+    for (auto tileId = 0u; tileId < numTiles; tileId++) {
 
+        int subSliceCountPerTile = 0;
+
+        std::vector<int> sliceIndices;
+        std::vector<int> subSliceIndices;
+
+        int previouslyEnabledSlice = -1;
+
+        auto processSubSliceInfo = [&](const std::vector<std::bitset<8>> &subSliceInfo) -> void {
+            for (auto subSliceId = 0u; subSliceId < std::min(hwMaxSubSliceCount, static_cast<uint32_t>(subSliceInfo.size() * 8)); subSliceId++) {
+                auto byte = subSliceId / 8;
+                auto bit = subSliceId & 0b111;
+                int sliceId = static_cast<int>(subSliceId / topologyData.maxSubSlicesPerSlice);
+                if (subSliceInfo[byte].test(bit)) {
+                    subSliceIndices.push_back(subSliceId);
+                    subSliceCountPerTile++;
+                    if (sliceId != previouslyEnabledSlice) {
+                        previouslyEnabledSlice = sliceId;
+                        sliceIndices.push_back(sliceId);
+                    }
+                }
+            }
+        };
+        processSubSliceInfo(computeDss[tileId]);
+
+        if (subSliceCountPerTile == 0) {
+            processSubSliceInfo(geomDss[tileId]);
+        }
+
+        topologyMap[tileId].sliceIndices = std::move(sliceIndices);
+        if (topologyMap[tileId].sliceIndices.size() < 2u) {
+            topologyMap[tileId].subsliceIndices = std::move(subSliceIndices);
+        }
+        int sliceCountPerTile = static_cast<int>(topologyMap[tileId].sliceIndices.size());
+
+        int euPerDssPerTile = 0;
+        for (auto byte = 0u; byte < euDss[tileId].size(); byte++) {
+            euPerDssPerTile += euDss[tileId][byte].count();
+        }
+
+        int l3BankCountPerTile = 0;
+        for (auto byte = 0u; byte < l3Banks[tileId].size(); byte++) {
+            l3BankCountPerTile += l3Banks[tileId][byte].count();
+        }
+
+        // pick smallest config
+        sliceCount = (sliceCount == 0) ? sliceCountPerTile : std::min(sliceCount, sliceCountPerTile);
+        subSliceCount = (subSliceCount == 0) ? subSliceCountPerTile : std::min(subSliceCount, subSliceCountPerTile);
+        euPerDss = (euPerDss == 0) ? euPerDssPerTile : std::min(euPerDss, euPerDssPerTile);
+        l3BankCount = (l3BankCount == 0) ? l3BankCountPerTile : std::min(l3BankCount, l3BankCountPerTile);
+
+        // pick max config
+        topologyData.maxEusPerSubSlice = std::max(topologyData.maxEusPerSubSlice, euPerDssPerTile);
+    }
+
+    topologyData.sliceCount = sliceCount;
+    topologyData.subSliceCount = subSliceCount;
+    topologyData.euCount = subSliceCount * euPerDss;
+    topologyData.numL3Banks = l3BankCount;
     return receivedDssInfo;
 }
 
@@ -855,12 +862,15 @@ uint64_t IoctlHelperXe::getFlagsForVmBind(bool bindCapture, bool bindImmediate, 
     if (bindCapture) {
         flags |= DRM_XE_VM_BIND_FLAG_DUMPABLE;
     }
-    if (bindImmediate && supportedFeatures.flags.vmBindImmediate) {
+    if (bindImmediate) {
         flags |= DRM_XE_VM_BIND_FLAG_IMMEDIATE;
     }
 
-    if (readOnlyResource && supportedFeatures.flags.vmBindReadOnly) {
+    if (readOnlyResource) {
         flags |= DRM_XE_VM_BIND_FLAG_READONLY;
+    }
+    if (bindMakeResident) {
+        flags |= DRM_XE_VM_BIND_FLAG_IMMEDIATE;
     }
     return flags;
 }
@@ -1098,6 +1108,7 @@ int IoctlHelperXe::ioctl(DrmIoctl request, void *arg) {
         xeLog(" -> IoctlHelperXe::ioctl GemContextSetparam r=%d\n", ret);
     } break;
     case DrmIoctl::gemClose: {
+        std::unique_lock<std::mutex> lock(gemCloseLock);
         struct GemClose *d = static_cast<struct GemClose *>(arg);
         int found = -1;
         xeShowBindTable();
@@ -1228,7 +1239,7 @@ int IoctlHelperXe::createDrmContext(Drm &drm, OsContextLinux &osContext, uint32_
     uint32_t drmContextId = 0;
 
     xeLog("createDrmContext VM=0x%x\n", drmVmId);
-    drm.bindDrmContext(drmContextId, deviceIndex, osContext.getEngineType(), osContext.isEngineInstanced());
+    drm.bindDrmContext(drmContextId, deviceIndex, osContext.getEngineType());
 
     UNRECOVERABLE_IF(contextParamEngine.empty());
 
@@ -1545,12 +1556,11 @@ void IoctlHelperXe::setOptionalContextProperties(Drm &drm, void *extProperties, 
 
     auto &ext = *reinterpret_cast<std::array<drm_xe_ext_set_property, maxContextSetProperties> *>(extProperties);
 
-    auto &gfxCoreHelper = drm.getRootDeviceEnvironment().getHelper<GfxCoreHelper>();
     if ((contextParamEngine[0].engine_class == DRM_XE_ENGINE_CLASS_RENDER) || (contextParamEngine[0].engine_class == DRM_XE_ENGINE_CLASS_COMPUTE)) {
-        if (gfxCoreHelper.isRunaloneModeRequired(drm.getRootDeviceEnvironment().executionEnvironment.getDebuggingMode())) {
+        if (drm.getRootDeviceEnvironment().executionEnvironment.isDebuggingEnabled()) {
             ext[extIndexInOut].base.next_extension = 0;
             ext[extIndexInOut].base.name = DRM_XE_EXEC_QUEUE_EXTENSION_SET_PROPERTY;
-            ext[extIndexInOut].property = getRunaloneExtProperty();
+            ext[extIndexInOut].property = getEudebugExtProperty();
             ext[extIndexInOut].value = 1;
             extIndexInOut++;
         }
@@ -1663,50 +1673,11 @@ std::string IoctlHelperXe::getIoctlString(DrmIoctl ioctlRequest) const {
 }
 
 void IoctlHelperXe::querySupportedFeatures() {
-
-    struct drm_xe_vm_create vmCreate = {};
-    auto ret = IoctlHelper::ioctl(DrmIoctl::gemVmCreate, &vmCreate);
-    if (ret != 0) {
-        // if device is already in fault mode it may fail, need to retry with proper flags
-        vmCreate.flags = DRM_XE_VM_CREATE_FLAG_LR_MODE | DRM_XE_VM_CREATE_FLAG_FAULT_MODE;
-        ret = IoctlHelper::ioctl(DrmIoctl::gemVmCreate, &vmCreate);
-    }
-    DEBUG_BREAK_IF(ret != 0);
-
-    auto checkVmBindFlagSupport = [&](uint32_t flag) -> bool {
-        uint8_t dummyData[2 * MemoryConstants::pageSize]{};
-        drm_xe_vm_bind bind = {};
-        bind.num_binds = 1;
-        bind.vm_id = vmCreate.vm_id;
-        bind.bind.range = MemoryConstants::pageSize;
-        bind.bind.userptr = alignUp(castToUint64(dummyData), MemoryConstants::pageSize);
-        bind.bind.addr = alignUp(castToUint64(dummyData), MemoryConstants::pageSize);
-        bind.bind.op = DRM_XE_VM_BIND_OP_MAP_USERPTR;
-        bind.bind.flags = flag;
-        bind.bind.pat_index = 1;
-
-        ret = IoctlHelper::ioctl(DrmIoctl::gemVmBind, &bind);
-        if (ret == 0) {
-            bind.bind.op = DRM_XE_VM_BIND_OP_UNMAP;
-            ret = IoctlHelper::ioctl(DrmIoctl::gemVmBind, &bind);
-            DEBUG_BREAK_IF(ret != 0);
-            return true;
-        }
-        return false;
-    };
-    supportedFeatures.flags.vmBindImmediate = checkVmBindFlagSupport(DRM_XE_VM_BIND_FLAG_IMMEDIATE);
-    supportedFeatures.flags.vmBindReadOnly = checkVmBindFlagSupport(DRM_XE_VM_BIND_FLAG_READONLY);
-
-    struct drm_xe_vm_destroy vmDestroy = {};
-    vmDestroy.vm_id = vmCreate.vm_id;
-    ret = IoctlHelper::ioctl(DrmIoctl::gemVmDestroy, &vmDestroy);
-    DEBUG_BREAK_IF(ret != 0);
-
     auto checkVmCreateFlagsSupport = [&](uint32_t flags) -> bool {
         struct drm_xe_vm_create vmCreate = {};
         vmCreate.flags = flags;
 
-        ret = IoctlHelper::ioctl(DrmIoctl::gemVmCreate, &vmCreate);
+        auto ret = IoctlHelper::ioctl(DrmIoctl::gemVmCreate, &vmCreate);
         if (ret == 0) {
             struct drm_xe_vm_destroy vmDestroy = {};
             vmDestroy.vm_id = vmCreate.vm_id;
@@ -1718,4 +1689,7 @@ void IoctlHelperXe::querySupportedFeatures() {
     };
     supportedFeatures.flags.pageFault = checkVmCreateFlagsSupport(DRM_XE_VM_CREATE_FLAG_LR_MODE | DRM_XE_VM_CREATE_FLAG_FAULT_MODE);
 };
+bool IoctlHelperXe::isEuPerDssTopologyType(uint16_t topologyType) const {
+    return topologyType == DRM_XE_TOPO_EU_PER_DSS;
+}
 } // namespace NEO

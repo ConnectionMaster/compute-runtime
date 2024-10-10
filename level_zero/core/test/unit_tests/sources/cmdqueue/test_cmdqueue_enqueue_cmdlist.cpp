@@ -9,6 +9,7 @@
 #include "shared/source/command_stream/command_stream_receiver_hw.h"
 #include "shared/source/command_stream/preemption.h"
 #include "shared/source/command_stream/scratch_space_controller.h"
+#include "shared/source/helpers/compiler_product_helper.h"
 #include "shared/source/utilities/software_tags_manager.h"
 #include "shared/test/common/cmd_parse/gen_cmd_parse.h"
 #include "shared/test/common/helpers/unit_test_helper.h"
@@ -43,6 +44,9 @@ struct CommandQueueExecuteCommandListsFixture : DeviceFixture {
         commandLists[1] = CommandList::create(productFamily, device, NEO::EngineGroupType::renderCompute, 0u, returnValue, false)->toHandle();
         ASSERT_NE(nullptr, commandLists[1]);
         EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
+
+        auto commandList = CommandList::fromHandle(commandLists[0]);
+        this->heaplessStateInit = commandList->isHeaplessStateInitEnabled();
     }
 
     void tearDown() {
@@ -64,6 +68,7 @@ struct CommandQueueExecuteCommandListsFixture : DeviceFixture {
 
     const static uint32_t numCommandLists = 2;
     ze_command_list_handle_t commandLists[numCommandLists];
+    bool heaplessStateInit = false;
 };
 
 using CommandQueueExecuteCommandLists = Test<CommandQueueExecuteCommandListsFixture>;
@@ -141,6 +146,13 @@ HWTEST_F(CommandQueueExecuteCommandLists, givenCommandListThatRequiresDisabledEU
         using CommandList::CommandList;
         using CommandList::requiredStreamState;
     };
+
+    auto &compilerProductHelper = neoDevice->getCompilerProductHelper();
+    auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled();
+
+    if (heaplessEnabled) {
+        GTEST_SKIP();
+    }
 
     const ze_command_queue_desc_t desc{};
     ze_result_t returnValue;
@@ -250,60 +262,6 @@ HWTEST_F(CommandQueueExecuteCommandLists, givenFenceWhenExecutingCmdListThenFenc
     // reset fence
     fence->assignTaskCountFromCsr();
     EXPECT_EQ(ZE_RESULT_NOT_READY, fence->queryStatus());
-
-    fence->destroy();
-    commandQueue->destroy();
-}
-
-HWTEST2_F(CommandQueueExecuteCommandLists, whenUsingFenceThenExpectEndingPipeControlUpdatingTagAllocation, IsGen9) {
-    using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
-    using POST_SYNC_OPERATION = typename FamilyType::PIPE_CONTROL::POST_SYNC_OPERATION;
-    using Parse = typename FamilyType::Parse;
-
-    ze_command_queue_desc_t desc{};
-    ze_result_t returnValue;
-    desc.mode = ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS;
-    auto commandQueue = whiteboxCast(CommandQueue::create(productFamily,
-                                                          device,
-                                                          neoDevice->getDefaultEngine().commandStreamReceiver,
-                                                          &desc,
-                                                          false,
-                                                          false,
-                                                          false,
-                                                          returnValue));
-    ASSERT_NE(nullptr, commandQueue);
-
-    ze_fence_desc_t fenceDesc{};
-    auto fence = whiteboxCast(Fence::create(commandQueue, &fenceDesc));
-    ASSERT_NE(nullptr, fence);
-
-    ze_fence_handle_t fenceHandle = fence->toHandle();
-
-    auto usedSpaceBefore = commandQueue->commandStream.getUsed();
-
-    auto result = commandQueue->executeCommandLists(numCommandLists, commandLists, fenceHandle, true, nullptr);
-
-    ASSERT_EQ(ZE_RESULT_SUCCESS, result);
-
-    auto usedSpaceAfter = commandQueue->commandStream.getUsed();
-    ASSERT_GT(usedSpaceAfter, usedSpaceBefore);
-
-    GenCmdList cmdList;
-    ASSERT_TRUE(Parse::parseCommandBuffer(cmdList,
-                                          ptrOffset(commandQueue->commandStream.getCpuBase(), 0),
-                                          usedSpaceAfter));
-
-    auto pipeControls = findAll<PIPE_CONTROL *>(cmdList.begin(), cmdList.end());
-    size_t pipeControlsPostSyncNumber = 0u;
-    for (size_t i = 0; i < pipeControls.size(); i++) {
-        auto pipeControl = reinterpret_cast<PIPE_CONTROL *>(*pipeControls[i]);
-        if (pipeControl->getPostSyncOperation() == POST_SYNC_OPERATION::POST_SYNC_OPERATION_WRITE_IMMEDIATE_DATA) {
-            EXPECT_EQ(commandQueue->getCsr()->getTagAllocation()->getGpuAddress(), NEO::UnitTestHelper<FamilyType>::getPipeControlPostSyncAddress(*pipeControl));
-            EXPECT_EQ(fence->taskCount, pipeControl->getImmediateData());
-            pipeControlsPostSyncNumber++;
-        }
-    }
-    EXPECT_EQ(1u, pipeControlsPostSyncNumber);
 
     fence->destroy();
     commandQueue->destroy();
@@ -433,6 +391,10 @@ HWTEST_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsAr
 
     auto currentCsr = neoDevice->getDefaultEngine().commandStreamReceiver;
 
+    if (reinterpret_cast<UltCommandStreamReceiver<FamilyType> *>(currentCsr)->heaplessStateInitialized) {
+        GTEST_SKIP();
+    }
+
     std::array<bool, 2> testedInternalFlags = {true, false};
 
     for (auto flagInternal : testedInternalFlags) {
@@ -477,7 +439,7 @@ HWTEST_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsAr
     }
 }
 
-HWTEST2_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsAreExecutedTwoTimesThenStateSipIsAddedOnlyTheFirstTime, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsAreExecutedTwoTimesThenStateSipIsAddedOnlyTheFirstTime, MatchAny) {
     using STATE_SIP = typename FamilyType::STATE_SIP;
     using Parse = typename FamilyType::Parse;
 
@@ -487,6 +449,9 @@ HWTEST2_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsA
     desc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
 
     auto currentCsr = neoDevice->getDefaultEngine().commandStreamReceiver;
+    if (reinterpret_cast<UltCommandStreamReceiver<FamilyType> *>(currentCsr)->heaplessStateInitialized) {
+        GTEST_SKIP();
+    }
 
     std::array<bool, 2> testedInternalFlags = {true, false};
 
@@ -892,15 +857,26 @@ void CommandQueueExecuteCommandListsFixture::twoCommandListCommandPreemptionTest
     commandQueue->destroy();
 }
 
-HWTEST2_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenExecutingThenQueuePreemptionIsSwitchedAndStateSipProgrammedOnce, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenExecutingThenQueuePreemptionIsSwitchedAndStateSipProgrammedOnce, MatchAny) {
+    if (heaplessStateInit) {
+        GTEST_SKIP();
+    }
     twoCommandListCommandPreemptionTest<FamilyType>(false);
 }
 
-HWTEST2_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenNoCmdStreamPreemptionRequiredThenNoCmdStreamProgrammingAndStateSipProgrammedOnce, IsAtLeastSkl) {
+HWTEST2_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenNoCmdStreamPreemptionRequiredThenNoCmdStreamProgrammingAndStateSipProgrammedOnce, MatchAny) {
+    if (heaplessStateInit) {
+        GTEST_SKIP();
+    }
+
     twoCommandListCommandPreemptionTest<FamilyType>(true);
 }
 
 HWTEST_F(CommandQueueExecuteCommandLists, GivenCopyCommandQueueWhenExecutingCopyCommandListThenExpectNoPreemptionProgramming) {
+    if (heaplessStateInit) {
+        GTEST_SKIP();
+    }
+
     using STATE_SIP = typename FamilyType::STATE_SIP;
     using MI_LOAD_REGISTER_IMM = typename FamilyType::MI_LOAD_REGISTER_IMM;
 
@@ -960,6 +936,7 @@ struct CommandQueueExecuteCommandListSWTagsTestsFixture : public DeviceFixture {
     void setUp() {
         debugManager.flags.EnableSWTags.set(true);
         debugManager.flags.DispatchCmdlistCmdBufferPrimary.set(0);
+
         DeviceFixture::setUp();
 
         ze_result_t returnValue;
@@ -1003,6 +980,9 @@ HWTEST_F(CommandQueueExecuteCommandListSWTagsTests, givenEnableSWTagsWhenExecuti
     using MI_STORE_DATA_IMM = typename FamilyType::MI_STORE_DATA_IMM;
     using Parse = typename FamilyType::Parse;
 
+    if (commandQueue->heaplessModeEnabled) {
+        GTEST_SKIP();
+    }
     auto usedSpaceBefore = commandQueue->commandStream.getUsed();
 
     auto result = commandQueue->executeCommandLists(1, commandLists, nullptr, false, nullptr);
@@ -1135,7 +1115,12 @@ HWTEST2_F(MultiDeviceCommandQueueExecuteCommandLists, givenMultiplePartitionCoun
 
     // 1st call then initialize registers
     GenCmdList cmdList;
-    ASSERT_TRUE(Parse::parseCommandBuffer(cmdList, ptrOffset(commandQueue->commandStream.getCpuBase(), usedSpaceBefore1stExecute), usedSpaceOn1stExecute));
+
+    if (csr->commandStreamHeaplessStateInit) {
+        ASSERT_TRUE(Parse::parseCommandBuffer(cmdList, ptrOffset(csr->commandStreamHeaplessStateInit->getCpuBase(), 0), csr->commandStreamHeaplessStateInit->getUsed()));
+    } else {
+        ASSERT_TRUE(Parse::parseCommandBuffer(cmdList, ptrOffset(commandQueue->commandStream.getCpuBase(), usedSpaceBefore1stExecute), usedSpaceOn1stExecute));
+    }
     findPartitionRegister<FamilyType>(cmdList, true);
 
     auto usedSpaceBefore2ndExecute = commandQueue->commandStream.getUsed();

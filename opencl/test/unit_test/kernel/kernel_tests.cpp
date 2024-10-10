@@ -575,7 +575,7 @@ class KernelFromBinaryTest : public ProgramSimpleFixture {
 typedef Test<KernelFromBinaryTest> KernelFromBinaryTests;
 
 TEST_F(KernelFromBinaryTests, GivenKernelNumArgsWhenGettingInfoThenNumberOfKernelArgsIsReturned) {
-    createProgramFromBinary(pContext, pContext->getDevices(), "kernel_num_args");
+    createProgramFromBinary(pContext, pContext->getDevices(), "simple_kernels");
 
     ASSERT_NE(nullptr, pProgram);
     retVal = pProgram->build(
@@ -584,7 +584,7 @@ TEST_F(KernelFromBinaryTests, GivenKernelNumArgsWhenGettingInfoThenNumberOfKerne
 
     ASSERT_EQ(CL_SUCCESS, retVal);
 
-    auto &kernelInfo = pProgram->getKernelInfoForKernel("test");
+    auto &kernelInfo = pProgram->getKernelInfoForKernel("simple_kernel_0");
 
     // create a kernel
     auto kernel = Kernel::create(
@@ -2587,15 +2587,16 @@ HWTEST_F(KernelResidencyTest, givenKernelWhenMakeResidentIsCalledAndPackingIsDis
     auto unifiedMemoryGraphicsAllocation = svmAllocationsManager->getSVMAlloc(unifiedMemoryAllocation);
     auto graphicsAllocation = unifiedMemoryGraphicsAllocation->gpuAllocations.getDefaultGraphicsAllocation();
 
+    auto heaplessStateInit = reinterpret_cast<UltCommandStreamReceiver<FamilyType> *>(&csr)->heaplessStateInitialized;
     kernel->makeResident(csr);
-    EXPECT_EQ(1u, graphicsAllocation->getResidencyTaskCount(csr.getOsContext().getContextId()));
+    EXPECT_EQ(heaplessStateInit ? 2u : 1u, graphicsAllocation->getResidencyTaskCount(csr.getOsContext().getContextId()));
 
     // Force to non-resident
     graphicsAllocation->updateResidencyTaskCount(GraphicsAllocation::objectNotResident, csr.getOsContext().getContextId());
 
     // Verify that makeResident is always called when allocation is not packed
     kernel->makeResident(csr);
-    EXPECT_EQ(1u, graphicsAllocation->getResidencyTaskCount(csr.getOsContext().getContextId()));
+    EXPECT_EQ(heaplessStateInit ? 2u : 1u, graphicsAllocation->getResidencyTaskCount(csr.getOsContext().getContextId()));
 
     svmAllocationsManager->freeSVMAlloc(unifiedMemoryAllocation);
 }
@@ -3354,7 +3355,7 @@ HWTEST_F(KernelTest, givenBindlessHeapsHelperAndBindlessArgBufferWhenPatchWithIm
     uint64_t crossThreadData = 0;
     kernel.mockKernel->patchWithImplicitSurface(castToUint64(&crossThreadData), mockAllocation, kernel.kernelInfo.argAsPtr(0));
 
-    auto ssInHeapInfo = mockAllocation.getBindlessInfo();
+    auto &ssInHeapInfo = mockAllocation.getBindlessInfo();
 
     auto patchLocation = reinterpret_cast<uint32_t *>(ptrOffset(kernel.mockKernel->crossThreadData, bindlessOffset));
     auto patchValue = device->getGfxCoreHelper().getBindlessSurfaceExtendedMessageDescriptorValue(static_cast<uint32_t>(ssInHeapInfo.surfaceStateOffset));

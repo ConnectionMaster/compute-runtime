@@ -14,18 +14,21 @@
 #include <vector>
 
 namespace NEO {
+class Device;
 class ReleaseHelper;
+struct RootDeviceEnvironment;
 
 struct ApiSpecificConfig {
     enum ApiType { OCL,
                    L0 };
     static bool isStatelessCompressionSupported();
     static bool getGlobalBindlessHeapConfiguration(const ReleaseHelper *releaseHelper);
-    static bool getBindlessMode(const ReleaseHelper *);
+    static bool getBindlessMode(const Device &device);
     static bool isDeviceAllocationCacheEnabled();
     static bool isHostAllocationCacheEnabled();
     static bool isDeviceUsmPoolingEnabled();
     static bool isHostUsmPoolingEnabled();
+    static bool isGlobalStatelessEnabled(const RootDeviceEnvironment &rootDeviceEnvironment);
     static ApiType getApiType();
     static std::string getName();
     static uint64_t getReducedMaxAllocSize(uint64_t maxAllocSize);

@@ -642,7 +642,7 @@ GraphicsAllocation *WddmMemoryManager::createGraphicsAllocationFromSharedHandle(
         return nullptr;
     }
 
-    fileLoggerInstance().logAllocation(allocation.get());
+    fileLoggerInstance().logAllocation(allocation.get(), this);
     return allocation.release();
 }
 
@@ -720,8 +720,8 @@ void WddmMemoryManager::freeGraphicsMemoryImpl(GraphicsAllocation *gfxAllocation
     auto &registeredEngines = getRegisteredEngines(gfxAllocation->getRootDeviceIndex());
     for (auto &engine : registeredEngines) {
         auto &residencyController = static_cast<OsContextWin *>(engine.osContext)->getResidencyController();
-        auto lock = residencyController.acquireLock();
-        residencyController.removeFromTrimCandidateListIfUsed(input, true);
+        auto &evictContainer = engine.commandStreamReceiver->getEvictionAllocations();
+        residencyController.removeAllocation(evictContainer, gfxAllocation);
     }
 
     auto defaultGmm = gfxAllocation->getDefaultGmm();
@@ -761,11 +761,11 @@ void WddmMemoryManager::freeGraphicsMemoryImpl(GraphicsAllocation *gfxAllocation
         cleanGraphicsMemoryCreatedFromHostPtr(gfxAllocation);
     } else {
         if (input->getResourceHandle() != 0) {
-            [[maybe_unused]] auto status = tryDeferDeletions(nullptr, 0, input->getResourceHandle(), gfxAllocation->getRootDeviceIndex());
+            [[maybe_unused]] auto status = tryDeferDeletions(nullptr, 0, input->getResourceHandle(), gfxAllocation->getRootDeviceIndex(), gfxAllocation->getAllocationType());
             DEBUG_BREAK_IF(!status);
         } else {
             for (auto handle : input->getHandles()) {
-                [[maybe_unused]] auto status = tryDeferDeletions(&handle, 1, 0, gfxAllocation->getRootDeviceIndex());
+                [[maybe_unused]] auto status = tryDeferDeletions(&handle, 1, 0, gfxAllocation->getRootDeviceIndex(), gfxAllocation->getAllocationType());
                 DEBUG_BREAK_IF(!status);
             }
         }
@@ -809,10 +809,10 @@ void WddmMemoryManager::handleFenceCompletion(GraphicsAllocation *allocation) {
     }
 }
 
-bool WddmMemoryManager::tryDeferDeletions(const D3DKMT_HANDLE *handles, uint32_t allocationCount, D3DKMT_HANDLE resourceHandle, uint32_t rootDeviceIndex) {
+bool WddmMemoryManager::tryDeferDeletions(const D3DKMT_HANDLE *handles, uint32_t allocationCount, D3DKMT_HANDLE resourceHandle, uint32_t rootDeviceIndex, AllocationType type) {
     bool status = true;
     if (deferredDeleter) {
-        deferredDeleter->deferDeletion(DeferrableDeletion::create(&getWddm(rootDeviceIndex), handles, allocationCount, resourceHandle));
+        deferredDeleter->deferDeletion(DeferrableDeletion::create(&getWddm(rootDeviceIndex), handles, allocationCount, resourceHandle, type));
     } else {
         status = getWddm(rootDeviceIndex).destroyAllocations(handles, allocationCount, resourceHandle);
     }
@@ -893,7 +893,7 @@ void WddmMemoryManager::cleanOsHandles(OsHandleStorage &handleStorage, uint32_t 
         }
     }
 
-    bool success = tryDeferDeletions(handles, allocationCount, 0, rootDeviceIndex);
+    bool success = tryDeferDeletions(handles, allocationCount, 0, rootDeviceIndex, AllocationType::unknown);
 
     for (unsigned int i = 0; i < maxFragmentsCount; i++) {
         if (handleStorage.fragmentStorageData[i].freeTheFragment) {
@@ -953,16 +953,6 @@ double WddmMemoryManager::getPercentOfGlobalMemoryAvailable(uint32_t rootDeviceI
         return 0.98;
     }
     return 0.94;
-}
-
-AllocationStatus WddmMemoryManager::registerSysMemAlloc(GraphicsAllocation *allocation) {
-    this->sysMemAllocsSize += allocation->getUnderlyingBufferSize();
-    return AllocationStatus::Success;
-}
-
-AllocationStatus WddmMemoryManager::registerLocalMemAlloc(GraphicsAllocation *allocation, uint32_t rootDeviceIndex) {
-    this->localMemAllocsSize[rootDeviceIndex] += allocation->getUnderlyingBufferSize();
-    return AllocationStatus::Success;
 }
 
 AlignedMallocRestrictions *WddmMemoryManager::getAlignedMallocRestrictions() {
@@ -1045,7 +1035,7 @@ bool WddmMemoryManager::mapGpuVaForOneHandleAllocation(WddmAllocation *allocatio
     auto status = getWddm(allocation->getRootDeviceIndex()).mapGpuVirtualAddress(allocation->getDefaultGmm(), allocation->getDefaultHandle(), minimumAddress, maximumAddress, addressToMap, allocation->getGpuAddressToModify(), allocation->getAllocationType());
 
     if (!status && deferredDeleter) {
-        deferredDeleter->drain(true);
+        deferredDeleter->drain(true, false);
         status = getWddm(allocation->getRootDeviceIndex()).mapGpuVirtualAddress(allocation->getDefaultGmm(), allocation->getDefaultHandle(), minimumAddress, maximumAddress, addressToMap, allocation->getGpuAddressToModify(), allocation->getAllocationType());
     }
     if (!status) {
@@ -1091,7 +1081,7 @@ bool WddmMemoryManager::mapMultiHandleAllocationWithRetry(WddmAllocation *alloca
                                                 gfxPartition->getHeapMinimalAddress(heapIndex), gfxPartition->getHeapLimit(heapIndex), addressToMap, gpuAddress, allocation->getAllocationType());
 
         if (!status && deferredDeleter) {
-            deferredDeleter->drain(true);
+            deferredDeleter->drain(true, false);
             status = wddm.mapGpuVirtualAddress(allocation->getGmm(currentHandle), allocation->getHandles()[currentHandle],
                                                gfxPartition->getHeapMinimalAddress(heapIndex), gfxPartition->getHeapLimit(heapIndex), addressToMap, gpuAddress, allocation->getAllocationType());
         }
@@ -1114,7 +1104,7 @@ bool WddmMemoryManager::createGpuAllocationsWithRetry(WddmAllocation *allocation
         auto gmm = allocation->getGmm(handleId);
         auto status = getWddm(allocation->getRootDeviceIndex()).createAllocation(gmm->gmmResourceInfo->getSystemMemPointer(), gmm, allocation->getHandleToModify(handleId), allocation->getResourceHandleToModify(), allocation->getSharedHandleToModify());
         if (status == STATUS_GRAPHICS_NO_VIDEO_MEMORY && deferredDeleter) {
-            deferredDeleter->drain(true);
+            deferredDeleter->drain(true, false);
             status = getWddm(allocation->getRootDeviceIndex()).createAllocation(gmm->gmmResourceInfo->getSystemMemPointer(), gmm, allocation->getHandleToModify(handleId), allocation->getResourceHandleToModify(), allocation->getSharedHandleToModify());
         }
         if (status != STATUS_SUCCESS) {

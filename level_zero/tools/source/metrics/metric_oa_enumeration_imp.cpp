@@ -321,6 +321,30 @@ ze_result_t MetricEnumeration::cacheMetricInformation() {
 
         // 2. Find "OA" concurrent group.
         if (strcmp(pConcurrentGroupParams->SymbolName, oaConcurrentGroupName) == 0) {
+
+            // Find the oaBufferOverflowInformation and store in member variable pOaBufferOverflowInformation
+            const uint32_t measurementInfoCount = pConcurrentGroupParams->IoMeasurementInformationCount;
+            MetricsDiscovery::IInformationLatest *oaBufferOverflowInformation = nullptr;
+
+            for (uint32_t i = 0; i < measurementInfoCount; ++i) {
+                MetricsDiscovery::IInformationLatest *ioMeasurement = pConcurrentGroup->GetIoMeasurementInformation(i);
+                DEBUG_BREAK_IF(ioMeasurement == nullptr);
+
+                if (ioMeasurement->GetParams()->SymbolName == std::string("BufferOverflow")) {
+                    oaBufferOverflowInformation = ioMeasurement;
+                    break;
+                }
+            }
+
+            // MDAPI checks for proper library initialization
+            if (oaBufferOverflowInformation == nullptr ||
+                oaBufferOverflowInformation->GetParams()->IoReadEquation->GetEquationElementsCount() != 1 ||
+                oaBufferOverflowInformation->GetParams()->IoReadEquation->GetEquationElement(0)->Type != MetricsDiscovery::EQUATION_ELEM_IMM_UINT64) {
+                METRICS_LOG_ERR("IoMeasurmentInformation is not as expected for OA %s", " ");
+                return ZE_RESULT_ERROR_UNKNOWN;
+            }
+            pOaBufferOverflowInformation = oaBufferOverflowInformation;
+
             // Reserve memory for metric groups
             metricGroups.reserve(pConcurrentGroupParams->MetricSetsCount);
 
@@ -561,7 +585,7 @@ ze_result_t OaMetricGroupImp::getProperties(zet_metric_group_properties_t *pProp
         copyProperties(properties, *pProperties);
         pProperties->pNext = pNext;
         if (pNext) {
-            status = getMetricGroupExtendedProperties(metricSource, pNext);
+            status = metricSource.handleMetricGroupExtendedProperties(toHandle(), pNext);
         }
     }
 
@@ -693,8 +717,11 @@ ze_result_t OaMetricGroupImp::readIoStream(uint32_t &reportCount, uint8_t &repor
 
     switch (readResult) {
     case MetricsDiscovery::CC_OK:
-    case MetricsDiscovery::CC_READ_PENDING:
-        return ZE_RESULT_SUCCESS;
+    case MetricsDiscovery::CC_READ_PENDING: {
+        MetricsDiscovery::IInformationLatest *oaBufferOverflowInformation = getMetricEnumeration().getOaBufferOverflowInformation();
+        const bool oaBufferOverflow = oaBufferOverflowInformation->GetParams()->IoReadEquation->GetEquationElement(0)->ImmediateUInt64 != 0;
+        return oaBufferOverflow ? ZE_RESULT_WARNING_DROPPED_DATA : ZE_RESULT_SUCCESS;
+    }
 
     default:
         return ZE_RESULT_ERROR_UNKNOWN;
@@ -712,8 +739,8 @@ ze_result_t OaMetricGroupImp::calculateMetricValues(const zet_metric_group_calcu
 
     const MetricGroupCalculateHeader *pRawHeader = reinterpret_cast<const MetricGroupCalculateHeader *>(pRawData);
     if (pRawHeader->magic == MetricGroupCalculateHeader::magicValue) {
-        METRICS_LOG_INFO("The call is not supported for multiple devices");
-        METRICS_LOG_INFO("Please use zetMetricGroupCalculateMultipleMetricValuesExp instead");
+        METRICS_LOG_INFO("%s", "The call is not supported for multiple devices");
+        METRICS_LOG_INFO("%s", "Please use zetMetricGroupCalculateMultipleMetricValuesExp instead");
         return ZE_RESULT_ERROR_INVALID_ARGUMENT;
     }
 

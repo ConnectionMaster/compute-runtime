@@ -715,7 +715,10 @@ cl_int Event::waitForEvents(cl_uint numEvents,
         Event *event = castToObjectOrAbort<Event>(*it);
         if (event->cmdQueue) {
             if (event->taskLevel != CompletionStamp::notReady) {
-                event->cmdQueue->flush();
+                auto ret = event->cmdQueue->flush();
+                if (ret != CL_SUCCESS) {
+                    return ret;
+                }
             }
         }
     }
@@ -824,20 +827,31 @@ bool Event::isWaitForTimestampsEnabled() const {
 bool Event::areTimestampsCompleted() {
     if (this->timestampPacketContainer.get()) {
         if (this->isWaitForTimestampsEnabled()) {
+            bool printWaitForCompletion = debugManager.flags.LogWaitingForCompletion.get();
+
             for (const auto &timestamp : this->timestampPacketContainer->peekNodes()) {
                 for (uint32_t i = 0; i < timestamp->getPacketsUsed(); i++) {
+                    if (printWaitForCompletion) {
+                        printf("\nChecking TS 0x%" PRIx64, timestamp->getGpuAddress() + (i * timestamp->getSinglePacketSize()));
+                    }
                     this->cmdQueue->getGpgpuCommandStreamReceiver().downloadAllocation(*timestamp->getBaseGraphicsAllocation()->getGraphicsAllocation(this->cmdQueue->getGpgpuCommandStreamReceiver().getRootDeviceIndex()));
                     if (timestamp->getContextEndValue(i) == 1) {
+                        if (printWaitForCompletion) {
+                            printf("\nTS not ready");
+                        }
                         return false;
                     }
                 }
             }
-            this->cmdQueue->getGpgpuCommandStreamReceiver().downloadAllocations();
+            if (printWaitForCompletion) {
+                printf("\nTS ready");
+            }
+            this->cmdQueue->getGpgpuCommandStreamReceiver().downloadAllocations(true);
             const auto &bcsStates = this->cmdQueue->peekActiveBcsStates();
             for (auto currentBcsIndex = 0u; currentBcsIndex < bcsStates.size(); currentBcsIndex++) {
                 const auto &state = bcsStates[currentBcsIndex];
                 if (state.isValid()) {
-                    this->cmdQueue->getBcsCommandStreamReceiver(state.engineType)->downloadAllocations();
+                    this->cmdQueue->getBcsCommandStreamReceiver(state.engineType)->downloadAllocations(true);
                 }
             }
             return true;

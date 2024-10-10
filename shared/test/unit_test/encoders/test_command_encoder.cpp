@@ -55,12 +55,6 @@ HWTEST2_F(CommandEncoderTest, givenDg1NotUsingRcsWhenGettingRequiredSizeForState
     EXPECT_EQ(size, 88ul);
 }
 
-HWTEST2_F(CommandEncoderTest, givenEhlWhenGettingRequiredSizeForStateBaseAddressCommandThenCorrectSizeIsReturned, IsEHL) {
-    auto container = CommandContainer();
-    size_t size = EncodeStateBaseAddress<FamilyType>::getRequiredSizeForStateBaseAddress(*pDevice, container, false);
-    EXPECT_EQ(size, 88ul);
-}
-
 HWTEST2_F(CommandEncoderTest, givenRklUsingRcsWhenGettingRequiredSizeForStateBaseAddressCommandThenCorrectSizeIsReturned, IsRKL) {
     auto container = CommandContainer();
     size_t size = EncodeStateBaseAddress<FamilyType>::getRequiredSizeForStateBaseAddress(*pDevice, container, true);
@@ -68,18 +62,6 @@ HWTEST2_F(CommandEncoderTest, givenRklUsingRcsWhenGettingRequiredSizeForStateBas
 }
 
 HWTEST2_F(CommandEncoderTest, givenRklNotUsingRcsWhenGettingRequiredSizeForStateBaseAddressCommandThenCorrectSizeIsReturned, IsRKL) {
-    auto container = CommandContainer();
-    size_t size = EncodeStateBaseAddress<FamilyType>::getRequiredSizeForStateBaseAddress(*pDevice, container, false);
-    EXPECT_EQ(size, 88ul);
-}
-
-HWTEST2_F(CommandEncoderTest, givenLkfWhenGettingRequiredSizeForStateBaseAddressCommandThenCorrectSizeIsReturned, IsLKF) {
-    auto container = CommandContainer();
-    size_t size = EncodeStateBaseAddress<FamilyType>::getRequiredSizeForStateBaseAddress(*pDevice, container, false);
-    EXPECT_EQ(size, 88ul);
-}
-
-HWTEST2_F(CommandEncoderTest, givenIclLpWhenGettingRequiredSizeForStateBaseAddressCommandThenCorrectSizeIsReturned, IsICLLP) {
     auto container = CommandContainer();
     size_t size = EncodeStateBaseAddress<FamilyType>::getRequiredSizeForStateBaseAddress(*pDevice, container, false);
     EXPECT_EQ(size, 88ul);
@@ -210,7 +192,7 @@ HWTEST_F(CommandEncoderTest, givenPlatformSupportingMiMemFenceWhenEncodingThenPr
     }
 }
 
-HWTEST2_F(CommandEncoderTest, whenAdjustCompressionFormatForPlanarImageThenNothingHappens, IsAtMostGen12lp) {
+HWTEST2_F(CommandEncoderTest, whenAdjustCompressionFormatForPlanarImageThenNothingHappens, IsGen12LP) {
     for (auto plane : {GMM_NO_PLANE, GMM_PLANE_Y, GMM_PLANE_U, GMM_PLANE_V}) {
         uint32_t compressionFormat = 0u;
         EncodeWA<FamilyType>::adjustCompressionFormatForPlanarImage(compressionFormat, plane);
@@ -222,7 +204,7 @@ HWTEST2_F(CommandEncoderTest, whenAdjustCompressionFormatForPlanarImageThenNothi
     }
 }
 
-HWTEST2_F(CommandEncoderTest, givenPredicateBitSetWhenProgrammingBbStartThenSetCorrectBit, IsAtLeastGen9) {
+HWTEST2_F(CommandEncoderTest, givenPredicateBitSetWhenProgrammingBbStartThenSetCorrectBit, MatchAny) {
     using MI_BATCH_BUFFER_START = typename FamilyType::MI_BATCH_BUFFER_START;
 
     MI_BATCH_BUFFER_START cmd = {};

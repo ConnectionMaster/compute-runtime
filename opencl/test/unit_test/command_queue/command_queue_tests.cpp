@@ -590,7 +590,7 @@ HWTEST_P(CommandQueueIndirectHeapTest, givenIndirectObjectHeapWhenItIsQueriedFor
     auto &commandStreamReceiver = pClDevice->getUltCommandStreamReceiver<FamilyType>();
 
     auto &indirectHeap = cmdQ.getIndirectHeap(this->GetParam(), 8192);
-    if (this->GetParam() == IndirectHeap::Type::indirectObject && commandStreamReceiver.canUse4GbHeaps) {
+    if (this->GetParam() == IndirectHeap::Type::indirectObject && commandStreamReceiver.canUse4GbHeaps()) {
         EXPECT_TRUE(indirectHeap.getGraphicsAllocation()->is32BitAllocation());
     } else {
         EXPECT_FALSE(indirectHeap.getGraphicsAllocation()->is32BitAllocation());
@@ -669,7 +669,7 @@ HWTEST_P(CommandQueueIndirectHeapTest, givenCommandStreamReceiverWithReusableAll
 
     auto &commandStreamReceiver = pClDevice->getUltCommandStreamReceiver<FamilyType>();
     auto allocationType = AllocationType::linearStream;
-    if (this->GetParam() == IndirectHeap::Type::indirectObject && commandStreamReceiver.canUse4GbHeaps) {
+    if (this->GetParam() == IndirectHeap::Type::indirectObject && commandStreamReceiver.canUse4GbHeaps()) {
         allocationType = AllocationType::internalHeap;
     }
     allocation = memoryManager->allocateGraphicsMemoryWithProperties({pDevice->getRootDeviceIndex(), allocationSize, allocationType, pDevice->getDeviceBitfield()});
@@ -817,7 +817,7 @@ HWTEST_P(CommandQueueIndirectHeapTest, givenCommandQueueWhenGetIndirectHeapIsCal
 
     auto heapType = this->GetParam();
 
-    bool requireInternalHeap = IndirectHeap::Type::indirectObject == heapType && commandStreamReceiver.canUse4GbHeaps;
+    bool requireInternalHeap = IndirectHeap::Type::indirectObject == heapType && commandStreamReceiver.canUse4GbHeaps();
     const auto &indirectHeap = cmdQ.getIndirectHeap(heapType, 100);
     auto indirectHeapAllocation = indirectHeap.getGraphicsAllocation();
     ASSERT_NE(nullptr, indirectHeapAllocation);
@@ -885,7 +885,7 @@ HWTEST_F(CommandQueueTests, givenMultipleCommandQueuesWhenMarkerIsEmittedThenGra
     auto device = std::make_unique<MockClDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(defaultHwInfo.get()));
     MockContext context(device.get());
     std::unique_ptr<CommandQueue> commandQ(new MockCommandQueue(&context, device.get(), 0, false));
-    *device->getDefaultEngine().commandStreamReceiver->getTagAddress() = 0;
+    *device->getDefaultEngine().commandStreamReceiver->getTagAddress() = commandQ->getHeaplessStateInitEnabled() ? 1 : 0;
     commandQ->enqueueMarkerWithWaitList(0, nullptr, nullptr);
     commandQ->enqueueMarkerWithWaitList(0, nullptr, nullptr);
 
@@ -1794,7 +1794,7 @@ TEST(CommandQueue, givenBufferWhenMultiStorageIsNotSetThenDontRequireMigrations)
 }
 
 using MultiRootDeviceCommandQueueTest = ::testing::Test;
-HWTEST2_F(MultiRootDeviceCommandQueueTest, givenBuffersInLocalMemoryWhenMultiGraphicsAllocationsRequireMigrationsThenMigrateTheAllocations, IsAtLeastGen12lp) {
+HWTEST2_F(MultiRootDeviceCommandQueueTest, givenBuffersInLocalMemoryWhenMultiGraphicsAllocationsRequireMigrationsThenMigrateTheAllocations, MatchAny) {
     MockDefaultContext context{true};
     ASSERT_TRUE(context.getNumDevices() > 1);
     ASSERT_TRUE(context.getRootDeviceIndices().size() > 1);
@@ -2036,7 +2036,7 @@ TEST_F(CsrSelectionCommandQueueWithBlitterTests, givenInvalidTransferDirectionWh
     builtinOpParams.dstMemObj = &dstMemObj;
 
     CsrSelectionArgs args{CL_COMMAND_COPY_BUFFER, &srcMemObj, &dstMemObj, 0u, nullptr};
-    args.direction = static_cast<TransferDirection>(0xFF);
+    args.direction = static_cast<TransferDirection>(0xFF); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
     EXPECT_ANY_THROW(queue->selectCsrForBuiltinOperation(args));
 }
 
@@ -2984,8 +2984,16 @@ HWTEST_F(CommandQueueOnSpecificEngineTests, givenNotInitializedCcsOsContextWhenC
     MockContext context{};
     cl_command_queue_properties properties[5] = {};
 
+    auto &compilerProductHelper = context.getDevice(0)->getCompilerProductHelper();
+    auto heaplessModeEnabled = compilerProductHelper.isHeaplessModeEnabled();
+    auto heaplessStateInit = compilerProductHelper.isHeaplessStateInitEnabled(heaplessModeEnabled);
+
     OsContext &osContext = *context.getDevice(0)->getEngine(aub_stream::ENGINE_CCS, EngineUsage::regular).osContext;
-    EXPECT_FALSE(osContext.isInitialized());
+    if (heaplessStateInit) {
+        EXPECT_TRUE(osContext.isInitialized());
+    } else {
+        EXPECT_FALSE(osContext.isInitialized());
+    }
 
     debugManager.flags.NodeOrdinal.set(static_cast<int32_t>(aub_stream::EngineType::ENGINE_CCS));
     const auto rcsFamilyIndex = static_cast<cl_uint>(context.getDevice(0)->getDevice().getEngineGroupIndexFromEngineGroupType(EngineGroupType::renderCompute));
@@ -3206,6 +3214,14 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, MultiEngineQueueHwTests, givenQueueFamilyPropertyWh
         }
     }
 
+    bool renderStreamerFound = false;
+    for (auto &engine : device->allEngines) {
+        if (engine.osContext->getEngineType() == EngineHelpers::remapEngineTypeToHwSpecific(aub_stream::EngineType::ENGINE_RCS, device->getRootDeviceEnvironment())) {
+            renderStreamerFound = true;
+            break;
+        }
+    }
+
     struct CommandQueueTestValues {
         CommandQueueTestValues() = delete;
         CommandQueueTestValues(cl_queue_properties engineFamily, cl_queue_properties engineIndex, aub_stream::EngineType expectedEngine)
@@ -3228,7 +3244,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, MultiEngineQueueHwTests, givenQueueFamilyPropertyWh
     auto retVal = CL_SUCCESS;
     const auto &ccsInstances = localHwInfo.gtSystemInfo.CCSInfo.Instances.Bits;
     std::vector<CommandQueueTestValues> commandQueueTestValues;
-    addTestValueIfAvailable(commandQueueTestValues, EngineGroupType::renderCompute, 0, EngineHelpers::remapEngineTypeToHwSpecific(aub_stream::EngineType::ENGINE_RCS, device->getRootDeviceEnvironment()), true);
+    addTestValueIfAvailable(commandQueueTestValues, EngineGroupType::renderCompute, 0, EngineHelpers::remapEngineTypeToHwSpecific(aub_stream::EngineType::ENGINE_RCS, device->getRootDeviceEnvironment()), renderStreamerFound);
     addTestValueIfAvailable(commandQueueTestValues, EngineGroupType::compute, 0, aub_stream::ENGINE_CCS, ccsFound);
     addTestValueIfAvailable(commandQueueTestValues, EngineGroupType::compute, 1, aub_stream::ENGINE_CCS1, ccsInstances.CCS1Enabled);
     addTestValueIfAvailable(commandQueueTestValues, EngineGroupType::compute, 2, aub_stream::ENGINE_CCS2, ccsInstances.CCS2Enabled);

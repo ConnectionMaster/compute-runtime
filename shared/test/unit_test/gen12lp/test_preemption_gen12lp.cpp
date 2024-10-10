@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2023 Intel Corporation
+ * Copyright (C) 2020-2024 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -28,66 +28,6 @@ PreemptionTestHwDetails getPreemptionTestHwDetails<Gen12LpFamily>() {
 }
 
 using Gen12LpPreemptionTests = DevicePreemptionTests;
-
-GEN12LPTEST_F(Gen12LpPreemptionTests, whenProgramStateSipIsCalledThenStateSipCmdIsAddedToStream) {
-    size_t requiredSize = PreemptionHelper::getRequiredStateSipCmdSize<FamilyType>(*device, false);
-    StackVec<char, 1024> streamStorage(1024);
-    LinearStream cmdStream{streamStorage.begin(), streamStorage.size()};
-
-    EXPECT_NE(0U, requiredSize);
-    PreemptionHelper::programStateSip<FamilyType>(cmdStream, *device, nullptr);
-    EXPECT_NE(0U, cmdStream.getUsed());
-}
-
-GEN12LPTEST_F(Gen12LpPreemptionTests, WhenGettingPreemptionWaCsSizeThenZeroIsReturned) {
-    size_t expectedSize = 0;
-    EXPECT_EQ(expectedSize, PreemptionHelper::getPreemptionWaCsSize<FamilyType>(*device));
-}
-
-GEN12LPTEST_F(Gen12LpPreemptionTests, WhenApplyingPreemptionWaCmdsThenNothingIsAdded) {
-    size_t usedSize = 0;
-    StackVec<char, 1024> streamStorage(1024);
-    LinearStream cmdStream{streamStorage.begin(), streamStorage.size()};
-
-    PreemptionHelper::applyPreemptionWaCmdsBegin<FamilyType>(&cmdStream, *device);
-    EXPECT_EQ(usedSize, cmdStream.getUsed());
-    PreemptionHelper::applyPreemptionWaCmdsEnd<FamilyType>(&cmdStream, *device);
-    EXPECT_EQ(usedSize, cmdStream.getUsed());
-}
-
-GEN12LPTEST_F(Gen12LpPreemptionTests, givenInterfaceDescriptorDataWhenMidThreadPreemptionModeThenSetDisableThreadPreemptionBitToDisable) {
-    using INTERFACE_DESCRIPTOR_DATA = typename FamilyType::INTERFACE_DESCRIPTOR_DATA;
-
-    INTERFACE_DESCRIPTOR_DATA iddArg;
-    iddArg = FamilyType::cmdInitInterfaceDescriptorData;
-
-    iddArg.setThreadPreemptionDisable(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_ENABLE);
-
-    PreemptionHelper::programInterfaceDescriptorDataPreemption<FamilyType>(&iddArg, PreemptionMode::MidThread);
-    EXPECT_EQ(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_DISABLE, iddArg.getThreadPreemptionDisable());
-}
-
-GEN12LPTEST_F(Gen12LpPreemptionTests, givenInterfaceDescriptorDataWhenNoMidThreadPreemptionModeThenSetDisableThreadPreemptionBitToEnable) {
-    using INTERFACE_DESCRIPTOR_DATA = typename FamilyType::INTERFACE_DESCRIPTOR_DATA;
-
-    INTERFACE_DESCRIPTOR_DATA iddArg;
-    iddArg = FamilyType::cmdInitInterfaceDescriptorData;
-
-    iddArg.setThreadPreemptionDisable(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_DISABLE);
-
-    PreemptionHelper::programInterfaceDescriptorDataPreemption<FamilyType>(&iddArg, PreemptionMode::Disabled);
-    EXPECT_EQ(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_ENABLE, iddArg.getThreadPreemptionDisable());
-
-    iddArg.setThreadPreemptionDisable(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_DISABLE);
-
-    PreemptionHelper::programInterfaceDescriptorDataPreemption<FamilyType>(&iddArg, PreemptionMode::MidBatch);
-    EXPECT_EQ(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_ENABLE, iddArg.getThreadPreemptionDisable());
-
-    iddArg.setThreadPreemptionDisable(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_DISABLE);
-
-    PreemptionHelper::programInterfaceDescriptorDataPreemption<FamilyType>(&iddArg, PreemptionMode::ThreadGroup);
-    EXPECT_EQ(INTERFACE_DESCRIPTOR_DATA::THREAD_PREEMPTION_DISABLE_ENABLE, iddArg.getThreadPreemptionDisable());
-}
 
 GEN12LPTEST_F(Gen12LpPreemptionTests, WhenProgrammingPreemptionThenExpectLoarRegisterCommandRemapFlagEnabled) {
     using MI_LOAD_REGISTER_IMM = typename FamilyType::MI_LOAD_REGISTER_IMM;

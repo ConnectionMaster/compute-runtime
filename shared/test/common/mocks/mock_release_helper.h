@@ -41,6 +41,13 @@ class MockReleaseHelper : public ReleaseHelper {
     ADDMETHOD_CONST_NOBASE(getL3CacheBankSizeInKb, uint64_t, {}, ());
     ADDMETHOD_CONST_NOBASE(getAdditionalFp16Caps, uint32_t, {}, ());
     ADDMETHOD_CONST_NOBASE(getAdditionalExtraCaps, uint32_t, {}, ());
+    ADDMETHOD_CONST_NOBASE(getStackSizePerRay, uint32_t, {}, ());
     ADDMETHOD_CONST_NOBASE(isLocalOnlyAllowed, bool, {}, ());
+    ADDMETHOD_CONST_NOBASE(isDisablingMsaaRequired, bool, false, ());
+
+    const SizeToPreferredSlmValueArray &getSizeToPreferredSlmValue(bool isHeapless) const override {
+        static SizeToPreferredSlmValueArray sizeToPreferredSlmValue = {};
+        return sizeToPreferredSlmValue;
+    }
 };
 } // namespace NEO

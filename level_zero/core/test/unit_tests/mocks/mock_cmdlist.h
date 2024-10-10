@@ -129,6 +129,7 @@ struct WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>
                                              ::L0::Event *event,
                                              CmdListKernelLaunchParams &launchParams) override {
 
+        kernelUsed = kernel;
         usedKernelLaunchParams = launchParams;
         if (launchParams.isKernelSplitOperation && (launchParams.numKernelsExecutedInSplitLaunch == 0)) {
             firstKernelInSplitOperation = kernel;
@@ -168,6 +169,7 @@ struct WhiteBox<::L0::CommandListCoreFamily<gfxCoreFamily>>
     ::L0::Kernel *firstKernelInSplitOperation = nullptr;
     ze_event_handle_t appendEventMultipleKernelIndirectEventHandleValue = nullptr;
     ze_event_handle_t appendEventKernelIndirectEventHandleValue = nullptr;
+    Kernel *kernelUsed;
 };
 
 template <GFXCORE_FAMILY gfxCoreFamily>
@@ -197,6 +199,7 @@ struct WhiteBox<L0::CommandListCoreFamilyImmediate<gfxCoreFamily>>
     using BaseClass::dcFlushSupport;
     using BaseClass::device;
     using BaseClass::disablePatching;
+    using BaseClass::dispatchEventRemainingPacketsPostSyncOperation;
     using BaseClass::doubleSbaWa;
     using BaseClass::enablePatching;
     using BaseClass::engineGroupType;
@@ -475,7 +478,7 @@ struct MockCommandList : public CommandList {
     ADDMETHOD_NOBASE(appendWaitOnEvents, ze_result_t, ZE_RESULT_SUCCESS,
                      (uint32_t numEvents,
                       ze_event_handle_t *phEvent, CommandToPatchContainer *outWaitCmds,
-                      bool relaxedOrderingAllowed, bool trackDependencies, bool apiRequest, bool skipAddingWaitEventsToResidency, bool skipFlush));
+                      bool relaxedOrderingAllowed, bool trackDependencies, bool apiRequest, bool skipAddingWaitEventsToResidency, bool skipFlush, bool copyOffloadOperation));
 
     ADDMETHOD_NOBASE(appendWriteGlobalTimestamp, ze_result_t, ZE_RESULT_SUCCESS,
                      (uint64_t * dstptr,

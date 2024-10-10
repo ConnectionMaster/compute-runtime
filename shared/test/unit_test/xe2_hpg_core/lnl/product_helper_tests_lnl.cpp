@@ -14,6 +14,7 @@
 #include "shared/source/xe2_hpg_core/hw_info_xe2_hpg_core.h"
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/default_hw_info.h"
+#include "shared/test/common/mocks/mock_release_helper.h"
 #include "shared/test/common/test_macros/header/per_product_test_definitions.h"
 #include "shared/test/common/test_macros/test.h"
 #include "shared/test/unit_test/os_interface/product_helper_tests.h"
@@ -32,11 +33,6 @@ LNLTEST_F(LnlProductHelper, whenGettingAubstreamProductFamilyThenProperEnumValue
 LNLTEST_F(LnlProductHelper, givenProductHelperWhenGettingEvictIfNecessaryFlagSupportedThenExpectTrue) {
 
     EXPECT_TRUE(productHelper->isEvictionIfNecessaryFlagSupported());
-}
-
-LNLTEST_F(LnlProductHelper, whenGettingMidThreadPreemptionSupportForRtKernelsThenExpectNoSupport) {
-
-    EXPECT_TRUE(productHelper->isMidThreadPreemptionDisallowedForRayTracingKernels());
 }
 
 LNLTEST_F(LnlProductHelper, givenProductHelperWhenGetCommandsStreamPropertiesSupportThenExpectCorrectValues) {
@@ -87,8 +83,17 @@ LNLTEST_F(LnlProductHelper, givenCompilerProductHelperWhenGetDefaultHwIpVersionT
     EXPECT_EQ(compilerProductHelper->getDefaultHwIpVersion(), AOT::LNL_B0);
 }
 
+LNLTEST_F(LnlProductHelper, givenCompilerProductHelperWhenGetMidThreadPreemptionSupportThenCorrectValueIsSet) {
+    auto hwInfo = *defaultHwInfo;
+    hwInfo.featureTable.flags.ftrWalkerMTP = false;
+    EXPECT_FALSE(compilerProductHelper->isMidThreadPreemptionSupported(hwInfo));
+    hwInfo.featureTable.flags.ftrWalkerMTP = true;
+    EXPECT_TRUE(compilerProductHelper->isMidThreadPreemptionSupported(hwInfo));
+}
+
 LNLTEST_F(LnlProductHelper, whenCheckPreferredAllocationMethodThenAllocateByKmdIsReturnedExceptTagBufferAndTimestampPacketTagBuffer) {
     DebugManagerStateRestore restorer;
+    debugManager.flags.AllowDcFlush.set(1);
     for (auto i = 0; i < static_cast<int>(AllocationType::count); ++i) {
         auto allocationType = static_cast<AllocationType>(i);
         auto preferredAllocationMethod = productHelper->getPreferredAllocationMethod(allocationType);
@@ -126,11 +131,13 @@ LNLTEST_F(LnlProductHelper, givenProductHelperWhenCheckOverrideAllocationCacheab
 }
 
 LNLTEST_F(LnlProductHelper, givenExternalHostPtrWhenMitigateDcFlushThenOverrideCacheable) {
+    DebugManagerStateRestore restorer;
+    debugManager.flags.AllowDcFlush.set(1);
+
     AllocationData allocationData{};
     allocationData.type = AllocationType::externalHostPtr;
     EXPECT_FALSE(productHelper->overrideAllocationCacheable(allocationData));
 
-    DebugManagerStateRestore restorer;
     debugManager.flags.AllowDcFlush.set(0);
 
     for (auto i = 0; i < static_cast<int>(AllocationType::count); ++i) {
@@ -143,8 +150,6 @@ LNLTEST_F(LnlProductHelper, givenExternalHostPtrWhenMitigateDcFlushThenOverrideC
             allocationType == AllocationType::svmZeroCopy ||
             allocationType == AllocationType::internalHostMemory ||
             allocationType == AllocationType::commandBuffer ||
-            allocationType == AllocationType::internalHeap ||
-            allocationType == AllocationType::linearStream ||
             allocationType == AllocationType::printfSurface) {
             EXPECT_TRUE(productHelper->overrideAllocationCacheable(allocationData));
         } else {

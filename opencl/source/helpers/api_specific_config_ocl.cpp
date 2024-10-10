@@ -24,7 +24,7 @@ bool ApiSpecificConfig::getGlobalBindlessHeapConfiguration(const ReleaseHelper *
     return false;
 }
 
-bool ApiSpecificConfig::getBindlessMode(const ReleaseHelper *releaseHelper) {
+bool ApiSpecificConfig::getBindlessMode(const Device &device) {
     if (debugManager.flags.UseBindlessMode.get() != -1) {
         return debugManager.flags.UseBindlessMode.get();
     } else {
@@ -84,4 +84,9 @@ std::string ApiSpecificConfig::compilerCacheFileExtension() {
 int64_t ApiSpecificConfig::compilerCacheDefaultEnabled() {
     return 1l;
 }
+
+bool ApiSpecificConfig::isGlobalStatelessEnabled(const RootDeviceEnvironment &rootDeviceEnvironment) {
+    return false;
+}
+
 } // namespace NEO

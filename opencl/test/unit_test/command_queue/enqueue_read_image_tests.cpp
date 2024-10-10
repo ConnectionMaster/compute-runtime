@@ -26,7 +26,7 @@
 
 using namespace NEO;
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, WhenReadingImageThenGpgpuWalkerIsProgrammedCorrectly) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadImageTest, WhenReadingImageThenGpgpuWalkerIsProgrammedCorrectly) {
     typedef typename FamilyType::GPGPU_WALKER GPGPU_WALKER;
     enqueueReadImage<FamilyType>();
 
@@ -89,7 +89,6 @@ HWTEST_F(EnqueueReadImageTest, whenEnqueueReadImageThenBuiltinKernelIsResolved) 
 
     auto pEvent = castToObject<Event>(outputEvent);
     auto pCommand = static_cast<CommandComputeKernel *>(pEvent->peekCommand());
-    EXPECT_FALSE(pCommand->peekKernel()->Kernel::canTransformImages());
     EXPECT_TRUE(pCommand->peekKernel()->isPatched());
     userEvent.setStatus(CL_COMPLETE);
     pEvent->release();
@@ -252,7 +251,6 @@ HWTEST_F(EnqueueReadImageTest, givenMultiRootDeviceImageWhenEnqueueReadImageThen
     auto pEvent = castToObject<Event>(outputEvent);
     auto pCommand = static_cast<CommandComputeKernel *>(pEvent->peekCommand());
     auto pKernel = pCommand->peekKernel();
-    EXPECT_FALSE(pKernel->Kernel::canTransformImages());
     EXPECT_TRUE(pKernel->isPatched());
     EXPECT_TRUE(pKernel->requiresMemoryMigration());
 
@@ -306,7 +304,6 @@ HWTEST_F(EnqueueReadImageTest, givenMultiRootDeviceImageWhenEnqueueReadImageIsCa
     auto pEvent0 = castToObject<Event>(outputEvent0);
     auto pCommand0 = static_cast<CommandComputeKernel *>(pEvent0->peekCommand());
     auto pKernel0 = pCommand0->peekKernel();
-    EXPECT_FALSE(pKernel0->Kernel::canTransformImages());
     EXPECT_TRUE(pKernel0->isPatched());
     EXPECT_TRUE(pKernel0->requiresMemoryMigration());
 
@@ -334,7 +331,6 @@ HWTEST_F(EnqueueReadImageTest, givenMultiRootDeviceImageWhenEnqueueReadImageIsCa
     auto pEvent1 = castToObject<Event>(outputEvent1);
     auto pCommand1 = static_cast<CommandComputeKernel *>(pEvent1->peekCommand());
     auto pKernel1 = pCommand1->peekKernel();
-    EXPECT_FALSE(pKernel1->Kernel::canTransformImages());
     EXPECT_TRUE(pKernel1->isPatched());
     EXPECT_TRUE(pKernel1->requiresMemoryMigration());
 
@@ -488,7 +484,7 @@ HWTEST_F(EnqueueReadImageTest, givenMultiRootDeviceImageWhenEnqueueReadImageIsCa
     pImage->release();
 }
 
-HWTEST2_F(EnqueueReadImageTest, givenImageFromBufferThatRequiresMigrationWhenEnqueueReadImageThenBufferObjectIsTakenForMigration, IsAtLeastGen12lp) {
+HWTEST2_F(EnqueueReadImageTest, givenImageFromBufferThatRequiresMigrationWhenEnqueueReadImageThenBufferObjectIsTakenForMigration, MatchAny) {
 
     MockDefaultContext context{true};
 
@@ -527,7 +523,6 @@ HWTEST2_F(EnqueueReadImageTest, givenImageFromBufferThatRequiresMigrationWhenEnq
     auto pEvent = castToObject<Event>(outputEvent);
     auto pCommand = static_cast<CommandComputeKernel *>(pEvent->peekCommand());
     auto pKernel = pCommand->peekKernel();
-    EXPECT_FALSE(pKernel->Kernel::canTransformImages());
     EXPECT_TRUE(pKernel->isPatched());
     EXPECT_TRUE(pKernel->requiresMemoryMigration());
 
@@ -591,7 +586,7 @@ HWTEST_F(EnqueueReadImageTest, WhenReadingImageThenL3ProgrammingIsCorrect) {
     validateL3Programming<FamilyType>(cmdList, itorWalker);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, WhenEnqueueIsDoneThenStateBaseAddressIsProperlyProgrammed) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadImageTest, WhenEnqueueIsDoneThenStateBaseAddressIsProperlyProgrammed) {
     enqueueReadImage<FamilyType>();
     auto &ultCsr = this->pDevice->getUltCommandStreamReceiver<FamilyType>();
     auto &gfxCoreHelper = pDevice->getGfxCoreHelper();
@@ -601,7 +596,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, WhenEnqueueIsDoneThenStateBase
                                          pDSH, pIOH, pSSH, itorPipelineSelect, itorWalker, cmdList, 0llu);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, WhenReadingImageThenMediaInterfaceDescriptorIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadImageTest, WhenReadingImageThenMediaInterfaceDescriptorIsCorrect) {
     typedef typename FamilyType::MEDIA_INTERFACE_DESCRIPTOR_LOAD MEDIA_INTERFACE_DESCRIPTOR_LOAD;
     typedef typename FamilyType::INTERFACE_DESCRIPTOR_DATA INTERFACE_DESCRIPTOR_DATA;
 
@@ -627,7 +622,7 @@ HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, WhenReadingImageThenMediaInter
     FamilyType::Parse::template validateCommand<MEDIA_INTERFACE_DESCRIPTOR_LOAD *>(cmdList.begin(), itorMediaInterfaceDescriptorLoad);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, WhenReadingImageThenInterfaceDescriptorData) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadImageTest, WhenReadingImageThenInterfaceDescriptorData) {
     typedef typename FamilyType::STATE_BASE_ADDRESS STATE_BASE_ADDRESS;
     typedef typename FamilyType::INTERFACE_DESCRIPTOR_DATA INTERFACE_DESCRIPTOR_DATA;
 
@@ -679,12 +674,12 @@ HWTEST2_F(EnqueueReadImageTest, WhenReadingImageThenPipelineSelectIsProgrammed, 
     EXPECT_EQ(1, numCommands);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, WhenReadingImageThenMediaVfeStateIsCorrect) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadImageTest, WhenReadingImageThenMediaVfeStateIsCorrect) {
     enqueueReadImage<FamilyType>();
     validateMediaVFEState<FamilyType>(&pDevice->getHardwareInfo(), cmdMediaVfeState, cmdList, itorMediaVfeState);
 }
 
-HWCMDTEST_F(IGFX_GEN8_CORE, EnqueueReadImageTest, GivenBlockingEnqueueWhenReadingImageThenPipeControlWithDcFlushIsSetAfterWalker) {
+HWCMDTEST_F(IGFX_GEN12LP_CORE, EnqueueReadImageTest, GivenBlockingEnqueueWhenReadingImageThenPipeControlWithDcFlushIsSetAfterWalker) {
     typedef typename FamilyType::PIPE_CONTROL PIPE_CONTROL;
 
     bool blocking = true;
