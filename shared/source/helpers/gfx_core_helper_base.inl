@@ -135,9 +135,9 @@ void GfxCoreHelperHw<Family>::setRenderSurfaceStateForScratchResource(const Root
     state.setVerticalLineStrideOffset(0);
     if ((isAligned<MemoryConstants::cacheLineSize>(bufferStateAddress) && isAligned<MemoryConstants::cacheLineSize>(bufferStateSize)) ||
         isReadOnly) {
-        state.setMemoryObjectControlState(gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER));
+        state.setMemoryObjectControlState(gmmHelper->getL3EnabledMOCS());
     } else {
-        state.setMemoryObjectControlState(gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED));
+        state.setMemoryObjectControlState(gmmHelper->getUncachedMOCS());
     }
     if (debugManager.flags.OverrideMocsIndexForScratchSpace.get() != -1) {
         auto mocsIndex = static_cast<uint32_t>(debugManager.flags.OverrideMocsIndexForScratchSpace.get()) << 1;
@@ -846,6 +846,11 @@ bool GfxCoreHelperHw<Family>::getSipBinaryFromExternalLib() const {
 template <typename Family>
 uint32_t GfxCoreHelperHw<Family>::getImplicitArgsVersion() const {
     return 0;
+}
+
+template <typename Family>
+bool GfxCoreHelperHw<Family>::isCacheFlushPriorImageReadRequired() const {
+    return false;
 }
 
 } // namespace NEO

@@ -74,7 +74,7 @@ void StateBaseAddressHelper<GfxFamily>::appendStateBaseAddressParameters(
 
     auto &productHelper = args.gmmHelper->getRootDeviceEnvironment().template getHelper<ProductHelper>();
 
-    auto heapResourceUsage = CacheSettingsHelper::getGmmUsageType(AllocationType::internalHeap, debugManager.flags.DisableCachingForHeaps.get(), productHelper);
+    auto heapResourceUsage = CacheSettingsHelper::getGmmUsageType(AllocationType::internalHeap, debugManager.flags.DisableCachingForHeaps.get(), productHelper, args.gmmHelper->getHardwareInfo());
     auto heapMocsValue = args.gmmHelper->getMOCS(heapResourceUsage);
 
     args.stateBaseAddressCmd->setSurfaceStateMemoryObjectControlState(heapMocsValue);
@@ -87,11 +87,11 @@ void StateBaseAddressHelper<GfxFamily>::appendStateBaseAddressParameters(
         setSbaStatelessCompressionParams<GfxFamily>(args.stateBaseAddressCmd, args.memoryCompressionState);
     }
 
-    bool l3MocsEnabled = (args.stateBaseAddressCmd->getStatelessDataPortAccessMemoryObjectControlState() >> 1) == (args.gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER) >> 1);
+    bool l3MocsEnabled = (args.stateBaseAddressCmd->getStatelessDataPortAccessMemoryObjectControlState() >> 1) == (args.gmmHelper->getL3EnabledMOCS() >> 1);
     bool constMocsAllowed = (l3MocsEnabled && (debugManager.flags.ForceL1Caching.get() != 0));
 
     if (constMocsAllowed) {
-        auto constMocsIndex = args.gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CONST);
+        auto constMocsIndex = args.gmmHelper->getL1EnabledMOCS();
         GmmHelper::applyMocsEncryptionBit(constMocsIndex);
 
         args.stateBaseAddressCmd->setStatelessDataPortAccessMemoryObjectControlState(constMocsIndex);

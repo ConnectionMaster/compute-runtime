@@ -67,6 +67,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
         NEO::PipeControlArgs args;
         NEO::MemorySynchronizationCommands<GfxFamily>::addSingleBarrier(*commandContainer.getCommandStream(), args);
     }
+
     NEO::Device *neoDevice = device->getNEODevice();
     const auto deviceHandle = static_cast<DriverHandleImp *>(device->getDriverHandle());
 
@@ -365,13 +366,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
     NEO::EncodeKernelArgsExt dispatchKernelArgsExt = {};
 
     NEO::EncodeDispatchKernelArgs dispatchKernelArgs{
-        .eventAddress = eventAddress,
-        .postSyncImmValue = static_cast<uint64_t>(Event::STATE_SIGNALED),
-        .inOrderCounterValue = inOrderCounterValue,
-        .inOrderIncrementGpuAddress = inOrderIncrementGpuAddress,
-        .inOrderIncrementValue = inOrderIncrementValue,
         .device = neoDevice,
-        .inOrderExecInfo = inOrderExecInfo,
         .dispatchInterface = kernel,
         .surfaceStateHeap = ssh,
         .dynamicStateHeap = dsh,
@@ -382,6 +377,22 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
         .outImplicitArgsPtr = nullptr,
         .additionalCommands = &additionalCommands,
         .extendedArgs = &dispatchKernelArgsExt,
+        .postSyncArgs = {
+            .eventAddress = eventAddress,
+            .postSyncImmValue = static_cast<uint64_t>(Event::STATE_SIGNALED),
+            .inOrderCounterValue = inOrderCounterValue,
+            .inOrderIncrementGpuAddress = inOrderIncrementGpuAddress,
+            .inOrderIncrementValue = inOrderIncrementValue,
+            .device = neoDevice,
+            .inOrderExecInfo = inOrderExecInfo,
+            .isTimestampEvent = isTimestampEvent,
+            .isHostScopeSignalEvent = isHostSignalScopeEvent,
+            .isKernelUsingSystemAllocation = isKernelUsingSystemAllocation,
+            .dcFlushEnable = this->dcFlushSupport,
+            .interruptEvent = interruptEvent,
+            .isFlushL3ForExternalAllocationRequired = isFlushL3AfterPostSync && isKernelUsingExternalAllocation,
+            .isFlushL3ForHostUsmRequired = isFlushL3AfterPostSync && isKernelUsingSystemAllocation,
+        },
         .preemptionMode = kernelPreemptionMode,
         .requiredPartitionDim = launchParams.requiredPartitionDim,
         .requiredDispatchWalkOrder = launchParams.requiredDispatchWalkOrder,
@@ -392,22 +403,15 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
         .defaultPipelinedThreadArbitrationPolicy = this->defaultPipelinedThreadArbitrationPolicy,
         .isIndirect = launchParams.isIndirect,
         .isPredicate = launchParams.isPredicate,
-        .isTimestampEvent = isTimestampEvent,
         .requiresUncachedMocs = uncachedMocsKernel,
         .isInternal = internalUsage,
         .isCooperative = launchParams.isCooperative,
-        .isHostScopeSignalEvent = isHostSignalScopeEvent,
-        .isKernelUsingSystemAllocation = isKernelUsingSystemAllocation,
         .isKernelDispatchedFromImmediateCmdList = isImmediateType(),
         .isRcs = engineGroupType == NEO::EngineGroupType::renderCompute,
-        .dcFlushEnable = this->dcFlushSupport,
         .isHeaplessModeEnabled = this->heaplessModeEnabled,
         .isHeaplessStateInitEnabled = this->heaplessStateInitEnabled,
-        .interruptEvent = interruptEvent,
         .immediateScratchAddressPatching = !this->scratchAddressPatchingEnabled,
         .makeCommandView = launchParams.makeKernelCommandView,
-        .isFlushL3AfterPostSyncForExternalAllocationRequired = isFlushL3AfterPostSync && isKernelUsingExternalAllocation,
-        .isFlushL3AfterPostSyncForHostUsmRequired = isFlushL3AfterPostSync && isKernelUsingSystemAllocation,
     };
     setAdditionalDispatchKernelArgsFromLaunchParams(dispatchKernelArgs, launchParams);
 
@@ -458,6 +462,10 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
         }
     }
 
+    bool textureFlushRequired = this->device->getProductHelper().isPostImageWriteFlushRequired() &&
+                                this->isImmediateType() &&
+                                kernelInfo->kernelDescriptor.kernelAttributes.hasImageWriteArg;
+
     if (inOrderExecSignalRequired) {
         if (inOrderNonWalkerSignalling) {
             if (!launchParams.skipInOrderNonWalkerSignaling) {
@@ -465,11 +473,12 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
                     if (compactEvent && (compactEvent->isCounterBased() && !this->asMutable())) {
                         auto pcCmdPtr = this->commandContainer.getCommandStream()->getSpace(0u);
                         inOrderCounterValue = this->inOrderExecInfo->getCounterValue() + getInOrderIncrementValue();
-                        appendSignalInOrderDependencyCounter(eventForInOrderExec, false, true);
+                        appendSignalInOrderDependencyCounter(eventForInOrderExec, false, true, textureFlushRequired);
                         addCmdForPatching(nullptr, pcCmdPtr, nullptr, inOrderCounterValue, NEO::InOrderPatchCommandHelpers::PatchCmdType::pipeControl);
+                        textureFlushRequired = false;
                     } else {
                         appendWaitOnSingleEvent(eventForInOrderExec, launchParams.outListCommands, false, false, CommandToPatch::CbEventTimestampPostSyncSemaphoreWait);
-                        appendSignalInOrderDependencyCounter(eventForInOrderExec, false, false);
+                        appendSignalInOrderDependencyCounter(eventForInOrderExec, false, false, false);
                     }
                 } else {
                     this->latestOperationHasOptimizedCbEvent = true;
@@ -482,6 +491,12 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
         }
     } else {
         launchParams.skipInOrderNonWalkerSignaling = false;
+    }
+
+    if (textureFlushRequired) {
+        NEO::PipeControlArgs args;
+        args.textureCacheInvalidationEnable = true;
+        NEO::MemorySynchronizationCommands<GfxFamily>::addSingleBarrier(*commandContainer.getCommandStream(), args);
     }
 
     if (neoDevice->getDebugger() && !this->immediateCmdListHeapSharing && !neoDevice->getBindlessHeapsHelper() && this->cmdListHeapAddressModel == NEO::HeapAddressModel::privateHeaps) {

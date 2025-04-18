@@ -155,7 +155,7 @@ ze_result_t DeviceImp::submitCopyForP2P(ze_device_handle_t hPeerDevice, ze_bool_
     L0::CommandList::fromHandle(commandList)->close();
 
     if (ret == ZE_RESULT_SUCCESS) {
-        ret = L0::CommandQueue::fromHandle(commandQueue)->executeCommandLists(1, &commandList, nullptr, true, nullptr);
+        ret = L0::CommandQueue::fromHandle(commandQueue)->executeCommandLists(1, &commandList, nullptr, true, nullptr, nullptr);
         if (ret == ZE_RESULT_SUCCESS) {
             this->crossAccessEnabledDevices[peerRootDeviceIndex] = true;
             pPeerDevice->crossAccessEnabledDevices[this->getNEODevice()->getRootDeviceIndex()] = true;
@@ -924,7 +924,7 @@ ze_result_t DeviceImp::getKernelProperties(ze_device_module_properties_t *pKerne
             if (compilerProductHelper.isDotProductAccumulateSystolicSupported(releaseHelper)) {
                 dpProperties->flags |= ZE_INTEL_DEVICE_MODULE_EXP_FLAG_DPAS;
             }
-        } else if (extendedProperties->stype == ZEX_STRUCTURE_DEVICE_MODULE_REGISTER_FILE_EXP) {
+        } else if (static_cast<uint32_t>(extendedProperties->stype) == ZEX_STRUCTURE_DEVICE_MODULE_REGISTER_FILE_EXP) {
             zex_device_module_register_file_exp_t *properties = reinterpret_cast<zex_device_module_register_file_exp_t *>(extendedProperties);
 
             const auto supportedNumGrfs = this->getProductHelper().getSupportedNumGrfs(this->getNEODevice()->getReleaseHelper());
@@ -1078,10 +1078,10 @@ ze_result_t DeviceImp::getProperties(ze_device_properties_t *pDeviceProperties) 
                         rtasProperties->rtasFormat = ZE_RTAS_FORMAT_EXP_INVALID;
                     }
                 }
-            } else if (extendedProperties->stype == ZE_INTEL_STRUCTURE_TYPE_DEVICE_COMMAND_LIST_WAIT_ON_MEMORY_DATA_SIZE_EXP_DESC) {
+            } else if (static_cast<uint32_t>(extendedProperties->stype) == ZE_INTEL_STRUCTURE_TYPE_DEVICE_COMMAND_LIST_WAIT_ON_MEMORY_DATA_SIZE_EXP_DESC) {
                 auto cmdListWaitOnMemDataSize = reinterpret_cast<ze_intel_device_command_list_wait_on_memory_data_size_exp_desc_t *>(extendedProperties);
                 cmdListWaitOnMemDataSize->cmdListWaitOnMemoryDataSizeInBytes = l0GfxCoreHelper.getCmdListWaitOnMemoryDataSize();
-            } else if (extendedProperties->stype == ZE_STRUCTURE_TYPE_INTEL_DEVICE_MEDIA_EXP_PROPERTIES) {
+            } else if (static_cast<uint32_t>(extendedProperties->stype) == ZE_STRUCTURE_TYPE_INTEL_DEVICE_MEDIA_EXP_PROPERTIES) {
                 auto deviceMediaProperties = reinterpret_cast<ze_intel_device_media_exp_properties_t *>(extendedProperties);
                 deviceMediaProperties->numDecoderCores = 0;
                 deviceMediaProperties->numEncoderCores = 0;
@@ -1845,11 +1845,13 @@ ze_result_t DeviceImp::getCsrForOrdinalAndIndex(NEO::CommandStreamReceiver **csr
         contextPriority = NEO::EngineUsage::lowPriority;
     }
 
+    auto selectedDevice = this;
     if (ordinal < numEngineGroups) {
 
         if (contextPriority == NEO::EngineUsage::lowPriority) {
-            getCsrForLowPriority(csr, copyOnly);
-            return ZE_RESULT_SUCCESS;
+            auto result = getCsrForLowPriority(csr, copyOnly);
+            DEBUG_BREAK_IF(result != ZE_RESULT_SUCCESS);
+            return result;
         }
 
         auto &engines = engineGroups[ordinal].engines;
@@ -1858,22 +1860,30 @@ ze_result_t DeviceImp::getCsrForOrdinalAndIndex(NEO::CommandStreamReceiver **csr
         }
         *csr = engines[index].commandStreamReceiver;
 
-        if (copyOnly && contextPriority == NEO::EngineUsage::highPriority) {
-            getCsrForHighPriority(csr, copyOnly);
-        }
-
     } else {
         auto subDeviceOrdinal = ordinal - numEngineGroups;
         if (index >= this->subDeviceCopyEngineGroups[subDeviceOrdinal].engines.size()) {
             return ZE_RESULT_ERROR_INVALID_ARGUMENT;
         }
         *csr = this->subDeviceCopyEngineGroups[subDeviceOrdinal].engines[index].commandStreamReceiver;
+        selectedDevice = static_cast<DeviceImp *>(this->subDevices[subDeviceOrdinal]);
+    }
+
+    if (copyOnly) {
+
+        if (contextPriority == NEO::EngineUsage::highPriority) {
+            selectedDevice->getCsrForHighPriority(csr, copyOnly);
+        } else if (contextPriority == NEO::EngineUsage::lowPriority) {
+            if (selectedDevice->getCsrForLowPriority(csr, copyOnly) == ZE_RESULT_SUCCESS) {
+                return ZE_RESULT_SUCCESS;
+            }
+        }
     }
 
     auto &osContext = (*csr)->getOsContext();
 
     if (secondaryContextsEnabled) {
-        tryAssignSecondaryContext(osContext.getEngineType(), contextPriority, csr, allocateInterrupt);
+        selectedDevice->tryAssignSecondaryContext(osContext.getEngineType(), contextPriority, csr, allocateInterrupt);
     }
 
     return ZE_RESULT_SUCCESS;
@@ -1904,8 +1914,6 @@ ze_result_t DeviceImp::getCsrForLowPriority(NEO::CommandStreamReceiver **csr, bo
     }
 
     // if the code falls through, we have no low priority context created by neoDevice.
-
-    UNRECOVERABLE_IF(true);
     return ZE_RESULT_ERROR_UNKNOWN;
 }
 ze_result_t DeviceImp::getCsrForHighPriority(NEO::CommandStreamReceiver **csr, bool copyOnly) {

@@ -1196,7 +1196,7 @@ HWTEST2_F(FrontEndMultiReturnCommandListTest,
     size_t usedBefore = cmdQueueStream.getUsed();
 
     auto cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     size_t usedAfter = cmdQueueStream.getUsed();
@@ -1446,7 +1446,7 @@ HWTEST2_F(FrontEndMultiReturnCommandListTest,
     size_t usedBefore = cmdQueueStream.getUsed();
 
     auto cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     size_t usedAfter = cmdQueueStream.getUsed();
@@ -1685,7 +1685,7 @@ HWTEST2_F(FrontEndMultiReturnCommandListTest, givenCmdQueueAndImmediateCmdListUs
     auto cmdListHandle = commandList->toHandle();
 
     usedBefore = cmdQueueStream.getUsed();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     usedAfter = cmdQueueStream.getUsed();
 
@@ -1866,7 +1866,7 @@ HWTEST2_F(FrontEndMultiReturnCommandListTest, givenCmdQueueAndImmediateCmdListUs
     auto cmdListHandle = commandList->toHandle();
 
     usedBefore = cmdQueueStream.getUsed();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     usedAfter = cmdQueueStream.getUsed();
 
@@ -2165,7 +2165,7 @@ TEST(CommandList, givenContextGroupEnabledWhenCreatingImmediateCommandListWithIn
         }
 
         zex_intel_queue_allocate_msix_hint_exp_desc_t allocateMsix = {};
-        allocateMsix.stype = ZEX_INTEL_STRUCTURE_TYPE_QUEUE_ALLOCATE_MSIX_HINT_EXP_PROPERTIES; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+        allocateMsix.stype = ZEX_INTEL_STRUCTURE_TYPE_QUEUE_ALLOCATE_MSIX_HINT_EXP_PROPERTIES;
         allocateMsix.uniqueMsix = true;
 
         ze_command_queue_desc_t desc = {};

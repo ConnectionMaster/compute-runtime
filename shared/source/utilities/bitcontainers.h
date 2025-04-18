@@ -190,9 +190,10 @@ class OpaqueElementAllocator final {
     std::vector<ChunkT> chunks;
 
   public:
+    template <typename GivenAllocatorT = UnderlyingAllocatorT>
     OpaqueElementAllocator(size_t chunkSize, size_t alignedElementSize,
-                           UnderlyingAllocatorT underlyingAllocator) : chunkSize(chunkSize), alignedElementSize(alignedElementSize),
-                                                                       underlyingAllocator(std::move(underlyingAllocator)) {
+                           GivenAllocatorT &&underlyingAllocator) : chunkSize(chunkSize), alignedElementSize(alignedElementSize),
+                                                                    underlyingAllocator(std::forward<GivenAllocatorT>(underlyingAllocator)) {
         UNRECOVERABLE_IF(chunkSize < alignedElementSize);
         DEBUG_BREAK_IF((chunkSize % alignedElementSize) != 0);
     }
@@ -202,6 +203,11 @@ class OpaqueElementAllocator final {
             underlyingAllocator.free({std::move(chunk.handle()), chunk.base()});
         }
     }
+
+    OpaqueElementAllocator(OpaqueElementAllocator &&) = default;
+    OpaqueElementAllocator &operator=(OpaqueElementAllocator &&) = default;
+    OpaqueElementAllocator(const OpaqueElementAllocator &) = delete;
+    OpaqueElementAllocator &operator=(const OpaqueElementAllocator &) = delete;
 
     AllocationT allocate() {
         for (auto &chunk : chunks) {

@@ -207,7 +207,7 @@ void CommandListCoreFamily<gfxCoreFamily>::handleInOrderCounterOverflow(bool cop
         inOrderExecInfo->setAllocationOffset(newOffset);
         inOrderExecInfo->initializeAllocationsFromHost();
 
-        CommandListCoreFamily<gfxCoreFamily>::appendSignalInOrderDependencyCounter(nullptr, copyOffloadOperation, false); // signal counter on new offset
+        CommandListCoreFamily<gfxCoreFamily>::appendSignalInOrderDependencyCounter(nullptr, copyOffloadOperation, false, false); // signal counter on new offset
     }
 }
 
@@ -243,7 +243,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::initialize(Device *device, NEO
     this->signalAllEventPackets = L0GfxCoreHelper::useSignalAllEventPackets(hwInfo);
     this->dynamicHeapRequired = NEO::EncodeDispatchKernel<GfxFamily>::isDshNeeded(device->getDeviceInfo());
     this->doubleSbaWa = productHelper.isAdditionalStateBaseAddressWARequired(hwInfo);
-    this->defaultMocsIndex = (gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER) >> 1);
+    this->defaultMocsIndex = (gmmHelper->getL3EnabledMOCS() >> 1);
     this->l1CachePolicyData.init(productHelper);
     this->cmdListHeapAddressModel = L0GfxCoreHelper::getHeapAddressModel(rootDeviceEnvironment);
     this->dummyBlitWa.rootDeviceEnvironment = &(neoDevice->getRootDeviceEnvironmentRef());
@@ -348,7 +348,7 @@ inline ze_result_t CommandListCoreFamily<gfxCoreFamily>::executeCommandListImmed
     ze_command_list_handle_t immediateHandle = this->toHandle();
 
     this->commandContainer.removeDuplicatesFromResidencyContainer();
-    const auto commandListExecutionResult = cmdQImmediate->executeCommandLists(1, &immediateHandle, nullptr, performMigration, nullptr);
+    const auto commandListExecutionResult = cmdQImmediate->executeCommandLists(1, &immediateHandle, nullptr, performMigration, nullptr, nullptr);
     if (commandListExecutionResult == ZE_RESULT_ERROR_DEVICE_LOST) {
         return commandListExecutionResult;
     }
@@ -597,7 +597,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendEventReset(ze_event_hand
     }
 
     if (this->isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(event, false, false);
+        appendSignalInOrderDependencyCounter(event, false, false, false);
     }
     handleInOrderDependencyCounter(event, false, false);
     event->unsetInOrderExecInfo();
@@ -645,7 +645,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendMemoryRangesBarrier(uint
     addToMappedEventList(signalEvent);
 
     if (this->isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(signalEvent, false, false);
+        appendSignalInOrderDependencyCounter(signalEvent, false, false, false);
     }
     handleInOrderDependencyCounter(signalEvent, false, false);
 
@@ -1247,68 +1247,121 @@ template <GFXCORE_FAMILY gfxCoreFamily>
 ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendMemAdvise(ze_device_handle_t hDevice,
                                                                   const void *ptr, size_t size,
                                                                   ze_memory_advice_t advice) {
-    NEO::MemAdviseFlags flags{};
 
-    auto allocData = device->getDriverHandle()->getSvmAllocsManager()->getSVMAlloc(ptr);
-    if (allocData) {
-        DeviceImp *deviceImp = static_cast<DeviceImp *>((L0::Device::fromHandle(hDevice)));
-
-        if (deviceImp->memAdviseSharedAllocations.find(allocData) != deviceImp->memAdviseSharedAllocations.end()) {
-            flags = deviceImp->memAdviseSharedAllocations[allocData];
-        }
-
-        switch (advice) {
-        case ZE_MEMORY_ADVICE_SET_READ_MOSTLY:
-            flags.readOnly = 1;
-            break;
-        case ZE_MEMORY_ADVICE_CLEAR_READ_MOSTLY:
-            flags.readOnly = 0;
-            break;
-        case ZE_MEMORY_ADVICE_SET_PREFERRED_LOCATION:
-            flags.devicePreferredLocation = 1;
-            break;
-        case ZE_MEMORY_ADVICE_CLEAR_PREFERRED_LOCATION:
-            flags.devicePreferredLocation = 0;
-            break;
-        case ZE_MEMORY_ADVICE_SET_SYSTEM_MEMORY_PREFERRED_LOCATION:
-            flags.systemPreferredLocation = 1;
-            break;
-        case ZE_MEMORY_ADVICE_CLEAR_SYSTEM_MEMORY_PREFERRED_LOCATION:
-            flags.systemPreferredLocation = 0;
-            break;
-        case ZE_MEMORY_ADVICE_BIAS_CACHED:
-            flags.cachedMemory = 1;
-            break;
-        case ZE_MEMORY_ADVICE_BIAS_UNCACHED:
-            flags.cachedMemory = 0;
-            break;
-        case ZE_MEMORY_ADVICE_SET_NON_ATOMIC_MOSTLY:
-        case ZE_MEMORY_ADVICE_CLEAR_NON_ATOMIC_MOSTLY:
-        default:
-            break;
-        }
-
-        auto memoryManager = device->getDriverHandle()->getMemoryManager();
-        auto pageFaultManager = memoryManager->getPageFaultManager();
-        if (pageFaultManager) {
-            /* If Read Only and Device Preferred Hints have been cleared, then cpu_migration of Shared memory can be re-enabled*/
-            if (flags.cpuMigrationBlocked) {
-                if (flags.readOnly == 0 && flags.devicePreferredLocation == 0) {
-                    pageFaultManager->protectCPUMemoryAccess(const_cast<void *>(ptr), size);
-                    flags.cpuMigrationBlocked = 0;
-                }
-            }
-            /* Given MemAdvise hints, use different gpu Domain Handler for the Page Fault Handling */
-            pageFaultManager->setGpuDomainHandler(L0::transferAndUnprotectMemoryWithHints);
-        }
-
-        auto alloc = allocData->gpuAllocations.getGraphicsAllocation(deviceImp->getRootDeviceIndex());
-        memoryManager->setMemAdvise(alloc, flags, deviceImp->getRootDeviceIndex());
-
-        deviceImp->memAdviseSharedAllocations[allocData] = flags;
-        return ZE_RESULT_SUCCESS;
+    if (ptr == nullptr) {
+        return ZE_RESULT_ERROR_INVALID_ARGUMENT;
     }
-    return ZE_RESULT_ERROR_INVALID_ARGUMENT;
+
+    this->memAdviseOperations.push_back(MemAdviseOperation(hDevice, ptr, size, advice));
+
+    return ZE_RESULT_SUCCESS;
+}
+
+template <GFXCORE_FAMILY gfxCoreFamily>
+ze_result_t CommandListCoreFamily<gfxCoreFamily>::executeMemAdvise(ze_device_handle_t hDevice,
+                                                                   const void *ptr, size_t size,
+                                                                   ze_memory_advice_t advice) {
+
+    auto driverHandle = device->getDriverHandle();
+    auto allocData = driverHandle->getSvmAllocsManager()->getSVMAlloc(ptr);
+
+    if (!allocData) {
+        if (device->getNEODevice()->areSharedSystemAllocationsAllowed()) {
+            NEO::MemAdvise memAdviseOp = NEO::MemAdvise::invalidAdvise;
+
+            switch (advice) {
+            case ZE_MEMORY_ADVICE_SET_PREFERRED_LOCATION:
+                memAdviseOp = NEO::MemAdvise::setPreferredLocation;
+                break;
+            case ZE_MEMORY_ADVICE_CLEAR_PREFERRED_LOCATION:
+                memAdviseOp = NEO::MemAdvise::clearPreferredLocation;
+                break;
+            case ZE_MEMORY_ADVICE_SET_SYSTEM_MEMORY_PREFERRED_LOCATION:
+                memAdviseOp = NEO::MemAdvise::setSystemMemoryPreferredLocation;
+                break;
+            case ZE_MEMORY_ADVICE_CLEAR_SYSTEM_MEMORY_PREFERRED_LOCATION:
+                memAdviseOp = NEO::MemAdvise::clearSystemMemoryPreferredLocation;
+                break;
+            case ZE_MEMORY_ADVICE_SET_READ_MOSTLY:
+            case ZE_MEMORY_ADVICE_CLEAR_READ_MOSTLY:
+            case ZE_MEMORY_ADVICE_BIAS_CACHED:
+            case ZE_MEMORY_ADVICE_BIAS_UNCACHED:
+            case ZE_MEMORY_ADVICE_SET_NON_ATOMIC_MOSTLY:
+            case ZE_MEMORY_ADVICE_CLEAR_NON_ATOMIC_MOSTLY:
+            default:
+                return ZE_RESULT_SUCCESS;
+            }
+
+            DeviceImp *deviceImp = static_cast<DeviceImp *>((L0::Device::fromHandle(hDevice)));
+            auto memoryManager = device->getDriverHandle()->getMemoryManager();
+
+            memoryManager->setSharedSystemMemAdvise(ptr, size, memAdviseOp, deviceImp->getRootDeviceIndex());
+
+            return ZE_RESULT_SUCCESS;
+        } else {
+            return ZE_RESULT_ERROR_INVALID_ARGUMENT;
+        }
+    }
+
+    NEO::MemAdviseFlags flags{};
+    DeviceImp *deviceImp = static_cast<DeviceImp *>((L0::Device::fromHandle(hDevice)));
+
+    if (deviceImp->memAdviseSharedAllocations.find(allocData) != deviceImp->memAdviseSharedAllocations.end()) {
+        flags = deviceImp->memAdviseSharedAllocations[allocData];
+    }
+
+    switch (advice) {
+    case ZE_MEMORY_ADVICE_SET_READ_MOSTLY:
+        flags.readOnly = 1;
+        break;
+    case ZE_MEMORY_ADVICE_CLEAR_READ_MOSTLY:
+        flags.readOnly = 0;
+        break;
+    case ZE_MEMORY_ADVICE_SET_PREFERRED_LOCATION:
+        flags.devicePreferredLocation = 1;
+        break;
+    case ZE_MEMORY_ADVICE_CLEAR_PREFERRED_LOCATION:
+        flags.devicePreferredLocation = 0;
+        break;
+    case ZE_MEMORY_ADVICE_SET_SYSTEM_MEMORY_PREFERRED_LOCATION:
+        flags.systemPreferredLocation = 1;
+        break;
+    case ZE_MEMORY_ADVICE_CLEAR_SYSTEM_MEMORY_PREFERRED_LOCATION:
+        flags.systemPreferredLocation = 0;
+        break;
+    case ZE_MEMORY_ADVICE_BIAS_CACHED:
+        flags.cachedMemory = 1;
+        break;
+    case ZE_MEMORY_ADVICE_BIAS_UNCACHED:
+        flags.cachedMemory = 0;
+        break;
+    case ZE_MEMORY_ADVICE_SET_NON_ATOMIC_MOSTLY:
+    case ZE_MEMORY_ADVICE_CLEAR_NON_ATOMIC_MOSTLY:
+    default:
+        break;
+    }
+
+    auto memoryManager = device->getDriverHandle()->getMemoryManager();
+    auto pageFaultManager = memoryManager->getPageFaultManager();
+
+    if (pageFaultManager) {
+        /* If Read Only and Device Preferred Hints have been cleared, then cpu_migration of Shared memory can be re-enabled*/
+        if (flags.cpuMigrationBlocked) {
+            if (flags.readOnly == 0 && flags.devicePreferredLocation == 0) {
+                pageFaultManager->protectCPUMemoryAccess(const_cast<void *>(ptr), size);
+                flags.cpuMigrationBlocked = 0;
+            }
+        }
+        /* Given MemAdvise hints, use different gpu Domain Handler for the Page Fault Handling */
+        pageFaultManager->setGpuDomainHandler(L0::transferAndUnprotectMemoryWithHints);
+    }
+
+    auto alloc = allocData->gpuAllocations.getGraphicsAllocation(deviceImp->getRootDeviceIndex());
+    memoryManager->setMemAdvise(alloc, flags, deviceImp->getRootDeviceIndex());
+
+    deviceImp->memAdviseSharedAllocations[allocData] = flags;
+
+    return ZE_RESULT_SUCCESS;
 }
 
 template <GFXCORE_FAMILY gfxCoreFamily>
@@ -1477,7 +1530,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendCopyImageBlit(NEO::Graph
     appendSignalEventPostWalker(signalEvent, nullptr, nullptr, false, false, true);
 
     if (this->isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(signalEvent, false, false);
+        appendSignalInOrderDependencyCounter(signalEvent, false, false, false);
     }
     handleInOrderDependencyCounter(signalEvent, false, false);
 
@@ -1739,7 +1792,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendMemoryCopy(void *dstptr,
 
         if (launchParams.isKernelSplitOperation || inOrderCopyOnlySignalingAllowed || emitPipeControl) {
             dispatchInOrderPostOperationBarrier(signalEvent, dcFlush, isCopyOnlyEnabled);
-            appendSignalInOrderDependencyCounter(signalEvent, isCopyOnlyEnabled, false);
+            appendSignalInOrderDependencyCounter(signalEvent, isCopyOnlyEnabled, false, false);
         }
 
         if (!isCopyOnlyEnabled || inOrderCopyOnlySignalingAllowed) {
@@ -1844,7 +1897,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendMemoryCopyRegion(void *d
 
     if (this->isInOrderExecutionEnabled()) {
         if (inOrderCopyOnlySignalingAllowed) {
-            appendSignalInOrderDependencyCounter(signalEvent, isCopyOnlyEnabled, false);
+            appendSignalInOrderDependencyCounter(signalEvent, isCopyOnlyEnabled, false, false);
             handleInOrderDependencyCounter(signalEvent, false, isCopyOnlyEnabled);
         }
     } else {
@@ -2315,7 +2368,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendMemoryFill(void *ptr,
     if (this->isInOrderExecutionEnabled()) {
         if (launchParams.isKernelSplitOperation) {
             dispatchInOrderPostOperationBarrier(signalEvent, dcFlush, isCopyOnly(false));
-            appendSignalInOrderDependencyCounter(signalEvent, false, false);
+            appendSignalInOrderDependencyCounter(signalEvent, false, false, false);
         } else {
             nonWalkerInOrderCmdChaining = isInOrderNonWalkerSignalingRequired(signalEvent);
         }
@@ -2387,7 +2440,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendBlitFill(void *ptr,
         appendSignalEventPostWalker(signalEvent, nullptr, nullptr, false, false, true);
 
         if (isInOrderExecutionEnabled()) {
-            appendSignalInOrderDependencyCounter(signalEvent, false, false);
+            appendSignalInOrderDependencyCounter(signalEvent, false, false, false);
         }
         handleInOrderDependencyCounter(signalEvent, false, false);
     }
@@ -2634,7 +2687,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendSignalEvent(ze_event_han
     }
 
     if (this->isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(event, false, false);
+        appendSignalInOrderDependencyCounter(event, false, false, false);
     }
     handleInOrderDependencyCounter(event, false, false);
 
@@ -2869,7 +2922,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendWaitOnEvents(uint32_t nu
 
     if (apiRequest) {
         if (this->isInOrderExecutionEnabled()) {
-            appendSignalInOrderDependencyCounter(nullptr, copyOffloadOperation, false);
+            appendSignalInOrderDependencyCounter(nullptr, copyOffloadOperation, false, false);
         }
         handleInOrderDependencyCounter(nullptr, false, copyOffloadOperation);
     }
@@ -2912,7 +2965,7 @@ void CommandListCoreFamily<gfxCoreFamily>::appendSdiInOrderCounterSignalling(uin
 }
 
 template <GFXCORE_FAMILY gfxCoreFamily>
-void CommandListCoreFamily<gfxCoreFamily>::appendSignalInOrderDependencyCounter(Event *signalEvent, bool copyOffloadOperation, bool stall) {
+void CommandListCoreFamily<gfxCoreFamily>::appendSignalInOrderDependencyCounter(Event *signalEvent, bool copyOffloadOperation, bool stall, bool textureFlushRequired) {
     using ATOMIC_OPCODES = typename GfxFamily::MI_ATOMIC::ATOMIC_OPCODES;
     using DATA_SIZE = typename GfxFamily::MI_ATOMIC::DATA_SIZE;
 
@@ -2925,6 +2978,7 @@ void CommandListCoreFamily<gfxCoreFamily>::appendSignalInOrderDependencyCounter(
         NEO::PipeControlArgs args;
         args.dcFlushEnable = true;
         args.workloadPartitionOffset = partitionCount > 1;
+        args.textureCacheInvalidationEnable = textureFlushRequired;
 
         NEO::MemorySynchronizationCommands<GfxFamily>::addBarrierWithPostSyncOperation(
             *cmdStream,
@@ -3157,7 +3211,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendWriteGlobalTimestamp(
     appendSignalEventPostWalker(signalEvent, nullptr, nullptr, false, false, isCopyOnly(false));
 
     if (this->isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(signalEvent, false, false);
+        appendSignalInOrderDependencyCounter(signalEvent, false, false, false);
     }
     handleInOrderDependencyCounter(signalEvent, false, false);
 
@@ -3742,7 +3796,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendBarrier(ze_event_handle_
     appendSignalEventPostWalker(signalEvent, nullptr, nullptr, this->isInOrderExecutionEnabled(), false, isCopyOnly(false));
 
     if (isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(signalEvent, false, false);
+        appendSignalInOrderDependencyCounter(signalEvent, false, false, false);
     }
     handleInOrderDependencyCounter(signalEvent, false, false);
 
@@ -3913,7 +3967,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendWaitOnMemory(void *desc,
     appendSignalEventPostWalker(signalEvent, nullptr, nullptr, false, false, isCopyOnly(false));
 
     if (this->isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(signalEvent, false, false);
+        appendSignalInOrderDependencyCounter(signalEvent, false, false, false);
     }
     handleInOrderDependencyCounter(signalEvent, false, false);
 
@@ -3960,7 +4014,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendWriteToMemory(void *desc
     }
 
     if (this->isInOrderExecutionEnabled()) {
-        appendSignalInOrderDependencyCounter(nullptr, false, false);
+        appendSignalInOrderDependencyCounter(nullptr, false, false, false);
     }
     handleInOrderDependencyCounter(nullptr, false, false);
 

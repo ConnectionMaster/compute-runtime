@@ -94,7 +94,7 @@ HWTEST_F(InOrderCmdListTests, givenEventSyncModeDescPassedWhenCreatingEventThenE
 
     auto eventPool = std::unique_ptr<L0::EventPool>(EventPool::create(driverHandle.get(), context, 0, nullptr, &eventPoolDesc, returnValue));
 
-    zex_intel_event_sync_mode_exp_desc_t syncModeDesc = {ZEX_INTEL_STRUCTURE_TYPE_EVENT_SYNC_MODE_EXP_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_intel_event_sync_mode_exp_desc_t syncModeDesc = {ZEX_INTEL_STRUCTURE_TYPE_EVENT_SYNC_MODE_EXP_DESC};
     ze_event_desc_t eventDesc = {};
     eventDesc.pNext = &syncModeDesc;
 
@@ -573,7 +573,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, InOrderCmdListTests, givenInterruptableEventsWhenEx
 
     EXPECT_NE(firstQueue->getCsr(), secondQueue->getCsr());
 
-    firstQueue->executeCommandLists(1, &cmdlistHandle, nullptr, false, nullptr);
+    firstQueue->executeCommandLists(1, &cmdlistHandle, nullptr, false, nullptr, nullptr);
     EXPECT_EQ(1u, events[0]->csrs.size());
     EXPECT_EQ(firstQueue->getCsr(), events[0]->csrs[0]);
     EXPECT_EQ(1u, events[1]->csrs.size());
@@ -581,7 +581,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, InOrderCmdListTests, givenInterruptableEventsWhenEx
     EXPECT_EQ(1u, events[2]->csrs.size());
     EXPECT_EQ(device->getNEODevice()->getDefaultEngine().commandStreamReceiver, events[2]->csrs[0]);
 
-    secondQueue->executeCommandLists(1, &cmdlistHandle, nullptr, false, nullptr);
+    secondQueue->executeCommandLists(1, &cmdlistHandle, nullptr, false, nullptr, nullptr);
     EXPECT_EQ(1u, events[0]->csrs.size());
     EXPECT_EQ(secondQueue->getCsr(), events[0]->csrs[0]);
     EXPECT_EQ(1u, events[1]->csrs.size());
@@ -1102,7 +1102,7 @@ HWTEST_F(InOrderCmdListTests, givenDependencyFromDifferentRootDeviceWhenAppendCa
     auto ultCsr1 = static_cast<UltCommandStreamReceiver<FamilyType> *>(device1->getNEODevice()->getDefaultEngine().commandStreamReceiver);
     ultCsr1->storeMakeResidentAllocations = true;
 
-    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC};
     counterBasedDesc.flags = ZEX_COUNTER_BASED_EVENT_FLAG_IMMEDIATE;
     ze_event_handle_t eventH = nullptr;
 
@@ -2672,6 +2672,10 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, InOrderCmdListTests, givenInOrderModeWhenProgrammin
                 address |= pcCmd->getAddress();
                 EXPECT_EQ(immCmdList->inOrderExecInfo->getBaseDeviceAddress() + counterOffset, address);
                 EXPECT_EQ(2u, pcCmd->getImmediateData());
+
+                const bool textureFlushRequired = device->getProductHelper().isPostImageWriteFlushRequired() &&
+                                                  kernel->kernelImmData->getKernelInfo()->kernelDescriptor.kernelAttributes.hasImageWriteArg;
+                EXPECT_EQ(textureFlushRequired, pcCmd->getTextureCacheInvalidationEnable());
             } else {
                 if (!immCmdList->inOrderExecInfo->isAtomicDeviceSignalling()) {
                     EXPECT_EQ(PostSyncType::OPERATION::OPERATION_WRITE_IMMEDIATE_DATA, postSync.getOperation());
@@ -2808,7 +2812,8 @@ HWTEST2_F(InOrderCmdListTests, givenRelaxedOrderingWhenProgrammingTimestampEvent
 
         ze_result_t flushImmediate(ze_result_t inputRet, bool performMigration, bool hasStallingCmds, bool hasRelaxedOrderingDependencies,
                                    NEO::AppendOperations appendOperation, bool copyOffloadSubmission, ze_event_handle_t hSignalEvent, bool requireTaskCountUpdate,
-                                   MutexLock *outerLock) override {
+                                   MutexLock *outerLock,
+                                   std::unique_lock<std::mutex> *outerLockForIndirect) override {
             flushData.push_back(this->cmdListCurrentStartOffset);
 
             this->cmdListCurrentStartOffset = this->commandContainer.getCommandStream()->getUsed();
@@ -2941,7 +2946,8 @@ HWTEST2_F(InOrderCmdListTests, givenRelaxedOrderingWhenProgrammingTimestampEvent
 
         ze_result_t flushImmediate(ze_result_t inputRet, bool performMigration, bool hasStallingCmds, bool hasRelaxedOrderingDependencies,
                                    NEO::AppendOperations appendOperation, bool copyOffloadSubmission, ze_event_handle_t hSignalEvent, bool requireTaskCountUpdate,
-                                   MutexLock *outerLock) override {
+                                   MutexLock *outerLock,
+                                   std::unique_lock<std::mutex> *outerLockForIndirect) override {
             auto hostAddr = reinterpret_cast<uint32_t *>(usedEvent->getCompletionFieldHostAddress());
             eventCompletionData.push_back(*hostAddr);
 
@@ -3008,7 +3014,8 @@ HWTEST2_F(InOrderCmdListTests, givenRegularNonTimestampEventWhenSkipItsConverted
 
         ze_result_t flushImmediate(ze_result_t inputRet, bool performMigration, bool hasStallingCmds, bool hasRelaxedOrderingDependencies,
                                    NEO::AppendOperations appendOperation, bool copyOffloadSubmission, ze_event_handle_t hSignalEvent, bool requireTaskCountUpdate,
-                                   MutexLock *outerLock) override {
+                                   MutexLock *outerLock,
+                                   std::unique_lock<std::mutex> *outerLockForIndirect) override {
             flushCounter++;
 
             this->cmdListCurrentStartOffset = this->commandContainer.getCommandStream()->getUsed();
@@ -3061,7 +3068,8 @@ HWTEST2_F(InOrderCmdListTests, givenDebugFlagSetWhenChainingWithRelaxedOrderingT
 
         ze_result_t flushImmediate(ze_result_t inputRet, bool performMigration, bool hasStallingCmds, bool hasRelaxedOrderingDependencies,
                                    NEO::AppendOperations appendOperation, bool copyOffloadSubmission, ze_event_handle_t hSignalEvent, bool requireTaskCountUpdate,
-                                   MutexLock *outerLock) override {
+                                   MutexLock *outerLock,
+                                   std::unique_lock<std::mutex> *outerLockForIndirect) override {
             flushCount++;
 
             return ZE_RESULT_SUCCESS;
@@ -3876,19 +3884,19 @@ HWTEST_F(InOrderCmdListTests, givenEventGeneratedByRegularCmdListWhenWaitingFrom
 
     // 1 Execute call
     offset = cmdStream->getUsed();
-    mockCmdQHw->executeCommandLists(1, &regularCmdListHandle, nullptr, false, nullptr);
+    mockCmdQHw->executeCommandLists(1, &regularCmdListHandle, nullptr, false, nullptr, nullptr);
     immCmdList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 1, &eventHandle, launchParams, false);
     verifySemaphore(expectedCounterValue);
 
     // 2 Execute calls
     offset = cmdStream->getUsed();
-    mockCmdQHw->executeCommandLists(1, &regularCmdListHandle, nullptr, false, nullptr);
+    mockCmdQHw->executeCommandLists(1, &regularCmdListHandle, nullptr, false, nullptr, nullptr);
     immCmdList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 1, &eventHandle, launchParams, false);
     verifySemaphore(expectedCounterValue + expectedCounterAppendValue);
 
     // 3 Execute calls
     offset = cmdStream->getUsed();
-    mockCmdQHw->executeCommandLists(1, &regularCmdListHandle, nullptr, false, nullptr);
+    mockCmdQHw->executeCommandLists(1, &regularCmdListHandle, nullptr, false, nullptr, nullptr);
     immCmdList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 1, &eventHandle, launchParams, false);
     verifySemaphore(expectedCounterValue + (expectedCounterAppendValue * 2));
 }
@@ -5355,12 +5363,12 @@ HWTEST_F(InOrderCmdListTests, givenCorrectInputParamsWhenCreatingCbEvent2ThenRet
     *hostAddress = counterValue;
     uint64_t *gpuAddress = ptrOffset(&counterValue, 64);
 
-    zex_counter_based_event_external_sync_alloc_properties_t externalSyncAllocProperties = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_EXTERNAL_SYNC_ALLOC_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_external_sync_alloc_properties_t externalSyncAllocProperties = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_EXTERNAL_SYNC_ALLOC_PROPERTIES};
     externalSyncAllocProperties.completionValue = counterValue;
     externalSyncAllocProperties.deviceAddress = gpuAddress;
     externalSyncAllocProperties.hostAddress = hostAddress;
 
-    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC};
     counterBasedDesc.flags = ZEX_COUNTER_BASED_EVENT_FLAG_IMMEDIATE | ZEX_COUNTER_BASED_EVENT_FLAG_NON_IMMEDIATE;
     counterBasedDesc.pNext = &externalSyncAllocProperties;
     ze_event_handle_t handle = nullptr;
@@ -5420,12 +5428,12 @@ HWTEST_F(InOrderCmdListTests, givenUsmDeviceAllocationWhenCreatingCbEventFromExt
     auto hostAddress = reinterpret_cast<uint64_t *>(allocHostMem(sizeof(uint64_t)));
     auto deviceAddress = reinterpret_cast<uint64_t *>(allocDeviceMem(sizeof(uint64_t)));
 
-    zex_counter_based_event_external_sync_alloc_properties_t externalSyncAllocProperties = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_EXTERNAL_SYNC_ALLOC_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_external_sync_alloc_properties_t externalSyncAllocProperties = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_EXTERNAL_SYNC_ALLOC_PROPERTIES};
     externalSyncAllocProperties.completionValue = 2;
     externalSyncAllocProperties.deviceAddress = deviceAddress;
     externalSyncAllocProperties.hostAddress = hostAddress;
 
-    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC};
     counterBasedDesc.flags = ZEX_COUNTER_BASED_EVENT_FLAG_IMMEDIATE | ZEX_COUNTER_BASED_EVENT_FLAG_NON_IMMEDIATE;
     counterBasedDesc.pNext = &externalSyncAllocProperties;
 
@@ -5453,12 +5461,12 @@ HWTEST_F(InOrderCmdListTests, givenExternalSyncStorageWhenCreatingCounterBasedEv
 
     auto devAddress = reinterpret_cast<uint64_t *>(allocDeviceMem(sizeof(uint64_t) * 2));
 
-    zex_counter_based_event_external_storage_properties_t externalStorageAllocProperties = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_EXTERNAL_STORAGE_ALLOC_PROPERTIES}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_external_storage_properties_t externalStorageAllocProperties = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_EXTERNAL_STORAGE_ALLOC_PROPERTIES};
     externalStorageAllocProperties.completionValue = counterValue;
     externalStorageAllocProperties.deviceAddress = nullptr;
     externalStorageAllocProperties.incrementValue = incValue;
 
-    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC};
     counterBasedDesc.flags = ZEX_COUNTER_BASED_EVENT_FLAG_IMMEDIATE | ZEX_COUNTER_BASED_EVENT_FLAG_NON_IMMEDIATE;
     counterBasedDesc.pNext = &externalStorageAllocProperties;
     ze_event_handle_t handle = nullptr;
@@ -5733,7 +5741,7 @@ HWTEST_F(InOrderCmdListTests, givenExternalSyncStorageWhenCallingAppendSignalInO
 
     auto cmdStream = immCmdList->getCmdContainer().getCommandStream();
     immCmdList->inOrderAtomicSignalingEnabled = false;
-    immCmdList->appendSignalInOrderDependencyCounter(eventObj.get(), false, false);
+    immCmdList->appendSignalInOrderDependencyCounter(eventObj.get(), false, false, false);
 
     GenCmdList cmdList;
     ASSERT_TRUE(FamilyType::Parse::parseCommandBuffer(cmdList, cmdStream->getCpuBase(), cmdStream->getUsed()));
@@ -5753,7 +5761,7 @@ HWTEST_F(InOrderCmdListTests, givenExternalSyncStorageWhenCallingAppendSignalInO
 }
 
 HWTEST_F(InOrderCmdListTests, givenTimestmapEnabledWhenCreatingStandaloneCbEventThenSetCorrectPacketSize) {
-    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC};
     counterBasedDesc.flags = ZEX_COUNTER_BASED_EVENT_FLAG_KERNEL_TIMESTAMP;
 
     ze_event_handle_t handle = nullptr;
@@ -5832,7 +5840,7 @@ HWTEST_F(InOrderCmdListTests, givenMitigateHostVisibleSignalWhenCallingSynchroni
 HWTEST_F(InOrderCmdListTests, givenCounterBasedTimestampHostVisibleSignalWhenCallingSynchronizeOnCbEventThenFlushDcIfSupported) {
     auto ultCsr = static_cast<UltCommandStreamReceiver<FamilyType> *>(device->getNEODevice()->getDefaultEngine().commandStreamReceiver);
 
-    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_counter_based_event_desc_t counterBasedDesc = {ZEX_STRUCTURE_COUNTER_BASED_EVENT_DESC};
     counterBasedDesc.flags = ZEX_COUNTER_BASED_EVENT_FLAG_KERNEL_TIMESTAMP | ZEX_COUNTER_BASED_EVENT_FLAG_HOST_VISIBLE;
     counterBasedDesc.signalScope = ZE_EVENT_SCOPE_FLAG_HOST;
 
@@ -5863,7 +5871,7 @@ HWTEST_F(InOrderCmdListTests, givenCounterBasedTimestampHostVisibleSignalWhenCal
 }
 
 HWTEST_F(InOrderCmdListTests, givenStandaloneCbEventWhenPassingExternalInterruptIdThenAssign) {
-    zex_intel_event_sync_mode_exp_desc_t syncModeDesc = {ZEX_INTEL_STRUCTURE_TYPE_EVENT_SYNC_MODE_EXP_DESC}; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    zex_intel_event_sync_mode_exp_desc_t syncModeDesc = {ZEX_INTEL_STRUCTURE_TYPE_EVENT_SYNC_MODE_EXP_DESC};
     syncModeDesc.externalInterruptId = 123;
 
     syncModeDesc.syncModeFlags = ZEX_INTEL_EVENT_SYNC_MODE_EXP_FLAG_SIGNAL_INTERRUPT;
@@ -5998,8 +6006,8 @@ HWTEST_F(InOrderCmdListTests, givenCounterBasedEventWhenAskingForEventAddressAnd
     mockCmdQHw->initialize(false, false, false);
 
     auto cmdListHandle = cmdList->toHandle();
-    mockCmdQHw->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr);
-    mockCmdQHw->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr);
+    mockCmdQHw->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr, nullptr);
+    mockCmdQHw->executeCommandLists(1, &cmdListHandle, nullptr, false, nullptr, nullptr);
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, zexEventGetDeviceAddress(eventHandle, &counterValue, &address));
     EXPECT_EQ(4u, counterValue);

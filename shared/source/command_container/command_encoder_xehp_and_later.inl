@@ -304,12 +304,12 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
             args.requiresUncachedMocs) {
 
             PipeControlArgs syncArgs;
-            syncArgs.dcFlushEnable = args.dcFlushEnable;
+            syncArgs.dcFlushEnable = args.postSyncArgs.dcFlushEnable;
             MemorySynchronizationCommands<Family>::addSingleBarrier(*container.getCommandStream(), syncArgs);
             STATE_BASE_ADDRESS sbaCmd;
             auto gmmHelper = container.getDevice()->getGmmHelper();
             uint32_t statelessMocsIndex =
-                args.requiresUncachedMocs ? (gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED) >> 1) : (gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER) >> 1);
+                args.requiresUncachedMocs ? (gmmHelper->getUncachedMOCS() >> 1) : (gmmHelper->getL3EnabledMOCS() >> 1);
             auto l1CachePolicy = container.l1CachePolicyDataRef()->getL1CacheValue(false);
             auto l1CachePolicyDebuggerActive = container.l1CachePolicyDataRef()->getL1CacheValue(true);
 
@@ -370,11 +370,10 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
                                                    requiredWorkgroupOrder,
                                                    rootDeviceEnvironment);
 
-    auto postSyncArgs = EncodePostSync<Family>::createPostSyncArgs(args);
-    if (args.inOrderExecInfo) {
-        EncodePostSync<Family>::setupPostSyncForInOrderExec(walkerCmd, postSyncArgs);
-    } else if (args.eventAddress) {
-        EncodePostSync<Family>::setupPostSyncForRegularEvent(walkerCmd, postSyncArgs);
+    if (args.postSyncArgs.inOrderExecInfo) {
+        EncodePostSync<Family>::setupPostSyncForInOrderExec(walkerCmd, args.postSyncArgs);
+    } else if (args.postSyncArgs.eventAddress) {
+        EncodePostSync<Family>::setupPostSyncForRegularEvent(walkerCmd, args.postSyncArgs);
     } else {
         EncodeDispatchKernel<Family>::forceComputeWalkerPostSyncFlushWithWrite(walkerCmd);
     }
@@ -416,7 +415,7 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
         .requiredDispatchWalkOrder = args.requiredDispatchWalkOrder,
         .localRegionSize = args.localRegionSize,
         .maxFrontEndThreads = args.device->getDeviceInfo().maxFrontEndThreads,
-        .requiredSystemFence = args.requiresSystemMemoryFence() && args.device->getGfxCoreHelper().isFenceAllocationRequired(hwInfo),
+        .requiredSystemFence = args.postSyncArgs.requiresSystemMemoryFence(),
         .hasSample = kernelDescriptor.kernelAttributes.flags.hasSample,
         .l0DebuggerEnabled = args.device->getL0Debugger() != nullptr};
 
@@ -442,7 +441,7 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
             args.maxWgCountPerTile,                                                                  // maxWgCountPerTile
             !(container.getFlushTaskUsedForImmediate() || container.isUsingPrimaryBuffer()),         // useSecondaryBatchBuffer
             !args.isKernelDispatchedFromImmediateCmdList,                                            // apiSelfCleanup
-            args.dcFlushEnable,                                                                      // dcFlush
+            args.postSyncArgs.dcFlushEnable,                                                         // dcFlush
             EncodeDispatchKernel<Family>::singleTileExecImplicitScalingRequired(args.isCooperative), // forceExecutionOnSingleTile
             args.makeCommandView,                                                                    // blockDispatchToCommandBuffer
             isRequiredDispatchWorkGroupOrder};                                                       // isRequiredDispatchWorkGroupOrder
@@ -526,9 +525,9 @@ inline uint32_t EncodePostSync<Family>::getPostSyncMocs(const RootDeviceEnvironm
     }
 
     if (dcFlush) {
-        return gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED);
+        return gmmHelper->getUncachedMOCS();
     } else {
-        return gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER);
+        return gmmHelper->getL3EnabledMOCS();
     }
 }
 
@@ -790,13 +789,13 @@ void EncodeSurfaceState<Family>::encodeExtraBufferParams(EncodeSurfaceStateArgs 
         setConstCachePolicy = true;
     }
 
-    if (surfaceState->getMemoryObjectControlState() == args.gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER) &&
+    if (surfaceState->getMemoryObjectControlState() == args.gmmHelper->getL3EnabledMOCS() &&
         debugManager.flags.ForceL1Caching.get() != 0) {
         setConstCachePolicy = true;
     }
 
     if (setConstCachePolicy == true) {
-        surfaceState->setMemoryObjectControlState(args.gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CONST));
+        surfaceState->setMemoryObjectControlState(args.gmmHelper->getL1EnabledMOCS());
     }
 
     encodeExtraCacheSettings(surfaceState, args);
@@ -1174,7 +1173,7 @@ void EncodeDispatchKernel<Family>::encodeThreadGroupDispatch(InterfaceDescriptor
 template <typename Family>
 template <typename WalkerType>
 void EncodeDispatchKernel<Family>::encodeWalkerPostSyncFields(WalkerType &walkerCmd, const RootDeviceEnvironment &rootDeviceEnvironment, const EncodeWalkerArgs &walkerArgs) {
-    auto programGlobalFenceAsPostSyncOperationInComputeWalker = !rootDeviceEnvironment.getHardwareInfo()->capabilityTable.isIntegratedDevice && walkerArgs.requiredSystemFence;
+    auto programGlobalFenceAsPostSyncOperationInComputeWalker = rootDeviceEnvironment.getProductHelper().isGlobalFenceInPostSyncRequired(*rootDeviceEnvironment.getHardwareInfo()) && walkerArgs.requiredSystemFence;
     int32_t overrideProgramSystemMemoryFence = debugManager.flags.ProgramGlobalFenceAsPostSyncOperationInComputeWalker.get();
     if (overrideProgramSystemMemoryFence != -1) {
         programGlobalFenceAsPostSyncOperationInComputeWalker = !!overrideProgramSystemMemoryFence;

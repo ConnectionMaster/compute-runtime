@@ -52,8 +52,6 @@ class ProductHelperHw : public ProductHelper {
     bool isDirectSubmissionSupported(ReleaseHelper *releaseHelper) const override;
     bool isDirectSubmissionConstantCacheInvalidationNeeded(const HardwareInfo &hwInfo) const override;
     bool restartDirectSubmissionForHostptrFree() const override;
-    bool isAdjustDirectSubmissionTimeoutOnThrottleAndAcLineStatusEnabled() const override;
-    TimeoutParams getDirectSubmissionControllerTimeoutParams(bool acLineConnected, QueueThrottle queueThrottle) const override;
     std::pair<bool, bool> isPipeControlPriorToNonPipelinedStateCommandsWARequired(const HardwareInfo &hwInfo, bool isRcs, const ReleaseHelper *releaseHelper) const override;
     bool heapInLocalMem(const HardwareInfo &hwInfo) const override;
     void setCapabilityCoherencyFlag(const HardwareInfo &hwInfo, bool &coherencyFlag) const override;
@@ -87,6 +85,7 @@ class ProductHelperHw : public ProductHelper {
     bool isInitBuiltinAsyncSupported(const HardwareInfo &hwInfo) const override;
     bool isCopyEngineSelectorEnabled(const HardwareInfo &hwInfo) const override;
     bool isGlobalFenceInCommandStreamRequired(const HardwareInfo &hwInfo) const override;
+    bool isGlobalFenceInPostSyncRequired(const HardwareInfo &hwInfo) const override;
     bool isGlobalFenceInDirectSubmissionRequired(const HardwareInfo &hwInfo) const override;
     bool isTimestampWaitSupportedForQueues(bool heaplessEnabled) const override;
     uint32_t getThreadEuRatioForScratch(const HardwareInfo &hwInfo) const override;
@@ -139,6 +138,7 @@ class ProductHelperHw : public ProductHelper {
     uint32_t getInternalHeapsPreallocated() const override;
     bool overrideAllocationCacheable(const AllocationData &allocationData) const override;
     bool is2MBLocalMemAlignmentEnabled() const override;
+    bool isPostImageWriteFlushRequired() const override;
 
     bool getFrontEndPropertyScratchSizeSupport() const override;
     bool getFrontEndPropertyPrivateScratchSizeSupport() const override;

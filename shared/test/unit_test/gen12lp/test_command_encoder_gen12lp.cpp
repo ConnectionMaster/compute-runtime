@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2024 Intel Corporation
+ * Copyright (C) 2020-2025 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -7,12 +7,11 @@
 
 #include "shared/source/command_container/cmdcontainer.h"
 #include "shared/source/command_container/command_encoder.h"
-#include "shared/source/gen_common/reg_configs_common.h"
+#include "shared/source/command_stream/stream_properties.h"
 #include "shared/source/gmm_helper/gmm_helper.h"
 #include "shared/source/helpers/blit_commands_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
 #include "shared/source/helpers/pipeline_select_helper.h"
-#include "shared/source/helpers/preamble.h"
 #include "shared/source/indirect_heap/heap_size.h"
 #include "shared/source/os_interface/os_context.h"
 #include "shared/test/common/cmd_parse/gen_cmd_parse.h"
@@ -88,7 +87,7 @@ GEN12LPTEST_F(CommandEncodeStatesTest, givenVariousEngineTypesWhenEncodeSbaThenA
     ASSERT_EQ(CommandContainer::ErrorCode::success, ret);
 
     auto gmmHelper = cmdContainer.getDevice()->getRootDeviceEnvironment().getGmmHelper();
-    uint32_t statelessMocsIndex = (gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER) >> 1);
+    uint32_t statelessMocsIndex = (gmmHelper->getL3EnabledMOCS() >> 1);
 
     {
         STATE_BASE_ADDRESS sba;

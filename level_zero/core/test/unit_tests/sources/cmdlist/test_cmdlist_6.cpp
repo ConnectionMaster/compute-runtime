@@ -132,7 +132,7 @@ HWTEST2_F(CommandListExecuteImmediate, whenExecutingCommandListImmediateWithFlus
     commandListImmediate.requiredStreamState.stateComputeMode.isCoherencyRequired.value = 0;
     commandListImmediate.requiredStreamState.stateComputeMode.largeGrfMode.value = 1;
     commandListImmediate.requiredStreamState.stateComputeMode.threadArbitrationPolicy.value = NEO::ThreadArbitrationPolicy::RoundRobin;
-    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::kernel, false, false, nullptr);
+    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::kernel, false, false, nullptr, nullptr);
 
     NEO::StateComputeModePropertiesSupport scmPropertiesSupport = {};
     productHelper.fillScmPropertiesSupportStructure(scmPropertiesSupport);
@@ -162,7 +162,7 @@ HWTEST2_F(CommandListExecuteImmediate, whenExecutingCommandListImmediateWithFlus
     commandListImmediate.requiredStreamState.stateComputeMode.isCoherencyRequired.value = 0;
     commandListImmediate.requiredStreamState.stateComputeMode.largeGrfMode.value = 0;
     commandListImmediate.requiredStreamState.stateComputeMode.threadArbitrationPolicy.value = NEO::ThreadArbitrationPolicy::AgeBased;
-    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::kernel, false, false, nullptr);
+    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::kernel, false, false, nullptr, nullptr);
 
     expectedLargeGrfMode = scmPropertiesSupport.largeGrfMode ? 0 : -1;
     expectedThreadArbitrationPolicy = scmPropertiesSupport.threadArbitrationPolicy ? NEO::ThreadArbitrationPolicy::AgeBased : -1;
@@ -200,7 +200,7 @@ HWTEST2_F(CommandListExecuteImmediate, whenExecutingCommandListImmediateWithFlus
         commandList.reset(CommandList::createImmediate(productFamily, device, &desc, false, NEO::EngineGroupType::renderCompute, returnValue));
         auto &commandListImmediate = static_cast<MockCommandListImmediate<FamilyType::gfxCoreFamily> &>(*commandList);
         commandListImmediate.containsAnyKernel = true;
-        commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::kernel, false, false, nullptr);
+        commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::kernel, false, false, nullptr, nullptr);
 
         EXPECT_FALSE(commandListImmediate.containsAnyKernel);
     }
@@ -213,7 +213,32 @@ HWTEST2_F(CommandListExecuteImmediate, whenExecutingCommandListImmediateWithFlus
     commandList.reset(CommandList::createImmediate(productFamily, device, &desc, false, NEO::EngineGroupType::renderCompute, returnValue));
     auto &commandListImmediate = static_cast<MockCommandListImmediate<FamilyType::gfxCoreFamily> &>(*commandList);
 
-    EXPECT_EQ(ZE_RESULT_SUCCESS, commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr, nullptr));
+}
+
+HWTEST2_F(CommandListExecuteImmediate, whenExecutingCommandListImmediateWithFlushTaskWithMemAdvicesThenMemAdvicesAreDispatchedAndSuccessIsReturned, MatchAny) {
+
+    MockCommandListForExecuteMemAdvise<FamilyType::gfxCoreFamily> commandList;
+    commandList.initialize(device, NEO::EngineGroupType::compute, 0u);
+
+    ze_command_queue_desc_t desc = {};
+    desc.mode = ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS;
+    MockCommandStreamReceiver mockCommandStreamReceiver(*neoDevice->executionEnvironment, neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield());
+    Mock<CommandQueue> mockCommandQueue(device, &mockCommandStreamReceiver, &desc);
+    auto oldCommandQueue = commandList.cmdQImmediate;
+    commandList.cmdQImmediate = &mockCommandQueue;
+    commandList.indirectAllocationsAllowed = false;
+
+    commandList.getMemAdviseOperations().push_back(MemAdviseOperation(0, 0, 16, ZE_MEMORY_ADVICE_SET_PREFERRED_LOCATION));
+    EXPECT_EQ(1u, commandList.getMemAdviseOperations().size());
+    commandList.getMemAdviseOperations().push_back(MemAdviseOperation(0, 0, 8, ZE_MEMORY_ADVICE_SET_PREFERRED_LOCATION));
+    EXPECT_EQ(2u, commandList.getMemAdviseOperations().size());
+
+    EXPECT_EQ(ZE_RESULT_SUCCESS, commandList.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::none, false, false, nullptr, nullptr));
+    EXPECT_EQ(0u, commandList.getMemAdviseOperations().size());
+    EXPECT_EQ(2u, commandList.executeMemAdviseCallCount);
+
+    commandList.cmdQImmediate = oldCommandQueue;
 }
 
 HWTEST2_F(CommandListExecuteImmediate, givenOutOfHostMemoryErrorOnFlushWhenExecutingCommandListImmediateWithFlushTaskThenProperErrorIsReturned, MatchAny) {
@@ -225,7 +250,7 @@ HWTEST2_F(CommandListExecuteImmediate, givenOutOfHostMemoryErrorOnFlushWhenExecu
 
     auto &commandStreamReceiver = neoDevice->getUltCommandStreamReceiver<FamilyType>();
     commandStreamReceiver.flushReturnValue = SubmissionStatus::outOfHostMemory;
-    EXPECT_EQ(ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY, commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr));
+    EXPECT_EQ(ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY, commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr, nullptr));
 }
 
 HWTEST2_F(CommandListExecuteImmediate, givenOutOfDeviceMemoryErrorOnFlushWhenExecutingCommandListImmediateWithFlushTaskThenProperErrorIsReturned, MatchAny) {
@@ -237,7 +262,7 @@ HWTEST2_F(CommandListExecuteImmediate, givenOutOfDeviceMemoryErrorOnFlushWhenExe
 
     auto &commandStreamReceiver = neoDevice->getUltCommandStreamReceiver<FamilyType>();
     commandStreamReceiver.flushReturnValue = SubmissionStatus::outOfMemory;
-    EXPECT_EQ(ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY, commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr));
+    EXPECT_EQ(ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY, commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr, nullptr));
 }
 
 HWTEST2_F(CommandListExecuteImmediate, GivenImmediateCommandListWhenCommandListIsCreatedThenCsrStateIsNotSet, MatchAny) {
@@ -579,7 +604,7 @@ HWTEST2_F(CommandListTest, givenImmediateCommandListWhenFlushImmediateThenOverri
     auto event = std::unique_ptr<Event>(static_cast<Event *>(L0::Event::create<typename FamilyType::TimestampPacketType>(eventPool.get(), &eventDesc, device)));
 
     event->csrs[0] = &mockCommandStreamReceiver;
-    cmdList.flushImmediate(ZE_RESULT_SUCCESS, false, false, false, NEO::AppendOperations::nonKernel, false, event->toHandle(), false, nullptr);
+    cmdList.flushImmediate(ZE_RESULT_SUCCESS, false, false, false, NEO::AppendOperations::nonKernel, false, event->toHandle(), false, nullptr, nullptr);
     EXPECT_EQ(event->csrs[0], cmdList.getCsr(false));
 }
 
@@ -1277,7 +1302,7 @@ HWTEST2_F(CommandListTest, givenCmdListWithIndirectAccessWhenExecutingCommandLis
     auto oldCommandQueue = commandListImmediate.cmdQImmediate;
     commandListImmediate.cmdQImmediate = &mockCommandQueue;
     commandListImmediate.indirectAllocationsAllowed = true;
-    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr);
+    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr, nullptr);
     EXPECT_EQ(mockCommandQueue.handleIndirectAllocationResidencyCalledTimes, 1u);
     commandListImmediate.cmdQImmediate = oldCommandQueue;
 }
@@ -1329,7 +1354,7 @@ HWTEST2_F(CommandListTest, givenCmdListWithNoIndirectAccessWhenExecutingCommandL
     auto oldCommandQueue = commandListImmediate.cmdQImmediate;
     commandListImmediate.cmdQImmediate = &mockCommandQueue;
     commandListImmediate.indirectAllocationsAllowed = false;
-    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr);
+    commandListImmediate.executeCommandListImmediateWithFlushTask(false, false, false, NEO::AppendOperations::nonKernel, false, false, nullptr, nullptr);
     EXPECT_EQ(mockCommandQueue.handleIndirectAllocationResidencyCalledTimes, 0u);
     commandListImmediate.cmdQImmediate = oldCommandQueue;
 }
@@ -1492,7 +1517,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest, givenGlobalStatelessWh
     commandList->close();
 
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    auto result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    auto result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_TRUE(ultCsr->isMadeResident(globalStatelessAlloc));
@@ -1554,7 +1579,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -1700,7 +1725,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -1812,7 +1837,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -1881,7 +1906,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -1990,7 +2015,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     queueBefore = cmdQueueStream.getUsed();
     cmdListHandle = commandListPrivateHeap->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     queueAfter = cmdQueueStream.getUsed();
 
@@ -2120,7 +2145,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandListPrivateHeap->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -2214,7 +2239,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     queueBefore = cmdQueueStream.getUsed();
     cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     queueAfter = cmdQueueStream.getUsed();
 
@@ -2401,7 +2426,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandListPrivateHeap->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -2531,7 +2556,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandListPrivateHeap->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -2665,7 +2690,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
 
     size_t queueBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueAfter = cmdQueueStream.getUsed();
 
@@ -2780,7 +2805,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
     auto cmdListHandle = cmdListObject->toHandle();
     auto usedBefore = csrStream.getUsed();
 
-    returnValue = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    returnValue = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
 
     returnValue = cmdListObject->destroy();
@@ -2991,7 +3016,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest,
     commandList->close();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
 
-    auto result = otherCommandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    auto result = otherCommandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_EQ(otherCommandQueue->csr->getScratchSpaceController(), otherCommandQueue->recordedScratchController);
@@ -3046,7 +3071,7 @@ HWTEST2_F(ContextGroupStateBaseAddressGlobalStatelessTest,
     commandList->close();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
 
-    auto result = otherCommandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    auto result = otherCommandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_EQ(primaryCsr->getScratchSpaceController(), otherCommandQueue->recordedScratchController);
@@ -3130,7 +3155,7 @@ HWTEST2_F(CommandListStateBaseAddressGlobalStatelessTest, givenGlobalStatelessAn
     commandList->close();
 
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    auto result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    auto result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_TRUE(ultCsr->isMadeResident(globalStatelessAlloc));

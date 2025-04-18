@@ -696,7 +696,7 @@ XE3_CORETEST_F(ProductHelperTestXe3Core, givenProductHelperWhenIsBlitterForImage
 
 XE3_CORETEST_F(ProductHelperTestXe3Core, givenProductHelperWhenAskingForGlobalFenceSupportThenReturnTrue) {
     auto &productHelper = getHelper<ProductHelper>();
-    EXPECT_TRUE(productHelper.isGlobalFenceInCommandStreamRequired(*defaultHwInfo));
+    EXPECT_EQ(productHelper.isGlobalFenceInCommandStreamRequired(*defaultHwInfo), !defaultHwInfo->capabilityTable.isIntegratedDevice);
 }
 
 XE3_CORETEST_F(ProductHelperTestXe3Core, givenProductHelperWhenCallDeferMOCSToPatThenTrueIsReturned) {
@@ -844,6 +844,26 @@ XE3_CORETEST_F(GfxCoreHelperTestsXe3Core, givenGfxCoreHelperWhenFlagSetAndCallGe
 
     debugManager.flags.SetAmountOfReusableAllocations.set(1);
     EXPECT_EQ(gfxCoreHelper.getAmountOfAllocationsToFill(), 1u);
+}
+
+XE3_CORETEST_F(GfxCoreHelperTestsXe3Core, givenGfxCoreHelperWhenUsmCompressionSupportedCalledThenReturnTrue) {
+    VariableBackup<HardwareInfo> backupHwInfo(defaultHwInfo.get());
+    DebugManagerStateRestore restorer;
+    MockExecutionEnvironment mockExecutionEnvironment{};
+    auto &gfxCoreHelper = mockExecutionEnvironment.rootDeviceEnvironments[0]->getHelper<GfxCoreHelper>();
+
+    defaultHwInfo->capabilityTable.ftrRenderCompressedBuffers = false;
+    EXPECT_FALSE(gfxCoreHelper.usmCompressionSupported(*defaultHwInfo));
+
+    defaultHwInfo->capabilityTable.ftrRenderCompressedBuffers = true;
+    EXPECT_TRUE(gfxCoreHelper.usmCompressionSupported(*defaultHwInfo));
+
+    debugManager.flags.RenderCompressedBuffersEnabled.set(0);
+    EXPECT_FALSE(gfxCoreHelper.usmCompressionSupported(*defaultHwInfo));
+
+    debugManager.flags.RenderCompressedBuffersEnabled.set(1);
+    defaultHwInfo->capabilityTable.ftrRenderCompressedBuffers = false;
+    EXPECT_TRUE(gfxCoreHelper.usmCompressionSupported(*defaultHwInfo));
 }
 
 using ProductHelperTestXe3 = ::testing::Test;

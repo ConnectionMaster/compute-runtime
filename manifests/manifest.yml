@@ -2,7 +2,7 @@ components:
   aub_configs:
     branch: aub_configs
     dest_dir: aub_configs
-    revision: c61eb321f2751d50e890a900d9301f9e995ffdcd
+    revision: b08d1653ff1f44a0c0e3da37cf57ab789b132a32
     type: git
   aub_stream:
     branch: master
@@ -22,7 +22,7 @@ components:
     dest_dir: igc
     type: git
     branch: releases/2.10.x
-    revision: 31922b14bb6cae38fc8b19ca2691f7f869ee4925
+    revision: 1694f5ec3fb0c908bbaedf83494792ce79dddc03
     repository: https://github.com/intel/intelgraphicscompiler
   igsc:
     asset_name: igsc
@@ -41,7 +41,7 @@ components:
     dest_dir: kernels_bin
     type: git
     branch: kernels_bin
-    revision: 3379-3978
+    revision: 3382-4034
   kmdaf:
     branch: kmdaf
     dest_dir: kmdaf
@@ -52,7 +52,7 @@ components:
     dest_dir: level_zero
     type: git
     branch: master
-    revision: v1.21.8
+    revision: v1.21.9
     repository: https://github.com/oneapi-src/level-zero
   libva:
     asset_name: libva
@@ -84,13 +84,13 @@ components:
     dest_dir: wdk
     type: git
     branch: wdk
-    revision: 6330074921a0c7906f33096e9f8de98ec21d43e7-3377
+    revision: 963e34b20c120083f3c5ccaebd11653ecec3f113-3380
   wsl:
     branch: wsl
     dest_dir: wsl
     revision: 56430997dac34ca0e9e18c177636234cac26ad54
     type: git
-converter: M-3379
+converter: M-3382
 include:
 - infra.yml
 version: '1'

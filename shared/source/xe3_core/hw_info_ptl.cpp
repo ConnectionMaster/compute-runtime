@@ -27,7 +27,7 @@ const PLATFORM PTL::platform = {
     IGFX_XE3_CORE,
     PLATFORM_NONE, // default init
     0,             // usDeviceID
-    0,             // usRevId. 0 sets the stepping to A0
+    4,             // usRevId. 0 sets the stepping to A0
     0,             // usDeviceID_PCH
     0,             // usRevId_PCH
     GTTYPE_UNDEFINED};
@@ -47,7 +47,7 @@ const RuntimeCapabilityTable PTL::capabilityTable{
     30,                                                        // clVersionSupport
     CmdServicesMemTraceVersion::DeviceValues::Ptl,             // aubDeviceId
     0,                                                         // extraQuantityThreadsPerEU
-    128,                                                       // slmSize
+    128,                                                       // maxProgrammableSlmSize
     sizeof(PTL::GRF),                                          // grfSize
     64,                                                        // timestampValidBits
     64,                                                        // kernelTimestampValidBits

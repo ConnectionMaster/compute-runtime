@@ -115,7 +115,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, CommandListTests, whenCommandListIsCreatedThenPCAnd
         EXPECT_EQ(ssh->getHeapGpuBase(), cmdSba->getSurfaceStateBaseAddress());
     }
 
-    EXPECT_EQ(gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CONST), cmdSba->getStatelessDataPortAccessMemoryObjectControlState());
+    EXPECT_EQ(gmmHelper->getL1EnabledMOCS(), cmdSba->getStatelessDataPortAccessMemoryObjectControlState());
 }
 
 HWTEST2_F(CommandListTests, whenCommandListIsCreatedAndProgramExtendedPipeControlPriorToNonPipelinedStateCommandIsEnabledThenPCAndStateBaseAddressCmdsAreAddedAndCorrectlyProgrammed, IsAtLeastXeHpCore) {
@@ -203,7 +203,7 @@ HWTEST2_F(CommandListTests, whenCommandListIsCreatedAndProgramExtendedPipeContro
         EXPECT_EQ(ssh->getHeapGpuBase(), cmdSba->getSurfaceStateBaseAddress());
     }
 
-    EXPECT_EQ(gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CONST), cmdSba->getStatelessDataPortAccessMemoryObjectControlState());
+    EXPECT_EQ(gmmHelper->getL1EnabledMOCS(), cmdSba->getStatelessDataPortAccessMemoryObjectControlState());
 }
 
 using CommandListTestsReserveSize = Test<DeviceFixture>;
@@ -1751,7 +1751,7 @@ HWTEST2_F(RayTracingCmdListTest,
 
     size_t queueSizeBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueSizeAfter = cmdQueueStream.getUsed();
 
@@ -1762,7 +1762,7 @@ HWTEST2_F(RayTracingCmdListTest,
     ultCsr->isMadeResident(rtAllocation, residentCount);
 
     queueSizeBefore = cmdQueueStream.getUsed();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     queueSizeAfter = cmdQueueStream.getUsed();
 
@@ -1789,7 +1789,7 @@ HWTEST2_F(RayTracingCmdListTest,
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_EQ(ultCsr->registeredDcFlushForDcFlushMitigation, device->getProductHelper().isDcFlushMitigated());
@@ -1824,7 +1824,7 @@ HWTEST2_F(RayTracingCmdListTest,
 
     size_t queueSizeBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueSizeAfter = cmdQueueStream.getUsed();
 
@@ -1963,7 +1963,7 @@ HWTEST2_F(RayTracingCmdListTest,
 
     size_t queueSizeBefore = cmdQueueStream.getUsed();
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t queueSizeAfter = cmdQueueStream.getUsed();
 
@@ -2401,7 +2401,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     }
 
     ze_command_list_handle_t cmdListHandle = commandList->toHandle();
-    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr);
+    result = commandQueue->executeCommandLists(1, &cmdListHandle, nullptr, true, nullptr, nullptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
     auto &csrBaseAddressState = csrImmediate.getStreamProperties().stateBaseAddress;

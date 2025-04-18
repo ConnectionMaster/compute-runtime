@@ -342,11 +342,12 @@ TEST(ExecutionEnvironment, givenNeoCalEnabledWhenCreateExecutionEnvironmentThenS
 #undef DECLARE_DEBUG_VARIABLE
 #define DECLARE_DEBUG_VARIABLE(dataType, variableName, defaultValue, description) \
     EXPECT_EQ(defaultValue, debugManager.flags.variableName.getRef());
-
+#define DECLARE_DEBUG_SCOPED_V(dataType, variableName, defaultValue, description, ...) \
+    DECLARE_DEBUG_VARIABLE(dataType, variableName, defaultValue, description)
 #include "shared/source/debug_settings/release_variables.inl"
 
 #include "debug_variables.inl"
-
+#undef DECLARE_DEBUG_SCOPED_V
 #undef DECLARE_DEBUG_VARIABLE
 
     DebugManagerStateRestore restorer;
@@ -375,11 +376,13 @@ TEST(ExecutionEnvironment, givenNeoCalEnabledWhenCreateExecutionEnvironmentThenS
             }                                                                          \
         }                                                                              \
     }
+#define DECLARE_DEBUG_SCOPED_V(dataType, variableName, defaultValue, description, ...) \
+    DECLARE_DEBUG_VARIABLE(dataType, variableName, defaultValue, description)
 
 #include "shared/source/debug_settings/release_variables.inl"
 
 #include "debug_variables.inl"
-
+#undef DECLARE_DEBUG_SCOPED_V
 #undef DECLARE_DEBUG_VARIABLE
 }
 
@@ -428,7 +431,7 @@ TEST(ExecutionEnvironment, givenExecutionEnvironmentWithVariousMembersWhenItIsDe
         }
     };
     struct UnifiedMemoryReuseCleanerMock : public DestructorCounted<UnifiedMemoryReuseCleaner, 7> {
-        UnifiedMemoryReuseCleanerMock(uint32_t &destructorId) : DestructorCounted(destructorId) {}
+        UnifiedMemoryReuseCleanerMock(uint32_t &destructorId) : DestructorCounted(destructorId, false) {}
     };
     struct DirectSubmissionControllerMock : public DestructorCounted<DirectSubmissionController, 6> {
         DirectSubmissionControllerMock(uint32_t &destructorId) : DestructorCounted(destructorId) {}

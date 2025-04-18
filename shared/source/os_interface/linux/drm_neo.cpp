@@ -510,6 +510,9 @@ int Drm::setupHardwareInfo(const DeviceDescriptor *device, bool setupFeatureTabl
     if (!queryMemoryInfo()) {
         setPerContextVMRequired(true);
         printDebugString(debugManager.flags.PrintDebugMessages.get(), stderr, "%s", "WARNING: Failed to query memory info\n");
+    } else if (getMemoryInfo()->isSmallBarDetected()) {
+        IoFunctions::fprintf(stderr, "WARNING: Small BAR detected for device %s\n", getPciPath().c_str());
+        return -1;
     }
 
     if (!queryEngineInfo()) {
@@ -1426,7 +1429,7 @@ uint64_t Drm::getPatIndex(Gmm *gmm, AllocationType allocationType, CacheRegion c
     }
 
     auto &productHelper = rootDeviceEnvironment.getProductHelper();
-    GMM_RESOURCE_USAGE_TYPE usageType = CacheSettingsHelper::getGmmUsageType(allocationType, false, productHelper);
+    GMM_RESOURCE_USAGE_TYPE usageType = CacheSettingsHelper::getGmmUsageType(allocationType, false, productHelper, getHardwareInfo());
     auto isUncachedType = CacheSettingsHelper::isUncachedType(usageType);
 
     if (isUncachedType && debugManager.flags.OverridePatIndexForUncachedTypes.get() != -1) {

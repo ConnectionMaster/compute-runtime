@@ -79,9 +79,9 @@ uint32_t GfxCoreHelperHw<Family>::getMinimalSIMDSize() const {
 template <>
 uint32_t GfxCoreHelperHw<Family>::getMocsIndex(const GmmHelper &gmmHelper, bool l3enabled, bool l1enabled) const {
     if (l3enabled) {
-        return gmmHelper.getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER) >> 1;
+        return gmmHelper.getL3EnabledMOCS() >> 1;
     }
-    return gmmHelper.getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED) >> 1;
+    return gmmHelper.getUncachedMOCS() >> 1;
 }
 
 template <>
@@ -261,15 +261,6 @@ template <>
 uint32_t GfxCoreHelperHw<Family>::adjustMaxWorkGroupSize(const uint32_t grfCount, const uint32_t simd, bool isHwLocalGeneration, const uint32_t defaultMaxGroupSize, const RootDeviceEnvironment &rootDeviceEnvironment) const {
     const uint32_t threadsPerThreadGroup = calculateNumThreadsPerThreadGroup(simd, defaultMaxGroupSize, grfCount, isHwLocalGeneration, rootDeviceEnvironment);
     return (threadsPerThreadGroup * simd);
-}
-
-template <>
-bool GfxCoreHelperHw<Family>::usmCompressionSupported(const NEO::HardwareInfo &hwInfo) const {
-    if (NEO::debugManager.flags.RenderCompressedBuffersEnabled.get() != -1) {
-        return !!NEO::debugManager.flags.RenderCompressedBuffersEnabled.get();
-    }
-
-    return hwInfo.capabilityTable.ftrRenderCompressedBuffers;
 }
 
 template <>

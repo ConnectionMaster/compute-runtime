@@ -230,7 +230,7 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
 
     if (flush) {
         PipeControlArgs syncArgs;
-        syncArgs.dcFlushEnable = args.dcFlushEnable;
+        syncArgs.dcFlushEnable = args.postSyncArgs.dcFlushEnable;
         if (dirtyHeaps) {
             syncArgs.hdcPipelineFlush = true;
         }
@@ -240,7 +240,7 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
             STATE_BASE_ADDRESS sba;
             auto gmmHelper = container.getDevice()->getGmmHelper();
             uint32_t statelessMocsIndex =
-                args.requiresUncachedMocs ? (gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED) >> 1) : (gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER) >> 1);
+                args.requiresUncachedMocs ? (gmmHelper->getUncachedMOCS() >> 1) : (gmmHelper->getL3EnabledMOCS() >> 1);
             auto l1CachePolicy = container.l1CachePolicyDataRef()->getL1CacheValue(false);
             auto l1CachePolicyDebuggerActive = container.l1CachePolicyDataRef()->getL1CacheValue(true);
             EncodeStateBaseAddressArgs<Family> encodeStateBaseAddressArgs = {
@@ -298,7 +298,7 @@ void EncodeDispatchKernel<Family>::encode(CommandContainer &container, EncodeDis
         .requiredDispatchWalkOrder = args.requiredDispatchWalkOrder,
         .localRegionSize = args.localRegionSize,
         .maxFrontEndThreads = args.device->getDeviceInfo().maxFrontEndThreads,
-        .requiredSystemFence = args.requiresSystemMemoryFence(),
+        .requiredSystemFence = args.postSyncArgs.requiresSystemMemoryFence(),
         .hasSample = false};
 
     using INTERFACE_DESCRIPTOR_DATA = typename Family::INTERFACE_DESCRIPTOR_DATA;
@@ -755,7 +755,7 @@ void EncodeWA<Family>::encodeAdditionalPipelineSelect(LinearStream &stream, cons
 template <>
 void EncodeSurfaceState<Family>::encodeExtraBufferParams(EncodeSurfaceStateArgs &args) {
     auto surfaceState = reinterpret_cast<R_SURFACE_STATE *>(args.outMemory);
-    const bool isL3Allowed = surfaceState->getMemoryObjectControlState() == args.gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER);
+    const bool isL3Allowed = surfaceState->getMemoryObjectControlState() == args.gmmHelper->getL3EnabledMOCS();
     if (isL3Allowed) {
         const bool isConstantSurface = args.allocation && args.allocation->getAllocationType() == AllocationType::constantSurface;
         bool useL1 = args.isReadOnly || isConstantSurface;
@@ -765,7 +765,7 @@ void EncodeSurfaceState<Family>::encodeExtraBufferParams(EncodeSurfaceStateArgs 
         }
 
         if (useL1) {
-            surfaceState->setMemoryObjectControlState(args.gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CONST));
+            surfaceState->setMemoryObjectControlState(args.gmmHelper->getL1EnabledMOCS());
         }
     }
 }

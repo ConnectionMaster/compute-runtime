@@ -373,7 +373,7 @@ XE2_HPG_CORETEST_F(EncodeKernelXe2HpgCoreTest, givenDefaultSettingForFenceWhenKe
     dispatchInterface->getCrossThreadDataSizeResult = 0;
 
     EncodeDispatchKernelArgs dispatchArgs = createDefaultDispatchKernelArgs(pDevice, dispatchInterface.get(), dims, false);
-    dispatchArgs.isKernelUsingSystemAllocation = true;
+    dispatchArgs.postSyncArgs.isKernelUsingSystemAllocation = true;
 
     EncodeDispatchKernel<FamilyType>::template encode<DefaultWalkerType>(*cmdContainer.get(), dispatchArgs);
 
@@ -399,7 +399,7 @@ XE2_HPG_CORETEST_F(EncodeKernelXe2HpgCoreTest, givenDefaultSettingForFenceWhenEv
     dispatchInterface->getCrossThreadDataSizeResult = 0;
 
     EncodeDispatchKernelArgs dispatchArgs = createDefaultDispatchKernelArgs(pDevice, dispatchInterface.get(), dims, false);
-    dispatchArgs.isHostScopeSignalEvent = true;
+    dispatchArgs.postSyncArgs.isHostScopeSignalEvent = true;
 
     EncodeDispatchKernel<FamilyType>::template encode<DefaultWalkerType>(*cmdContainer.get(), dispatchArgs);
 
@@ -425,8 +425,8 @@ XE2_HPG_CORETEST_F(EncodeKernelXe2HpgCoreTest, givenDefaultSettingForFenceWhenKe
     dispatchInterface->getCrossThreadDataSizeResult = 0;
 
     EncodeDispatchKernelArgs dispatchArgs = createDefaultDispatchKernelArgs(pDevice, dispatchInterface.get(), dims, false);
-    dispatchArgs.isKernelUsingSystemAllocation = true;
-    dispatchArgs.isHostScopeSignalEvent = true;
+    dispatchArgs.postSyncArgs.isKernelUsingSystemAllocation = true;
+    dispatchArgs.postSyncArgs.isHostScopeSignalEvent = true;
 
     EncodeDispatchKernel<FamilyType>::template encode<DefaultWalkerType>(*cmdContainer.get(), dispatchArgs);
 
@@ -438,7 +438,7 @@ XE2_HPG_CORETEST_F(EncodeKernelXe2HpgCoreTest, givenDefaultSettingForFenceWhenKe
 
     auto walkerCmd = genCmdCast<DefaultWalkerType *>(*itor);
     auto &postSyncData = walkerCmd->getPostSync();
-    EXPECT_EQ(postSyncData.getSystemMemoryFenceRequest(), !pDevice->getHardwareInfo().capabilityTable.isIntegratedDevice);
+    EXPECT_EQ(postSyncData.getSystemMemoryFenceRequest(), pDevice->getProductHelper().isGlobalFenceInPostSyncRequired(pDevice->getHardwareInfo()));
 }
 
 XE2_HPG_CORETEST_F(EncodeKernelXe2HpgCoreTest, givenCleanHeapsAndSlmNotChangedAndUncachedMocsRequestedThenSBAIsProgrammedAndMocsAreSet) {
@@ -464,7 +464,7 @@ XE2_HPG_CORETEST_F(EncodeKernelXe2HpgCoreTest, givenCleanHeapsAndSlmNotChangedAn
     auto cmdSba = genCmdCast<STATE_BASE_ADDRESS *>(*itor);
     auto gmmHelper = cmdContainer->getDevice()->getGmmHelper();
     EXPECT_EQ(cmdSba->getStatelessDataPortAccessMemoryObjectControlState(),
-              (gmmHelper->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER_CACHELINE_MISALIGNED)));
+              (gmmHelper->getUncachedMOCS()));
 }
 
 XE2_HPG_CORETEST_F(EncodeKernelXe2HpgCoreTest, givenDebugFlagSetWhenAdjustIsCalledThenUpdateRequiredScratchSizeField) {

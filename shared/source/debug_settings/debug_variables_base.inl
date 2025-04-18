@@ -315,6 +315,7 @@ DECLARE_DEBUG_VARIABLE(int32_t, ForceIndirectDetectionForCMKernels, -1, "-1: def
 DECLARE_DEBUG_VARIABLE(int32_t, PipelinedEuThreadArbitration, -1, "-1: default. 1: Use Walker field, 0: Use StateComputeMode command to program pipelinedEuThreadArbitration")
 DECLARE_DEBUG_VARIABLE(bool, ForceUseOnlyGlobalTimestamps, 0, "0- default disabled, 1: enable use only global timestamp")
 DECLARE_DEBUG_VARIABLE(int32_t, GetSipBinaryFromExternalLib, -1, "-1: default, 0: disabled, 1: enabled. If enabled, then retrieve Sip from external library")
+DECLARE_DEBUG_VARIABLE(int32_t, EnablePidFdOrSocketsForIpc, -1, "-1: default, 0: disabled (default), 1: enabled. If enabled, L0 IPC handles are opaque and pidfd or sockets are used for IPC exchange")
 
 /*LOGGING FLAGS*/
 DECLARE_DEBUG_VARIABLE(int32_t, PrintDriverDiagnostics, -1, "prints driver diagnostics messages to standard output, value corresponds to hint level")
@@ -322,7 +323,7 @@ DECLARE_DEBUG_VARIABLE(bool, PrintOsContextInitializations, false, "print initia
 DECLARE_DEBUG_VARIABLE(bool, PrintDeviceAndEngineIdOnSubmission, false, "print submissions device and engine IDs to standard output")
 DECLARE_DEBUG_VARIABLE(bool, PrintExecutionBuffer, false, "print execution buffer information to standard output")
 DECLARE_DEBUG_VARIABLE(bool, PrintBOsForSubmit, false, "print all BOs passed to submission")
-DECLARE_DEBUG_VARIABLE(bool, PrintDebugSettings, false, "Dump all debug variables settings to text file. Print to stdout if value is different than default.")
+DECLARE_DEBUG_SCOPED_V(bool, PrintDebugSettings, false, S_RT | S_OCLOC, "Dump all debug variables settings to text file. Print to stdout if value is different than default.")
 DECLARE_DEBUG_VARIABLE(bool, PrintDebugMessages, false, "when enabled, some debug messages will be propagated to console")
 DECLARE_DEBUG_VARIABLE(bool, PrintXeLogs, false, "when enabled, xe logs will be propagated to console")
 DECLARE_DEBUG_VARIABLE(bool, DumpZEBin, false, "Enables dumping zebin (elf) to a binary file (.elf extension)")
@@ -455,7 +456,6 @@ DECLARE_DEBUG_VARIABLE(int32_t, EnableDirectSubmissionController, -1, "Enable di
 DECLARE_DEBUG_VARIABLE(int32_t, DirectSubmissionControllerTimeout, -1, "Set direct submission controller timeout, -1: default 5000 us, >=0: timeout in us")
 DECLARE_DEBUG_VARIABLE(int32_t, DirectSubmissionControllerBcsTimeoutDivisor, -1, "If >=1, divide controller timeout to stop BCS only engines faster than others")
 DECLARE_DEBUG_VARIABLE(int32_t, DirectSubmissionControllerMaxTimeout, -1, "Set direct submission controller max timeout - timeout will increase up to given value, -1: default 5000 us, >=0: max timeout in us")
-DECLARE_DEBUG_VARIABLE(int32_t, DirectSubmissionControllerAdjustOnThrottleAndAcLineStatus, -1, "Adjust controller timeout settings based on queue throttle and ac line status, -1: default, 0: disabled, 1: enabled")
 DECLARE_DEBUG_VARIABLE(int32_t, DirectSubmissionForceLocalMemoryStorageMode, -1, "Force local memory storage for command/ring/semaphore buffer, -1: default - for all engines, 0: disabled, 1: for multiOsContextCapable engine, 2: for all engines")
 DECLARE_DEBUG_VARIABLE(int32_t, EnableRingSwitchTagUpdateWa, -1, "-1: default, 0 - disable, 1 - enable. If enabled, completionFences wont be updated if ring is not running.")
 DECLARE_DEBUG_VARIABLE(int32_t, DirectSubmissionPCIBarrier, -1, "Use PCI barrier for data synchronization before semaphore unblock -1: default, 0 - disable, 1 - enable.")
@@ -609,7 +609,7 @@ DECLARE_DEBUG_VARIABLE(bool, UseMaxSimdSizeToDeduceMaxWorkgroupSize, false, "Wit
 DECLARE_DEBUG_VARIABLE(bool, ReturnRawGpuTimestamps, false, "Driver returns raw GPU timestamps instead of calculated ones.")
 DECLARE_DEBUG_VARIABLE(bool, EnableDeviceBasedTimestamps, true, "Driver returns timestamps in nanoseconds based on device timer.")
 DECLARE_DEBUG_VARIABLE(bool, UseCommandBufferHeaderSizeForWddmQueueSubmission, true, "0: Page size (4096), 1: sizeof(COMMAND_BUFFER_HEADER)")
-DECLARE_DEBUG_VARIABLE(bool, DisableDeepBind, false, "Disable passing RTLD_DEEPBIND flag to all dlopen calls.")
+DECLARE_DEBUG_SCOPED_V(bool, DisableDeepBind, false, S_RT | S_OCLOC, "Disable passing RTLD_DEEPBIND flag to all dlopen calls.")
 DECLARE_DEBUG_VARIABLE(bool, UseUmKmDataTranslator, false, "Use helper library for UMD<->KMD (WDDM) struct layout compatibility")
 DECLARE_DEBUG_VARIABLE(bool, SkipFlushingEventsOnGetStatusCalls, false, "When set to 1, events are not causing internal flush when querying for CL_EVENT_COMMAND_EXECUTION_STATUS")
 DECLARE_DEBUG_VARIABLE(bool, AllowUnrestrictedSize, false, "Allow allocating memory with greater size than MAX_MEM_ALLOC_SIZE")
@@ -633,7 +633,7 @@ DECLARE_DEBUG_VARIABLE(int32_t, NumberOfBOChunks, 2, "Number of chunks to use")
 DECLARE_DEBUG_VARIABLE(int32_t, SetBOChunkingSize, -1, "Size of chunk in bytes: -1 = default, otherwise power of two chunk size in bytes")
 DECLARE_DEBUG_VARIABLE(int32_t, MinimalAllocationSizeForChunking, -1, "2097152: default, >0: size in B. Minimal size an allocation should have to use chunking.")
 DECLARE_DEBUG_VARIABLE(int32_t, ForceAutoGrfCompilationMode, -1, "Adds build option -*-intel-enable-auto-large-GRF-mode to force kernel compilation")
-DECLARE_DEBUG_VARIABLE(int32_t, ForceOCLVersion, 0, "Force specific OpenCL API version")
+DECLARE_DEBUG_SCOPED_V(int32_t, ForceOCLVersion, 0, S_OCL, "Force specific OpenCL API version")
 DECLARE_DEBUG_VARIABLE(int32_t, ForceOCL21FeaturesSupport, -1, "-1: default, 0: disable, 1:enable. Force support of OpenCL 2.0 and OpenCL 2.1 API features")
 DECLARE_DEBUG_VARIABLE(int32_t, ForcePreemptionMode, -1, "Keep this variable in sync with PreemptionMode enum. -1 - devices default mode, 1 - disable, 2 - midBatch, 3 - threadGroup, 4 - midThread")
 DECLARE_DEBUG_VARIABLE(int32_t, ForceKernelPreemptionMode, -1, "Keep this variable in sync with PreemptionMode enum. -1 - kernel default mode, 1 - disable, 2 - midBatch, 3 - threadGroup, 4 - midThread")
@@ -677,9 +677,10 @@ DECLARE_DEBUG_VARIABLE(int32_t, EnableSetPair, -1, "Use SET_PAIR to pair two buf
 DECLARE_DEBUG_VARIABLE(int32_t, ForcePreferredAllocationMethod, -1, "Sets preferred allocation method for Wddm paths; values = -1: driver default, 0: UseUmdSystemPtr, 1: AllocateByKmd")
 DECLARE_DEBUG_VARIABLE(int32_t, EventTimestampRefreshIntervalInMilliSec, -1, "-1: use driver default, This value sets the refresh interval for getting synchronized GPU and CPU timestamp")
 DECLARE_DEBUG_VARIABLE(int64_t, ReadOnlyAllocationsTypeMask, 0, "0: default,  >0: (bitmask) for given Graphics Allocation Type, set as read only resource.")
-DECLARE_DEBUG_VARIABLE(bool, IgnoreZebinUnknownAttributes, false, "enable to treat unknown zebin attributes as warning instead of error");
-DECLARE_DEBUG_VARIABLE(int64_t, FinalizerInputType, 0, "0: default (N/A), input type for finalizer")
+DECLARE_DEBUG_VARIABLE(bool, IgnoreZebinUnknownAttributes, false, "enable to treat unknown zebin attributes as warning instead of error")
+DECLARE_DEBUG_VARIABLE(std::string, FinalizerInputType, std::string("unk"), "unk: default (N/A), input type for finalizer")
 DECLARE_DEBUG_VARIABLE(std::string, FinalizerLibraryName, std::string("unk"), "Library name for finalizer")
+DECLARE_DEBUG_SCOPED_V(int32_t, UseIgcAsFcl, 0, S_RT | S_OCLOC, "0: platform default, 1: force use IGC, 2: force use FCL")
 DECLARE_DEBUG_VARIABLE(int32_t, EnableGlobalTimestampViaSubmission, -1, "-1: OS Interface, 0: OS Interface, 1: Submission. This flag sets the type of method to get timestamp for getGlobalTimestamps");
 
 /* Binary Cache */

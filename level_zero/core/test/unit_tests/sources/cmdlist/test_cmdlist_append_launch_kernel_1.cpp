@@ -208,7 +208,7 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenNotEnoughSpaceInCommandStreamWhenA
     const uint32_t threadGroupDimensions[3] = {1, 1, 1};
 
     auto dispatchKernelArgs = CommandEncodeStatesFixture::createDefaultDispatchKernelArgs(device->getNEODevice(), kernel.get(), threadGroupDimensions, false);
-    dispatchKernelArgs.dcFlushEnable = commandList->getDcFlushRequired(true);
+    dispatchKernelArgs.postSyncArgs.dcFlushEnable = commandList->getDcFlushRequired(true);
 
     NEO::EncodeDispatchKernel<FamilyType>::template encode<DefaultWalkerType>(commandContainer, dispatchKernelArgs);
 
@@ -397,7 +397,7 @@ HWTEST_F(CommandListAppendLaunchKernel, givenKernelWithPrintfAppendedToCommandLi
 
     auto commandListHandle = commandList->toHandle();
     EXPECT_EQ(0u, kernel->printPrintfOutputCalledTimes);
-    EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr, nullptr));
     EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->synchronize(std::numeric_limits<uint64_t>::max()));
     EXPECT_EQ(1u, kernel->printPrintfOutputCalledTimes);
     EXPECT_EQ(ZE_RESULT_SUCCESS, kernel->destroy());
@@ -459,7 +459,7 @@ HWTEST_F(CommandListAppendLaunchKernel, givenKernelWithPrintfAndEventAppendedToC
 
     auto commandListHandle = commandList->toHandle();
     EXPECT_EQ(0u, kernel->printPrintfOutputCalledTimes);
-    EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr, nullptr));
     EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->synchronize(std::numeric_limits<uint64_t>::max()));
     *reinterpret_cast<uint32_t *>(event->getHostAddress()) = Event::STATE_SIGNALED;
     EXPECT_EQ(1u, kernel->printPrintfOutputCalledTimes);
@@ -526,7 +526,7 @@ HWTEST_F(CommandListAppendLaunchKernel, givenKernelWithPrintfAndEventAppendedToC
 
     auto commandListHandle = commandList->toHandle();
     EXPECT_EQ(0u, kernel->printPrintfOutputCalledTimes);
-    EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, commandQueue->executeCommandLists(1, &commandListHandle, nullptr, false, nullptr, nullptr));
     *reinterpret_cast<uint32_t *>(event->getHostAddress()) = Event::STATE_SIGNALED;
     EXPECT_EQ(ZE_RESULT_SUCCESS, event->hostSynchronize(std::numeric_limits<uint64_t>::max()));
     EXPECT_EQ(1u, kernel->printPrintfOutputCalledTimes);
@@ -1499,6 +1499,51 @@ HWTEST2_F(CommandListAppendLaunchKernel, givenImmediateCommandListWhenAppendLaun
     EXPECT_EQ(1u, cmdList.executeCommandListImmediateCalledCount);
     EXPECT_EQ(0u, cmdList.executeCommandListImmediateWithFlushTaskCalledCount);
     EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
+}
+
+HWTEST_F(CommandListAppendLaunchKernel, GivenImmCmdListAndKernelWithImageWriteArgAndPlatformRequiresFlushWhenLaunchingKernelThenPipeControlWithTextureCacheInvalidationIsAdded) {
+    if (!device->getProductHelper().isPostImageWriteFlushRequired()) {
+        GTEST_SKIP();
+    }
+
+    using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
+
+    auto kernel = std::make_unique<Mock<KernelImp>>();
+    kernel->module = module.get();
+    kernel->immutableData.kernelInfo->kernelDescriptor.kernelAttributes.hasImageWriteArg = true;
+
+    ze_command_queue_desc_t queueDesc = {};
+    auto queue = std::make_unique<Mock<CommandQueue>>(device, device->getNEODevice()->getDefaultEngine().commandStreamReceiver, &queueDesc);
+
+    MockCommandListImmediateHw<FamilyType::gfxCoreFamily> commandList;
+    commandList.isFlushTaskSubmissionEnabled = false;
+    commandList.cmdListType = CommandList::CommandListType::typeImmediate;
+    commandList.cmdQImmediate = queue.get();
+    commandList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
+    commandList.commandContainer.setImmediateCmdListCsr(device->getNEODevice()->getDefaultEngine().commandStreamReceiver);
+
+    auto usedSpaceBefore = commandList.getCmdContainer().getCommandStream()->getUsed();
+
+    ze_group_count_t groupCount{1, 1, 1};
+    ze_result_t returnValue;
+
+    CmdListKernelLaunchParams launchParams = {};
+    returnValue = commandList.appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    EXPECT_EQ(1u, commandList.executeCommandListImmediateCalledCount);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, returnValue);
+
+    auto usedSpaceAfter = commandList.getCmdContainer().getCommandStream()->getUsed();
+    EXPECT_GT(usedSpaceAfter, usedSpaceBefore);
+
+    GenCmdList cmdList;
+    EXPECT_TRUE(FamilyType::Parse::parseCommandBuffer(
+        cmdList, ptrOffset(commandList.getCmdContainer().getCommandStream()->getCpuBase(), 0), usedSpaceAfter));
+
+    auto itorPC = findAll<PIPE_CONTROL *>(cmdList.begin(), cmdList.end());
+    ASSERT_NE(0u, itorPC.size());
+
+    PIPE_CONTROL *cmd = genCmdCast<PIPE_CONTROL *>(*itorPC[itorPC.size() - 1]);
+    EXPECT_TRUE(cmd->getTextureCacheInvalidationEnable());
 }
 
 template <GFXCORE_FAMILY gfxCoreFamily>

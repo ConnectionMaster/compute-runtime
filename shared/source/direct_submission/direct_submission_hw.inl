@@ -69,11 +69,7 @@ DirectSubmissionHw<GfxFamily, Dispatcher>::DirectSubmissionHw(const DirectSubmis
         detectGpuHang = !!debugManager.flags.DirectSubmissionDetectGpuHang.get();
     }
 
-    if (hwInfo->capabilityTable.isIntegratedDevice) {
-        miMemFenceRequired = false;
-    } else {
-        miMemFenceRequired = productHelper.isGlobalFenceInDirectSubmissionRequired(*hwInfo);
-    }
+    miMemFenceRequired = productHelper.isGlobalFenceInDirectSubmissionRequired(*hwInfo);
 
     if (debugManager.flags.DirectSubmissionInsertExtraMiMemFenceCommands.get() != -1) {
         miMemFenceRequired = debugManager.flags.DirectSubmissionInsertExtraMiMemFenceCommands.get();
@@ -129,7 +125,7 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::dispatchStaticRelaxedOrderingSch
 
     uint64_t loopSectionStartAddress = schedulerStartAddress + RelaxedOrderingHelper::StaticSchedulerSizeAndOffsetSection<GfxFamily>::loopStartSectionStart;
 
-    const uint32_t miMathMocs = this->rootDeviceEnvironment.getGmmHelper()->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER);
+    const uint32_t miMathMocs = this->rootDeviceEnvironment.getGmmHelper()->getL3EnabledMOCS();
 
     constexpr bool isBcs = Dispatcher::isCopy();
 
@@ -850,7 +846,7 @@ void DirectSubmissionHw<GfxFamily, Dispatcher>::preinitializeRelaxedOrderingSect
     LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR8, 8, true, isBcs);
     LriHelper<GfxFamily>::program(&stream, RegisterOffsets::csGprR8 + 4, 0, true, isBcs);
 
-    const uint32_t miMathMocs = this->rootDeviceEnvironment.getGmmHelper()->getMOCS(GMM_RESOURCE_USAGE_OCL_BUFFER);
+    const uint32_t miMathMocs = this->rootDeviceEnvironment.getGmmHelper()->getL3EnabledMOCS();
 
     EncodeAluHelper<GfxFamily, 9> aluHelper({{
         {AluRegisters::opcodeLoad, AluRegisters::srca, AluRegisters::gpr1},

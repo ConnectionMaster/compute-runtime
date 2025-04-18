@@ -48,7 +48,6 @@
 #include <cstring>
 #include <memory>
 #include <sys/ioctl.h>
-
 namespace NEO {
 
 using AllocationStatus = MemoryManager::AllocationStatus;
@@ -292,6 +291,70 @@ bool DrmMemoryManager::setMemAdvise(GraphicsAllocation *gfxAllocation, MemAdvise
     auto drmAllocation = static_cast<DrmAllocation *>(gfxAllocation);
 
     return drmAllocation->setMemAdvise(&this->getDrm(rootDeviceIndex), flags);
+}
+
+bool DrmMemoryManager::setSharedSystemMemAdvise(const void *ptr, const size_t size, MemAdvise memAdviseOp, uint32_t rootDeviceIndex) {
+
+    auto &drm = this->getDrm(rootDeviceIndex);
+    auto ioctlHelper = drm.getIoctlHelper();
+
+    uint32_t attribute = 0;
+    uint64_t param = 0;
+
+    switch (memAdviseOp) {
+    case MemAdvise::setPreferredLocation:
+        attribute = ioctlHelper->getPreferredLocationAdvise();
+        param = (static_cast<uint64_t>(-1) << 32) //-1 as currently not supported and ignored. This will be useful in multi device settings.
+                | static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::memoryClassDevice));
+        break;
+    case MemAdvise::clearPreferredLocation:
+        // Assumes that the default location is VRAM, i.e. 1 == DrmParam::memoryClassDevice
+        attribute = ioctlHelper->getPreferredLocationAdvise();
+        param = (static_cast<uint64_t>(-1) << 32) | static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::memoryClassDevice));
+        break;
+    case MemAdvise::setSystemMemoryPreferredLocation:
+        attribute = ioctlHelper->getPreferredLocationAdvise();
+        param = (static_cast<uint64_t>(-1) << 32) | static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::memoryClassSystem));
+        break;
+    case MemAdvise::clearSystemMemoryPreferredLocation:
+        attribute = ioctlHelper->getPreferredLocationAdvise();
+        param = (static_cast<uint64_t>(-1) << 32) | static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::memoryClassDevice));
+        break;
+    case MemAdvise::setAtomicDevice:
+        attribute = ioctlHelper->getAtomicAdvise(false);
+        param = (static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::atomicClassDevice)) << 32);
+        break;
+    case MemAdvise::clearAtomicDevice:
+        attribute = ioctlHelper->getAtomicAdvise(false);
+        param = (static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::atomicClassUndefined)) << 32);
+        break;
+    case MemAdvise::setAtomicGlobal:
+        attribute = ioctlHelper->getAtomicAdvise(false);
+        param = (static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::atomicClassGlobal)) << 32);
+        break;
+    case MemAdvise::clearAtomicGlobal:
+        attribute = ioctlHelper->getAtomicAdvise(false);
+        param = (static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::atomicClassUndefined)) << 32);
+        break;
+    case MemAdvise::setAtomicCpu:
+        attribute = ioctlHelper->getAtomicAdvise(false);
+        param = (static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::atomicClassSystem)) << 32);
+        break;
+    case MemAdvise::clearAtomicCpu:
+        attribute = ioctlHelper->getAtomicAdvise(false);
+        param = (static_cast<uint64_t>(ioctlHelper->getDrmParamValue(DrmParam::atomicClassUndefined)) << 32);
+        break;
+    default:
+        return false;
+    }
+
+    // Single vm_id for shared system allocation
+    uint32_t vmHandleId = 0;
+    auto vmId = drm.getVirtualMemoryAddressSpace(vmHandleId);
+
+    auto result = ioctlHelper->setVmSharedSystemMemAdvise(reinterpret_cast<uint64_t>(ptr), size, attribute, param, vmId);
+
+    return result;
 }
 
 bool DrmMemoryManager::setAtomicAccess(GraphicsAllocation *gfxAllocation, size_t size, AtomicAccessMode mode, uint32_t rootDeviceIndex) {
@@ -803,12 +866,13 @@ GraphicsAllocation *DrmMemoryManager::allocatePhysicalDeviceMemory(const Allocat
     const auto memoryPool = MemoryPool::systemCpuInaccessible;
     StorageInfo systemMemoryStorageInfo = {};
     auto &productHelper = executionEnvironment.rootDeviceEnvironments[allocationData.rootDeviceIndex]->getHelper<ProductHelper>();
+    auto gmmHelper = executionEnvironment.rootDeviceEnvironments[allocationData.rootDeviceIndex]->getGmmHelper();
     GmmRequirements gmmRequirements{};
     gmmRequirements.allowLargePages = true;
     gmmRequirements.preferCompressed = false;
 
-    auto gmm = std::make_unique<Gmm>(executionEnvironment.rootDeviceEnvironments[allocationData.rootDeviceIndex]->getGmmHelper(), nullptr,
-                                     allocationData.size, 0u, CacheSettingsHelper::getGmmUsageType(allocationData.type, allocationData.flags.uncacheable, productHelper), systemMemoryStorageInfo, gmmRequirements);
+    auto gmm = std::make_unique<Gmm>(gmmHelper, nullptr,
+                                     allocationData.size, 0u, CacheSettingsHelper::getGmmUsageType(allocationData.type, allocationData.flags.uncacheable, productHelper, gmmHelper->getHardwareInfo()), systemMemoryStorageInfo, gmmRequirements);
     size_t bufferSize = allocationData.size;
 
     auto &drm = getDrm(allocationData.rootDeviceIndex);
@@ -837,7 +901,7 @@ GraphicsAllocation *DrmMemoryManager::allocateMemoryByKMD(const AllocationData &
     gmmRequirements.preferCompressed = false;
     auto gmmHelper = executionEnvironment.rootDeviceEnvironments[allocationData.rootDeviceIndex]->getGmmHelper();
     auto gmm = std::make_unique<Gmm>(gmmHelper, allocationData.hostPtr,
-                                     allocationData.size, 0u, CacheSettingsHelper::getGmmUsageType(allocationData.type, allocationData.flags.uncacheable, productHelper), systemMemoryStorageInfo, gmmRequirements);
+                                     allocationData.size, 0u, CacheSettingsHelper::getGmmUsageType(allocationData.type, allocationData.flags.uncacheable, productHelper, gmmHelper->getHardwareInfo()), systemMemoryStorageInfo, gmmRequirements);
     size_t bufferSize = allocationData.size;
     auto alignment = allocationData.alignment;
     if (bufferSize >= 2 * MemoryConstants::megaByte) {
@@ -1111,7 +1175,7 @@ GraphicsAllocation *DrmMemoryManager::createGraphicsAllocationFromMultipleShared
                            nullptr,
                            bo->peekSize(),
                            0u,
-                           CacheSettingsHelper::getGmmUsageType(drmAllocation->getAllocationType(), false, productHelper),
+                           CacheSettingsHelper::getGmmUsageType(drmAllocation->getAllocationType(), false, productHelper, gmmHelper->getHardwareInfo()),
                            allocationData.storageInfo,
                            gmmRequirements);
         drmAllocation->setGmm(gmm, i);
@@ -1880,7 +1944,7 @@ void createColouredGmms(GmmHelper *gmmHelper, DrmAllocation &allocation, bool co
                            nullptr,
                            currentSize,
                            0u,
-                           CacheSettingsHelper::getGmmUsageType(allocation.getAllocationType(), false, productHelper),
+                           CacheSettingsHelper::getGmmUsageType(allocation.getAllocationType(), false, productHelper, gmmHelper->getHardwareInfo()),
                            limitedStorageInfo,
                            gmmRequirements);
         allocation.setGmm(gmm, handleId);
@@ -1900,7 +1964,7 @@ void fillGmmsInAllocation(GmmHelper *gmmHelper, DrmAllocation *allocation) {
         limitedStorageInfo.memoryBanks &= 1u << handleId;
         limitedStorageInfo.pageTablesVisibility &= 1u << handleId;
         auto gmm = new Gmm(gmmHelper, nullptr, alignedSize, 0u,
-                           CacheSettingsHelper::getGmmUsageType(allocation->getAllocationType(), false, productHelper), limitedStorageInfo, gmmRequirements);
+                           CacheSettingsHelper::getGmmUsageType(allocation->getAllocationType(), false, productHelper, gmmHelper->getHardwareInfo()), limitedStorageInfo, gmmRequirements);
         allocation->setGmm(gmm, handleId);
     }
 }
@@ -2007,7 +2071,7 @@ inline std::unique_ptr<Gmm> DrmMemoryManager::makeGmmIfSingleHandle(const Alloca
                                  nullptr,
                                  sizeAligned,
                                  0u,
-                                 CacheSettingsHelper::getGmmUsageType(allocationData.type, allocationData.flags.uncacheable, productHelper),
+                                 CacheSettingsHelper::getGmmUsageType(allocationData.type, allocationData.flags.uncacheable, productHelper, gmmHelper->getHardwareInfo()),
                                  allocationData.storageInfo,
                                  gmmRequirements);
 }
