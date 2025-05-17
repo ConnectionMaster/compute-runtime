@@ -102,6 +102,7 @@ struct Xe2HpgCoreFamily : public Xe2HpgCore {
     using Parse = CmdParse<Xe2HpgCoreFamily>;
     using GfxFamily = Xe2HpgCoreFamily;
     using DefaultWalkerType = COMPUTE_WALKER;
+    using PorWalkerType = COMPUTE_WALKER;
     using FrontEndStateCommand = CFE_STATE;
     using XY_BLOCK_COPY_BLT = typename GfxFamily::XY_BLOCK_COPY_BLT;
     using XY_COPY_BLT = typename GfxFamily::MEM_COPY;
@@ -114,6 +115,7 @@ struct Xe2HpgCoreFamily : public Xe2HpgCore {
     static const MI_BATCH_BUFFER_END cmdInitBatchBufferEnd;
     static const MI_BATCH_BUFFER_START cmdInitBatchBufferStart;
     static const PIPE_CONTROL cmdInitPipeControl;
+    static const RESOURCE_BARRIER cmdInitResourceBarrier;
     static const STATE_COMPUTE_MODE cmdInitStateComputeMode;
     static const _3DSTATE_BINDING_TABLE_POOL_ALLOC cmdInitStateBindingTablePoolAlloc;
     static const MI_SEMAPHORE_WAIT cmdInitMiSemaphoreWait;

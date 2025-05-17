@@ -95,6 +95,7 @@ class ProductHelper {
     virtual bool isMaxThreadsForWorkgroupWARequired(const HardwareInfo &hwInfo) const = 0;
     virtual uint32_t getMaxThreadsForWorkgroupInDSSOrSS(const HardwareInfo &hwInfo, uint32_t maxNumEUsPerSubSlice, uint32_t maxNumEUsPerDualSubSlice) const = 0;
     virtual uint32_t getMaxThreadsForWorkgroup(const HardwareInfo &hwInfo, uint32_t maxNumEUsPerSubSlice) const = 0;
+    virtual uint32_t getPreferredWorkgroupCountPerSubslice() const = 0;
     virtual void setForceNonCoherent(void *const commandPtr, const StateComputeModeProperties &properties) const = 0;
     virtual void updateScmCommand(void *const commandPtr, const StateComputeModeProperties &properties) const = 0;
     virtual bool obtainBlitterPreference(const HardwareInfo &hwInfo) const = 0;
@@ -240,7 +241,7 @@ class ProductHelper {
     virtual bool isCachingOnCpuAvailable() const = 0;
     virtual bool isNewCoherencyModelSupported() const = 0;
     virtual bool isResourceUncachedForCS(AllocationType allocationType) const = 0;
-    virtual bool deferMOCSToPatIndex() const = 0;
+    virtual bool deferMOCSToPatIndex(bool isWddmOnLinux) const = 0;
     virtual const std::vector<uint32_t> getSupportedLocalDispatchSizes(const HardwareInfo &hwInfo) const = 0;
     virtual uint32_t getMaxLocalRegionSize(const HardwareInfo &hwInfo) const = 0;
     virtual uint32_t getMaxLocalSubRegionSize(const HardwareInfo &hwInfo) const = 0;
