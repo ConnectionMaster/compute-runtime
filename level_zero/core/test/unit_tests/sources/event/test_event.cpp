@@ -282,8 +282,6 @@ HWTEST_F(EventPoolCreate, givenTimestampEventsThenEventSizeSufficientForAllKerne
         maxPacketCount = l0GfxCoreHelper.getEventBaseMaxPacketCount(device->getNEODevice()->getRootDeviceEnvironment());
     }
 
-    maxPacketCount = std::max(maxPacketCount, 2u);
-
     uint32_t packetsSize = maxPacketCount *
                            static_cast<uint32_t>(NEO::TimestampPackets<typename FamilyType::TimestampPacketType, FamilyType::timestampPacketCount>::getSinglePacketSize());
     uint32_t kernelTimestampsSize = static_cast<uint32_t>(alignUp(packetsSize, gfxCoreHelper.getTimestampPacketAllocatorAlignment()));
@@ -3484,42 +3482,6 @@ TEST_F(EventTests, givenRegularEventUseMultiplePacketsWhenHostSignalThenExpectAl
     }
 }
 
-TEST_F(EventTests, givenRegularEventWithoutAdditionalPacketsThenGetAdditionalPacketsRetursZero) {
-    eventDesc.index = 0;
-    eventDesc.signal = 0;
-    eventDesc.wait = 0;
-
-    auto event = std::unique_ptr<L0::EventImp<uint32_t>>(static_cast<L0::EventImp<uint32_t> *>(L0::Event::create<uint32_t>(eventPool.get(),
-                                                                                                                           &eventDesc,
-                                                                                                                           device)));
-    ASSERT_NE(event, nullptr);
-
-    uint32_t *hostAddr = static_cast<uint32_t *>(event->getCompletionFieldHostAddress());
-    EXPECT_EQ(*hostAddr, Event::STATE_INITIAL);
-    EXPECT_EQ(1u, event->getPacketsInUse());
-
-    event->setAdditionalPacketsInUse(0u);
-    EXPECT_EQ(event->kernelEventCompletionData[0].getAdditionalPacketsUsed(), 0u);
-}
-
-TEST_F(EventTests, givenRegularEventUseOneAdditionalPacketsThenGetAdditionalPacketsRetursOne) {
-    eventDesc.index = 0;
-    eventDesc.signal = 0;
-    eventDesc.wait = 0;
-
-    auto event = std::unique_ptr<L0::EventImp<uint32_t>>(static_cast<L0::EventImp<uint32_t> *>(L0::Event::create<uint32_t>(eventPool.get(),
-                                                                                                                           &eventDesc,
-                                                                                                                           device)));
-    ASSERT_NE(event, nullptr);
-
-    uint32_t *hostAddr = static_cast<uint32_t *>(event->getCompletionFieldHostAddress());
-    EXPECT_EQ(*hostAddr, Event::STATE_INITIAL);
-    EXPECT_EQ(1u, event->getPacketsInUse());
-
-    event->setAdditionalPacketsInUse(1u);
-    EXPECT_EQ(event->kernelEventCompletionData[0].getAdditionalPacketsUsed(), 1u);
-}
-
 TEST_F(EventUsedPacketSignalTests, givenEventUseMultiplePacketsWhenHostSignalThenExpectAllPacketsAreSignaled) {
     eventDesc.index = 0;
     eventDesc.signal = 0;
@@ -4836,11 +4798,11 @@ struct EventDynamicPacketUseFixture : public DeviceFixture {
 };
 
 using EventDynamicPacketUseTest = Test<EventDynamicPacketUseFixture<0, 0>>;
-HWTEST2_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromAllDevicesThenMaxPossibleSelected, MatchAny) {
+HWTEST_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromAllDevicesThenMaxPossibleSelected) {
     testAllDevices();
 }
 
-HWTEST2_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromSingleDeviceThenMaxFromThisDeviceSelected, MatchAny) {
+HWTEST_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromSingleDeviceThenMaxFromThisDeviceSelected) {
     testSingleDevice();
 }
 

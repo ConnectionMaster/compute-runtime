@@ -227,9 +227,7 @@ void EventPool::initializeSizeParameters(uint32_t numDevices, ze_device_handle_t
         maxKernelCount = driver.getEventMaxKernelCount(numDevices, deviceHandles);
     }
 
-    const uint32_t minimalPacketCount = isEventPoolTimestampFlagSet() ? 2 : 1;
-
-    auto eventSize = std::max(eventPackets, minimalPacketCount) * gfxCoreHelper.getSingleTimestampPacketSize();
+    auto eventSize = eventPackets * gfxCoreHelper.getSingleTimestampPacketSize();
     if (eventPoolFlags & ZE_EVENT_POOL_FLAG_KERNEL_MAPPED_TIMESTAMP) {
         eventSize += sizeof(NEO::TimeStampData);
     }
@@ -697,7 +695,7 @@ void Event::resetInOrderTimestampNode(NEO::TagNodeBase *newNode, uint32_t partit
         inOrderTimestampNode.push_back(newNode);
 
         if (NEO::debugManager.flags.ClearStandaloneInOrderTimestampAllocation.get() != 0) {
-            clearTimestampTagData(partitionCount, true, nullptr);
+            clearTimestampTagData(partitionCount, inOrderTimestampNode.back());
         }
     }
 }
@@ -724,7 +722,7 @@ void Event::resetAdditionalTimestampNode(NEO::TagNodeBase *newNode, uint32_t par
     }
     additionalTimestampNode.push_back(newNode);
 
-    clearTimestampTagData(partitionCount, false, newNode);
+    clearTimestampTagData(partitionCount, newNode);
 }
 
 NEO::GraphicsAllocation *Event::getExternalCounterAllocationFromAddress(uint64_t *address) const {

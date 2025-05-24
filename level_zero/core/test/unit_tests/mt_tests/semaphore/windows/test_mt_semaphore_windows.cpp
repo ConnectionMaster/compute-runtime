@@ -60,7 +60,7 @@ HWTEST_F(WddmExternalSemaphoreMTTest, givenValidExternalSemaphoreWhenImportExter
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;
@@ -124,7 +124,7 @@ class MockExternalSemaphoreEvent : public MockEvent {
     uint32_t hostSynchronizeCalledTimes = 0;
 };
 
-HWTEST2_F(WddmExternalSemaphoreMTTest, givenEnqueueSignalFailsWhenExternalSemaphoreControllerIsRunningThenExpectedStateIsReturned, MatchAny) {
+HWTEST_F(WddmExternalSemaphoreMTTest, givenEnqueueSignalFailsWhenExternalSemaphoreControllerIsRunningThenExpectedStateIsReturned) {
     auto mockGdi = new MockFailGdi();
     auto mockMemoryManager = std::make_unique<MockMemoryManager>();
     auto l0Device = std::make_unique<MockDeviceImp>(neoDevice, neoDevice->getExecutionEnvironment());
@@ -141,7 +141,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenEnqueueSignalFailsWhenExternalSemaph
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;
@@ -171,7 +171,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenEnqueueSignalFailsWhenExternalSemaph
     EXPECT_EQ(result, ZE_RESULT_SUCCESS);
 }
 
-HWTEST2_F(WddmExternalSemaphoreMTTest, givenSemaphoreSignalOperationEventWhenExternalSemaphoreControllerIsRunningThenExpectedStateIsReturned, MatchAny) {
+HWTEST_F(WddmExternalSemaphoreMTTest, givenSemaphoreSignalOperationEventWhenExternalSemaphoreControllerIsRunningThenExpectedStateIsReturned) {
     auto mockMemoryManager = std::make_unique<MockMemoryManager>();
     auto l0Device = std::make_unique<MockDeviceImp>(neoDevice, neoDevice->getExecutionEnvironment());
     auto driverHandleImp = std::make_unique<MockDriverHandleImp>();
@@ -185,7 +185,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenSemaphoreSignalOperationEventWhenExt
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;
@@ -215,7 +215,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenSemaphoreSignalOperationEventWhenExt
     EXPECT_EQ(result, ZE_RESULT_SUCCESS);
 }
 
-HWTEST2_F(WddmExternalSemaphoreMTTest, givenImmediateCommandListWhenAppendWaitExternalSemaphoresExpIsCalledThenSuccessIsReturned, MatchAny) {
+HWTEST_F(WddmExternalSemaphoreMTTest, givenImmediateCommandListWhenAppendWaitExternalSemaphoresExpIsCalledThenSuccessIsReturned) {
     ze_external_semaphore_ext_desc_t desc = {};
     ze_external_semaphore_ext_handle_t hSemaphore;
     HANDLE extSemaphoreHandle = 0;
@@ -240,7 +240,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenImmediateCommandListWhenAppendWaitEx
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;
@@ -260,7 +260,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenImmediateCommandListWhenAppendWaitEx
     EXPECT_EQ(result, ZE_RESULT_SUCCESS);
 }
 
-HWTEST2_F(WddmExternalSemaphoreMTTest, givenRegularCommandListWhenAppendWaitExternalSemaphoresExpIsCalledThenInvalidArgumentIsReturned, MatchAny) {
+HWTEST_F(WddmExternalSemaphoreMTTest, givenRegularCommandListWhenAppendWaitExternalSemaphoresExpIsCalledThenInvalidArgumentIsReturned) {
     ze_external_semaphore_ext_desc_t desc = {};
     ze_external_semaphore_ext_handle_t hSemaphore;
     HANDLE extSemaphoreHandle = 0;
@@ -278,7 +278,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenRegularCommandListWhenAppendWaitExte
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;
@@ -322,7 +322,7 @@ struct MockCommandListImmediateExtSem : public WhiteBox<::L0::CommandListCoreFam
     bool failingSignalEvent = false;
 };
 
-HWTEST2_F(WddmExternalSemaphoreMTTest, givenInternalProxyEventFailsToAppendWhenAppendWaitExternalSemaphoresExpIsCalledThenErrorIsReturned, MatchAny) {
+HWTEST_F(WddmExternalSemaphoreMTTest, givenInternalProxyEventFailsToAppendWhenAppendWaitExternalSemaphoresExpIsCalledThenErrorIsReturned) {
     ze_external_semaphore_ext_desc_t desc = {};
     ze_external_semaphore_ext_handle_t hSemaphore;
     HANDLE extSemaphoreHandle = 0;
@@ -347,7 +347,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenInternalProxyEventFailsToAppendWhenA
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;
@@ -363,7 +363,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenInternalProxyEventFailsToAppendWhenA
     EXPECT_EQ(result, ZE_RESULT_SUCCESS);
 }
 
-HWTEST2_F(WddmExternalSemaphoreMTTest, givenWaitEventFailsToAppendWhenAppendWaitExternalSemaphoresExpIsCalledThenErrorIsReturned, MatchAny) {
+HWTEST_F(WddmExternalSemaphoreMTTest, givenWaitEventFailsToAppendWhenAppendWaitExternalSemaphoresExpIsCalledThenErrorIsReturned) {
     ze_external_semaphore_ext_desc_t desc = {};
     ze_external_semaphore_ext_handle_t hSemaphore;
     HANDLE extSemaphoreHandle = 0;
@@ -388,7 +388,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenWaitEventFailsToAppendWhenAppendWait
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;
@@ -405,7 +405,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenWaitEventFailsToAppendWhenAppendWait
     EXPECT_EQ(result, ZE_RESULT_SUCCESS);
 }
 
-HWTEST2_F(WddmExternalSemaphoreMTTest, givenSignalEventFailsWhenAppendWaitExternalSemaphoresExpIsCalledThenErrorIsReturned, MatchAny) {
+HWTEST_F(WddmExternalSemaphoreMTTest, givenSignalEventFailsWhenAppendWaitExternalSemaphoresExpIsCalledThenErrorIsReturned) {
     ze_external_semaphore_ext_desc_t desc = {};
     ze_external_semaphore_ext_handle_t hSemaphore;
     HANDLE extSemaphoreHandle = 0;
@@ -430,7 +430,7 @@ HWTEST2_F(WddmExternalSemaphoreMTTest, givenSignalEventFailsWhenAppendWaitExtern
 
     desc.flags = ZE_EXTERNAL_SEMAPHORE_EXT_FLAG_D3D12_FENCE;
 
-    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC; // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    win32Desc.stype = ZE_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_WIN32_EXT_DESC;
     win32Desc.handle = reinterpret_cast<void *>(extSemaphoreHandle);
 
     desc.pNext = &win32Desc;

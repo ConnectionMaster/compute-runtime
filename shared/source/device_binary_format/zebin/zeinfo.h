@@ -62,6 +62,8 @@ inline constexpr ConstStringRef workGroupWalkOrderDimensions("work_group_walk_or
 inline constexpr ConstStringRef threadSchedulingMode("thread_scheduling_mode");
 inline constexpr ConstStringRef hasSample("has_sample");
 inline constexpr ConstStringRef actualKernelStartOffset("actual_kernel_start_offset");
+inline constexpr ConstStringRef implicitArgBufferUsedByCode("implicit_arg_buffer_used_by_code");
+
 namespace ThreadSchedulingMode {
 inline constexpr ConstStringRef ageBased("age_based");
 inline constexpr ConstStringRef roundRobin("round_robin");
@@ -80,6 +82,7 @@ inline constexpr ConstStringRef invalidKernel("invalid_kernel");
 inline constexpr ConstStringRef vecTypeHint("vec_type_hint");
 inline constexpr ConstStringRef workgroupSizeHint("work_group_size_hint");
 inline constexpr ConstStringRef hintSuffix("_hint");
+inline constexpr ConstStringRef intelReqdThreadgroupDispatchSize("intel_reqd_thread_group_dispatch_size");
 } // namespace Attributes
 
 namespace DebugEnv {
@@ -356,6 +359,7 @@ using SpillSizeT = int32_t;
 using LocalRegionSizeT = int32_t;
 using WalkOrderT = int32_t;
 using PartitionDimT = int32_t;
+using HasImplicitArgBufferUsedByCodeT = bool;
 
 namespace Defaults {
 inline constexpr BarrierCountT barrierCount = 0;
@@ -390,6 +394,7 @@ inline constexpr SpillSizeT spillSize = 0;
 inline constexpr LocalRegionSizeT localRegionSize = -1;
 inline constexpr WalkOrderT dispatchWalkOrder = -1;
 inline constexpr PartitionDimT partitionDim = -1;
+inline constexpr HasImplicitArgBufferUsedByCodeT hasImplicitArgBufferUsedByCode = false;
 } // namespace Defaults
 
 inline constexpr ConstStringRef required[] = {
@@ -440,6 +445,7 @@ struct ExecutionEnvBaseT final : NEO::NonCopyableAndNonMovableClass {
     LocalRegionSizeT localRegionSize = Defaults::localRegionSize;
     WalkOrderT dispatchWalkOrder = Defaults::dispatchWalkOrder;
     PartitionDimT partitionDim = Defaults::partitionDim;
+    HasImplicitArgBufferUsedByCodeT hasImplicitArgBufferUsedByCode = Defaults::hasImplicitArgBufferUsedByCode;
 };
 
 static_assert(NEO::NonCopyableAndNonMovable<ExecutionEnvBaseT>);
@@ -459,12 +465,14 @@ using ReqdWorkgroupSizeT = std::array<int32_t, 3>;
 using InvalidKernelT = ConstStringRef;
 using WorkgroupSizeHint = std::array<int32_t, 3>;
 using VecTypeHintT = ConstStringRef;
+using IntelReqdThreadgroupDispatchSizeT = int32_t;
 
 namespace Defaults {
 inline constexpr IntelReqdSubgroupSizeT intelReqdSubgroupSize = 0;
 inline constexpr IntelReqdWorkgroupWalkOrder intelReqdWorkgroupWalkOrder = {0, 0, 0};
 inline constexpr ReqdWorkgroupSizeT reqdWorkgroupSize = {0, 0, 0};
 inline constexpr WorkgroupSizeHint workgroupSizeHint = {0, 0, 0};
+inline constexpr IntelReqdThreadgroupDispatchSizeT intelReqdThreadgroupDispatchSize = 0;
 } // namespace Defaults
 
 struct AttributesBaseT {
@@ -474,6 +482,7 @@ struct AttributesBaseT {
     std::optional<InvalidKernelT> invalidKernel;
     std::optional<WorkgroupSizeHint> workgroupSizeHint;
     std::optional<VecTypeHintT> vecTypeHint;
+    std::optional<IntelReqdThreadgroupDispatchSizeT> intelReqdThreadgroupDispatchSize;
     std::vector<std::pair<ConstStringRef, ConstStringRef>> otherHints;
 };
 } // namespace Attributes

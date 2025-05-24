@@ -35,6 +35,7 @@ class ProductHelperHw : public ProductHelper {
     bool isMaxThreadsForWorkgroupWARequired(const HardwareInfo &hwInfo) const override;
     uint32_t getMaxThreadsForWorkgroupInDSSOrSS(const HardwareInfo &hwInfo, uint32_t maxNumEUsPerSubSlice, uint32_t maxNumEUsPerDualSubSlice) const override;
     uint32_t getMaxThreadsForWorkgroup(const HardwareInfo &hwInfo, uint32_t maxNumEUsPerSubSlice) const override;
+    uint32_t getPreferredWorkgroupCountPerSubslice() const override;
     void setForceNonCoherent(void *const commandPtr, const StateComputeModeProperties &properties) const override;
     void updateScmCommand(void *const commandPtr, const StateComputeModeProperties &properties) const override;
     bool obtainBlitterPreference(const HardwareInfo &hwInfo) const override;
@@ -178,7 +179,7 @@ class ProductHelperHw : public ProductHelper {
     bool isCachingOnCpuAvailable() const override;
     bool isNewCoherencyModelSupported() const override;
     bool isResourceUncachedForCS(AllocationType allocationType) const override;
-    bool deferMOCSToPatIndex() const override;
+    bool deferMOCSToPatIndex(bool isWddmOnLinux) const override;
     bool supportReadOnlyAllocations() const override;
     const std::vector<uint32_t> getSupportedLocalDispatchSizes(const HardwareInfo &hwInfo) const override;
     uint32_t getMaxLocalRegionSize(const HardwareInfo &hwInfo) const override;
@@ -195,6 +196,7 @@ class ProductHelperHw : public ProductHelper {
     uint32_t getNumCacheRegions() const override;
     uint32_t adjustMaxThreadsPerThreadGroup(uint32_t maxThreadsPerThreadGroup, uint32_t simt, uint32_t totalWorkItems, uint32_t grfCount, bool isHwLocalIdGeneration, bool isHeaplessModeEnabled) const override;
     uint64_t getPatIndex(CacheRegion cacheRegion, CachePolicy cachePolicy) const override;
+    uint32_t getGmmResourceUsageOverride(uint32_t usageType) const override;
     bool isSharingWith3dOrMediaAllowed() const override;
     bool isL3FlushAfterPostSyncRequired(bool heaplessEnabled) const override;
     void overrideDirectSubmissionTimeouts(std::chrono::microseconds &timeout, std::chrono::microseconds &maxTimeout) const override;
@@ -204,6 +206,8 @@ class ProductHelperHw : public ProductHelper {
     bool isCompressionForbidden(const HardwareInfo &hwInfo) const override;
     bool isExposingSubdevicesAllowed() const override;
     bool useAdditionalBlitProperties() const override;
+    bool isNonCoherentTimestampsModeEnabled() const override;
+    bool getStorageInfoLocalOnlyFlag(LocalMemAllocationMode usmDeviceAllocationMode, bool defaultValue) const override;
 
     ~ProductHelperHw() override = default;
 

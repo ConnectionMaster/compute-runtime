@@ -702,7 +702,7 @@ XE2_HPG_CORETEST_F(ProductHelperTestXe2HpgCore, givenProductHelperWhenCallIsNewC
 
 XE2_HPG_CORETEST_F(ProductHelperTestXe2HpgCore, givenProductHelperWhenCallDeferMOCSToPatThenTrueIsReturned) {
     const auto &productHelper = getHelper<ProductHelper>();
-    EXPECT_TRUE(productHelper.deferMOCSToPatIndex());
+    EXPECT_TRUE(productHelper.deferMOCSToPatIndex(false));
 }
 
 XE2_HPG_CORETEST_F(ProductHelperTestXe2HpgCore, givenPatIndexWhenCheckIsCoherentAllocationThenReturnProperValue) {
@@ -783,7 +783,11 @@ XE2_HPG_CORETEST_F(GfxCoreHelperTestsXe2HpgCore, givenAllocDataWhenSetExtraAlloc
                 EXPECT_FALSE(allocData.flags.useSystemMemory);
                 EXPECT_TRUE(allocData.flags.requiresCpuAccess);
             } else if (allocProperties.allocationType == AllocationType::semaphoreBuffer) {
-                EXPECT_TRUE(allocData.flags.useSystemMemory);
+                if (getHelper<ProductHelper>().isGlobalFenceInDirectSubmissionRequired(pDevice->getHardwareInfo())) {
+                    EXPECT_FALSE(allocData.flags.useSystemMemory);
+                } else {
+                    EXPECT_TRUE(allocData.flags.useSystemMemory);
+                }
                 EXPECT_TRUE(allocData.flags.requiresCpuAccess);
             } else {
                 EXPECT_FALSE(allocData.flags.useSystemMemory);

@@ -7,6 +7,7 @@
 
 #include "shared/source/built_ins/sip.h"
 #include "shared/source/command_stream/tag_allocation_layout.h"
+#include "shared/source/gmm_helper/cache_settings_helper.h"
 #include "shared/source/gmm_helper/gmm_helper.h"
 #include "shared/source/helpers/basic_math.h"
 #include "shared/source/helpers/bit_helpers.h"
@@ -18,6 +19,7 @@
 #include "shared/source/os_interface/linux/drm_memory_operations_handler_bind.h"
 #include "shared/source/os_interface/linux/i915.h"
 #include "shared/source/os_interface/linux/os_context_linux.h"
+#include "shared/source/release_helper/release_helper.h"
 #include "shared/test/common/helpers/engine_descriptor_helper.h"
 #include "shared/test/common/helpers/gtest_helpers.h"
 #include "shared/test/common/mocks/linux/mock_drm_allocation.h"
@@ -33,6 +35,7 @@
 #include "shared/test/common/mocks/mock_gmm_resource_info.h"
 #include "shared/test/common/mocks/mock_host_ptr_manager.h"
 #include "shared/test/common/mocks/mock_product_helper.h"
+// #include "shared/test/common/mocks/mock_release_helper.h"
 #include "shared/test/common/os_interface/linux/drm_memory_manager_fixture.h"
 #include "shared/test/common/os_interface/linux/drm_mock_cache_info.h"
 #include "shared/test/common/os_interface/linux/drm_mock_memory_info.h"
@@ -262,6 +265,43 @@ HWTEST_TEMPLATED_F(DrmMemoryManagerTest, GivenAllocatePhysicalHostMemoryThenSucc
     EXPECT_NE(nullptr, allocation);
     EXPECT_EQ(0u, allocation->getGpuAddress());
     memoryManager->freeGraphicsMemory(allocation);
+}
+
+HWTEST_TEMPLATED_F(DrmMemoryManagerTest, GivenAllocatePhysicalHostMemoryThenSuccessReturnedAndCacheableFlagIsOverriden) {
+    mock->ioctlExpected.gemWait = 49;
+    mock->ioctlExpected.gemCreateExt = 49;
+    mock->ioctlExpected.gemMmapOffset = 49;
+    mock->ioctlExpected.gemClose = 49;
+
+    std::vector<MemoryRegion> regionInfo(1);
+    regionInfo[0].region = {drm_i915_gem_memory_class::I915_MEMORY_CLASS_SYSTEM, 0};
+    this->mock->memoryInfo.reset(new MemoryInfo(regionInfo, *mock));
+    this->mock->memoryInfoQueried = true;
+
+    allocationData.size = MemoryConstants::pageSize;
+    allocationData.flags.shareable = true;
+    auto gmmHelper = memoryManager->getGmmHelper(0);
+    auto &productHelper = gmmHelper->getRootDeviceEnvironment().getHelper<ProductHelper>();
+
+    for (uint32_t i = 0; i < static_cast<uint32_t>(AllocationType::count); i++) {
+        allocationData.type = static_cast<AllocationType>(i);
+        MemoryManager::AllocationStatus status = MemoryManager::AllocationStatus::Error;
+        auto allocation = memoryManager->allocatePhysicalHostMemory(allocationData, status);
+        EXPECT_EQ(status, MemoryManager::AllocationStatus::Success);
+        EXPECT_NE(nullptr, allocation);
+        EXPECT_EQ(0u, allocation->getGpuAddress());
+
+        if (productHelper.overrideAllocationCpuCacheable(allocationData)) {
+            EXPECT_TRUE(allocation->getDefaultGmm()->resourceParams.Flags.Info.Cacheable);
+        } else {
+            auto gmmResourceUsage = CacheSettingsHelper::getGmmUsageType(allocationData.type, allocationData.flags.uncacheable, productHelper, gmmHelper->getHardwareInfo());
+            auto preferNoCpuAccess = CacheSettingsHelper::preferNoCpuAccess(gmmResourceUsage, gmmHelper->getRootDeviceEnvironment());
+            bool cacheable = !preferNoCpuAccess && !CacheSettingsHelper::isUncachedType(gmmResourceUsage);
+            EXPECT_EQ(cacheable, allocation->getDefaultGmm()->resourceParams.Flags.Info.Cacheable);
+        }
+
+        memoryManager->freeGraphicsMemory(allocation);
+    }
 }
 
 HWTEST_TEMPLATED_F(DrmMemoryManagerTest, whenCallingCheckUnexpectedGpuPagedfaultThenAllEnginesWereChecked) {
@@ -2034,6 +2074,37 @@ HWTEST_TEMPLATED_F(DrmMemoryManagerTest, GivenShareableEnabledWhenAskedToCreateG
     EXPECT_LT(gmmHelper->canonize(memoryManager->getGfxPartition(allocation->getRootDeviceIndex())->getHeapBase(HeapIndex::heapStandard64KB)), allocation->getGpuAddress());
     EXPECT_GT(gmmHelper->canonize(memoryManager->getGfxPartition(allocation->getRootDeviceIndex())->getHeapLimit(HeapIndex::heapStandard64KB)), allocation->getGpuAddress());
 
+    memoryManager->freeGraphicsMemory(allocation);
+}
+
+HWTEST_TEMPLATED_F(DrmMemoryManagerTest, givenAllocateMemoryByKMDWhenPreferCompressedThenCompressionEnabled) {
+    DebugManagerStateRestore restorer;
+    debugManager.flags.RenderCompressedBuffersEnabled.set(true);
+
+    mock->ioctlHelper.reset(new MockIoctlHelper(*mock));
+    mock->queryMemoryInfo();
+    EXPECT_NE(nullptr, mock->getMemoryInfo());
+    auto &productHelper = executionEnvironment->rootDeviceEnvironments[0]->getHelper<ProductHelper>();
+    if (debugManager.flags.UseGemCreateExtInAllocateMemoryByKMD.get() == 0 ||
+        !productHelper.useGemCreateExtInAllocateMemoryByKMD()) {
+        mock->ioctlExpected.gemCreate = 2;
+    } else {
+        mock->ioctlExpected.gemCreateExt = 2;
+    }
+    mock->ioctlExpected.gemWait = 2;
+    mock->ioctlExpected.gemClose = 2;
+
+    allocationData.size = MemoryConstants::pageSize;
+    allocationData.flags.preferCompressed = false;
+    auto allocation = memoryManager->allocateMemoryByKMD(allocationData);
+    EXPECT_NE(nullptr, allocation);
+    EXPECT_FALSE(allocation->getDefaultGmm()->isCompressionEnabled());
+    memoryManager->freeGraphicsMemory(allocation);
+
+    allocationData.flags.preferCompressed = true;
+    allocation = memoryManager->allocateMemoryByKMD(allocationData);
+    EXPECT_NE(nullptr, allocation);
+    EXPECT_TRUE(allocation->getDefaultGmm()->isCompressionEnabled());
     memoryManager->freeGraphicsMemory(allocation);
 }
 
@@ -5633,6 +5704,17 @@ TEST(DrmMemoryManagerSimpleTest, WhenDrmIsCreatedThenQueryPageFaultSupportIsCall
 
 using DrmMemoryManagerWithLocalMemoryTest = Test<DrmMemoryManagerWithLocalMemoryFixture>;
 
+HWTEST_TEMPLATED_F(DrmMemoryManagerWithLocalMemoryTest, givenDrmMemoryManagerWithoutLocalMemoryWhenPreferCompressedIsSetThenLocalOnlyRequriedDeterminedByReleaseHelper) {
+    TestedDrmMemoryManager memoryManager(false, false, false, *executionEnvironment);
+
+    AllocationProperties properties{1, true, 4096, AllocationType::unknown, false, 0b10};
+    properties.flags.preferCompressed = true;
+    auto storageInfo = memoryManager.createStorageInfoFromProperties(properties);
+
+    const auto *releaseHelper{executionEnvironment->rootDeviceEnvironments[0]->getReleaseHelper()};
+    EXPECT_EQ(storageInfo.localOnlyRequired, (!releaseHelper || releaseHelper->isLocalOnlyAllowed()));
+}
+
 HWTEST_TEMPLATED_F(DrmMemoryManagerWithLocalMemoryTest, givenDrmMemoryManagerWithLocalMemoryWhenLockResourceIsCalledOnAllocationInLocalMemoryThenReturnNullPtr) {
     DrmAllocation drmAllocation(rootDeviceIndex, 1u /*num gmms*/, AllocationType::unknown, nullptr, nullptr, 0u, 0u, MemoryPool::localMemory);
 
@@ -8967,4 +9049,17 @@ HWTEST_TEMPLATED_F(DrmMemoryManagerTest, givenGfxPartitionWhenReleasedAndReiniti
     EXPECT_EQ(heapExternalDeviceFrontWindow, heapExternalDeviceFrontWindow2);
     EXPECT_EQ(heapInternalFrontWindow, heapInternalFrontWindow2);
     EXPECT_EQ(heapInternalDeviceFrontWindow, heapInternalDeviceFrontWindow2);
+}
+
+HWTEST_TEMPLATED_F(DrmMemoryManagerTest, givenDeviceUsmAllocationWhenLocalOnlyFlagValueComputedThenProductHelperIsNotUsed) {
+    constexpr bool preferCompressed{false};
+    MockProductHelper productHelper{};
+
+    EXPECT_EQ(0U, productHelper.getStorageInfoLocalOnlyFlagCalled);
+
+    productHelper.getStorageInfoLocalOnlyFlagResult = false;
+    EXPECT_EQ(memoryManager->getLocalOnlyRequired(AllocationType::buffer, productHelper, nullptr, preferCompressed), true);
+    EXPECT_EQ(memoryManager->getLocalOnlyRequired(AllocationType::svmGpu, productHelper, nullptr, preferCompressed), true);
+
+    EXPECT_EQ(0U, productHelper.getStorageInfoLocalOnlyFlagCalled);
 }

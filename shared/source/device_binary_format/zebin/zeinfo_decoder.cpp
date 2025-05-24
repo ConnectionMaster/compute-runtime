@@ -686,6 +686,8 @@ DecodeError readZeInfoExecutionEnvironment(const Yaml::YamlParser &parser, const
             validExecEnv &= readZeInfoValueChecked(parser, execEnvMetadataNd, outExecEnv.privateSize, context, outErrReason);
         } else if (Tags::Kernel::ExecutionEnv::spillSize == key) {
             validExecEnv &= readZeInfoValueChecked(parser, execEnvMetadataNd, outExecEnv.spillSize, context, outErrReason);
+        } else if (Tags::Kernel::ExecutionEnv::implicitArgBufferUsedByCode == key) {
+            validExecEnv &= readZeInfoValueChecked(parser, execEnvMetadataNd, outExecEnv.hasImplicitArgBufferUsedByCode, context, outErrReason);
         } else if (Tags::Kernel::ExecutionEnv::actualKernelStartOffset == key) {
             // ignore intentionally - deprecated and redundant key
         } else {
@@ -718,6 +720,7 @@ void populateKernelExecutionEnvironment(KernelDescriptor &dst, const KernelExecu
     dst.kernelAttributes.flags.usesSystolicPipelineSelectMode = execEnv.hasDpas;
     dst.kernelAttributes.flags.usesStatelessWrites = (false == execEnv.hasNoStatelessWrite);
     dst.kernelAttributes.flags.hasSample = execEnv.hasSample;
+    dst.kernelAttributes.flags.requiresImplicitArgs = execEnv.hasImplicitArgBufferUsedByCode;
     dst.kernelAttributes.barrierCount = execEnv.barrierCount;
     dst.kernelAttributes.bufferAddressingMode = (execEnv.has4GBBuffers) ? KernelDescriptor::Stateless : KernelDescriptor::BindfulAndStateless;
     dst.kernelAttributes.inlineDataPayloadSize = static_cast<uint16_t>(execEnv.inlineDataPayloadSize);
@@ -801,6 +804,9 @@ DecodeError readZeInfoAttributes(const Yaml::YamlParser &parser, const Yaml::Nod
             outAttributes.invalidKernel = parser.readValue(attributesMetadataNd);
         } else if (key == Tags::Kernel::Attributes::vecTypeHint) {
             outAttributes.vecTypeHint = parser.readValue(attributesMetadataNd);
+        } else if (key == Tags::Kernel::Attributes::intelReqdThreadgroupDispatchSize) {
+            outAttributes.intelReqdThreadgroupDispatchSize = AttributeTypes::Defaults::intelReqdThreadgroupDispatchSize;
+            validAttributes &= readZeInfoValueChecked(parser, attributesMetadataNd, *outAttributes.intelReqdThreadgroupDispatchSize, context, outErrReason);
         } else if (key.contains(Tags::Kernel::Attributes::hintSuffix.data())) {
             outAttributes.otherHints.push_back({key, parser.readValue(attributesMetadataNd)});
         } else {
@@ -849,10 +855,12 @@ void populateKernelSourceAttributes(NEO::KernelDescriptor &dst, const KernelAttr
     appendAttributeIfSet(languageAttributes, AttributeTags::workgroupSizeHint, attributes.workgroupSizeHint);
     appendAttributeIfSet(languageAttributes, AttributeTags::vecTypeHint, attributes.vecTypeHint);
     appendAttributeIfSet(languageAttributes, AttributeTags::invalidKernel, attributes.invalidKernel);
+    appendAttributeIfSet(languageAttributes, AttributeTags::intelReqdThreadgroupDispatchSize, attributes.intelReqdThreadgroupDispatchSize);
 
     dst.kernelAttributes.flags.isInvalid = attributes.invalidKernel.has_value();
     dst.kernelAttributes.flags.requiresWorkgroupWalkOrder = attributes.intelReqdWorkgroupWalkOrder.has_value();
     dst.kernelMetadata.requiredSubGroupSize = static_cast<uint8_t>(attributes.intelReqdSubgroupSize.value_or(0U));
+    dst.kernelMetadata.requiredThreadGroupDispatchSize = static_cast<uint8_t>(attributes.intelReqdThreadgroupDispatchSize.value_or(0U));
 }
 
 DecodeError decodeZeInfoKernelDebugEnvironment(KernelDescriptor &dst, Yaml::YamlParser &parser, const ZeInfoKernelSections &kernelSections, std::string &outErrReason, std::string &outWarning) {
