@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2024 Intel Corporation
+ * Copyright (C) 2018-2025 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -30,6 +30,12 @@ class MockCsrBase : public UltCommandStreamReceiver<GfxFamily> {
                 uint32_t rootDeviceIndex,
                 const DeviceBitfield deviceBitfield)
         : BaseUltCsrClass(executionEnvironment, rootDeviceIndex, deviceBitfield), executionStamp(&execStamp), flushTaskStamp(-1) {
+    }
+
+    MockCsrBase(ExecutionEnvironment &executionEnvironment,
+                uint32_t rootDeviceIndex,
+                const DeviceBitfield deviceBitfield)
+        : BaseUltCsrClass(executionEnvironment, rootDeviceIndex, deviceBitfield), executionStamp(&defaultExecStamp), flushTaskStamp(-1) {
     }
 
     void makeResident(GraphicsAllocation &gfxAllocation) override {
@@ -81,6 +87,7 @@ class MockCsrBase : public UltCommandStreamReceiver<GfxFamily> {
     int32_t flushTaskStamp;
     uint32_t waitForTaskCountWithKmdNotifyFallbackCalled = 0;
     bool processEvictionCalled = false;
+    int32_t defaultExecStamp;
 };
 
 template <typename GfxFamily>
@@ -94,9 +101,15 @@ class MockCsrAub : public MockCsrBase<GfxFamily> {
                uint32_t rootDeviceIndex,
                const DeviceBitfield deviceBitfield)
         : MockCsrBase<GfxFamily>(execStamp, executionEnvironment, rootDeviceIndex, deviceBitfield) {}
+    MockCsrAub(ExecutionEnvironment &executionEnvironment,
+               uint32_t rootDeviceIndex,
+               const DeviceBitfield deviceBitfield)
+        : MockCsrBase<GfxFamily>(MockCsrBase<GfxFamily>::defaultExecStamp, executionEnvironment, rootDeviceIndex, deviceBitfield) {}
     CommandStreamReceiverType getType() const override {
         return CommandStreamReceiverType::aub;
     }
+
+    int32_t defaultExecStamp = 1;
 };
 
 template <typename GfxFamily>
@@ -113,6 +126,11 @@ class MockCsr : public MockCsrBase<GfxFamily> {
             uint32_t rootDeviceIndex,
             const DeviceBitfield deviceBitfield)
         : BaseClass(execStamp, executionEnvironment, rootDeviceIndex, deviceBitfield) {
+    }
+    MockCsr(ExecutionEnvironment &executionEnvironment,
+            uint32_t rootDeviceIndex,
+            const DeviceBitfield deviceBitfield)
+        : BaseClass(BaseClass::defaultExecStamp, executionEnvironment, rootDeviceIndex, deviceBitfield) {
     }
 
     SubmissionStatus flush(BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
@@ -175,6 +193,7 @@ class MockCsr : public MockCsrBase<GfxFamily> {
 
     bool slmUsedInLastFlushTask = false;
     TaskCountType lastTaskLevelToFlushTask = 0;
+    int32_t defaultExecStamp = 0;
 };
 
 template <typename GfxFamily>

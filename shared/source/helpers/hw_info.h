@@ -11,7 +11,7 @@
 #include "shared/source/helpers/kmd_notify_properties.h"
 
 #include "gtsysinfo.h"
-#include "igfxfmid.h"
+#include "neo_igfxfmid.h"
 #include "sku_info.h"
 
 namespace NEO {
@@ -131,6 +131,7 @@ struct HardwareInfo { // NOLINT(clang-analyzer-optin.performance.Padding)
     alignas(4) GT_SYSTEM_INFO gtSystemInfo{};
     alignas(8) RuntimeCapabilityTable capabilityTable{};
     alignas(8) HardwareIpVersion ipVersion{};
+    alignas(8) HardwareIpVersion ipVersionOverrideExposedToTheApplication{};
 };
 
 // Global table of hardware prefixes

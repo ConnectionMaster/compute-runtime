@@ -107,6 +107,16 @@ class WddmMemoryManagerTests : public ::testing::Test {
     }
 };
 
+TEST_F(WddmMemoryManagerTests, GivenLocalMemoryAllocationModeReleaseKeyWhenWddmMemoryManagerConstructedThenUsmDeviceAllocationModeProperlySet) {
+    DebugManagerStateRestore restorer;
+
+    for (const int32_t releaseKeyVal : std::array{0, 1, 2}) {
+        debugManager.flags.NEO_LOCAL_MEMORY_ALLOCATION_MODE.set(releaseKeyVal);
+        WddmMemoryManager memoryManager{*executionEnvironment};
+        EXPECT_EQ(memoryManager.usmDeviceAllocationMode, toLocalMemAllocationMode(releaseKeyVal));
+    }
+}
+
 TEST_F(WddmMemoryManagerTests, GivenAllocDataWithSVMCPUSetWhenAllocateGraphicsMemoryWithAlignmentThenProperFunctionIsUsed) {
     AllocationProperties allocationProperties{0u, 0u, NEO::AllocationType::svmCpu, {}};
     NEO::AllocationData allocData = {};
@@ -1444,10 +1454,11 @@ TEST_F(WddmMemoryManagerSimpleTest, givenLocalMemoryKernelIsaWithMemoryCopiedWhe
     memoryManager->freeGraphicsMemory(allocation);
     if (makeResidentPriorToLockRequired) {
         EXPECT_EQ(1u, mockTemporaryResources->removeResourceResult.called);
+        EXPECT_EQ(1u, mockTemporaryResources->evictResourceResult.called);
     } else {
         EXPECT_EQ(0u, mockTemporaryResources->removeResourceResult.called);
+        EXPECT_EQ(0u, mockTemporaryResources->evictResourceResult.called);
     }
-    EXPECT_EQ(0u, mockTemporaryResources->evictResourceResult.called);
 }
 TEST_F(WddmMemoryManagerSimpleTest, whenDestroyingNotLockedAllocationThatDoesntNeedMakeResidentBeforeLockThenDontEvictAllocationFromWddmTemporaryResources) {
     DebugManagerStateRestore restorer;

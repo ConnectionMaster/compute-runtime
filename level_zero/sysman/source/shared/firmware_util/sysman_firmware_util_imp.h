@@ -55,6 +55,9 @@ typedef int (*pIgscIfrGetStatusExt)(struct igsc_device_handle *handle,
                                     uint32_t *ifrApplied,
                                     uint32_t *prevErrors,
                                     uint32_t *pendingReset);
+
+typedef int (*pIgscDevicePscVersion)(struct igsc_device_handle *handle,
+                                     struct igsc_psc_version *version);
 typedef int (*pIgscIafPscUpdate)(struct igsc_device_handle *handle,
                                  const uint8_t *buffer,
                                  const uint32_t bufferLen,
@@ -74,14 +77,17 @@ typedef int (*pIgscIfrRunMemPPRTest)(struct igsc_device_handle *handle,
                                      uint32_t *pendingReset,
                                      uint32_t *errorCode);
 
-typedef int (*pIgscGetEccConfig)(struct igsc_device_handle *handle,
-                                 uint8_t *curEccState,
-                                 uint8_t *penEccState);
+typedef int (*pIgscGfspHeciCmd)(struct igsc_device_handle *handle,
+                                uint32_t gfspCmd,
+                                uint8_t *inBuffer,
+                                size_t inBufferSize,
+                                uint8_t *outBuffer,
+                                size_t outBufferSize,
+                                size_t *actualOutBufferSize);
 
-typedef int (*pIgscSetEccConfig)(struct igsc_device_handle *handle,
-                                 uint8_t reqEccState,
-                                 uint8_t *curEccState,
-                                 uint8_t *penEccState);
+extern const std::string fwDeviceFwVersion;
+extern const std::string fwDeviceOpromVersion;
+extern const std::string fwDevicePscVersion;
 
 extern pIgscDeviceInitByDevice deviceInitByDevice;
 extern pIgscDeviceGetDeviceInfo deviceGetDeviceInfo;
@@ -96,12 +102,12 @@ extern pIgscDeviceOpromUpdate deviceOpromUpdate;
 extern pIgscDeviceOpromVersion deviceOpromVersion;
 extern pIgscDeviceClose deviceClose;
 extern pIgscIfrGetStatusExt deviceIfrGetStatusExt;
+extern pIgscDevicePscVersion deviceGetPscVersion;
 extern pIgscIafPscUpdate iafPscUpdate;
 extern pIgscGfspMemoryErrors gfspMemoryErrors;
 extern pIgscGfspCountTiles gfspCountTiles;
 extern pIgscIfrRunMemPPRTest deviceIfrRunMemPPRTest;
-extern pIgscGetEccConfig getEccConfig;
-extern pIgscSetEccConfig setEccConfig;
+extern pIgscGfspHeciCmd gfspHeciCmd;
 
 extern void firmwareFlashProgressFunc(uint32_t done, uint32_t total, void *ctx);
 
@@ -109,6 +115,38 @@ typedef struct {
     uint32_t completionPercent;
     std::mutex fwProgressLock;
 } FlashProgressInfo;
+
+namespace GfspHeciConstants {
+enum Cmd {
+    setEccConfigurationCmd8 = 0x8,
+    getEccConfigurationCmd9 = 0x9,
+    setEccConfigurationCmd15 = 0xf,
+    getEccConfigurationCmd16 = 0x10
+};
+
+enum SetEccCmd15BytePostition {
+    request = 0,
+    response = 0
+};
+
+enum SetEccCmd8BytePostition {
+    setRequest = 0,
+    responseCurrentState = 0,
+    responsePendingState = 1
+};
+
+enum GetEccCmd16BytePostition {
+    eccAvailable = 0,
+    eccCurrentState = 4,
+    eccConfigurable = 8,
+    eccPendingState = 12
+};
+
+enum GetEccCmd9BytePostition {
+    currentState = 0,
+    pendingState = 1
+};
+} // namespace GfspHeciConstants
 
 class FirmwareUtilImp : public FirmwareUtil, NEO::NonCopyableAndNonMovableClass {
   public:
@@ -122,6 +160,8 @@ class FirmwareUtilImp : public FirmwareUtil, NEO::NonCopyableAndNonMovableClass 
     ze_result_t fwSupportedDiagTests(std::vector<std::string> &supportedDiagTests) override;
     ze_result_t fwRunDiagTests(std::string &osDiagType, zes_diag_result_t *pDiagResult) override;
     ze_result_t fwGetMemoryErrorCount(zes_ras_error_type_t type, uint32_t subDeviceCount, uint32_t subDeviceId, uint64_t &count) override;
+    ze_result_t fwGetEccAvailable(ze_bool_t *pAvailable) override;
+    ze_result_t fwGetEccConfigurable(ze_bool_t *pConfigurable) override;
     ze_result_t fwGetEccConfig(uint8_t *currentState, uint8_t *pendingState) override;
     ze_result_t fwSetEccConfig(uint8_t newState, uint8_t *currentState, uint8_t *pendingState) override;
     void getDeviceSupportedFwTypes(std::vector<std::string> &fwTypes) override;

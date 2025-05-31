@@ -11,6 +11,7 @@
 #include "shared/source/utilities/reference_tracked_object.h"
 
 #include <mutex>
+#include <optional>
 
 namespace NEO {
 class OSInterface;
@@ -35,6 +36,11 @@ class OsContext : public ReferenceTrackedObject<OsContext> {
     const aub_stream::EngineType &getEngineType() const { return engineType; }
     EngineUsage getEngineUsage() const { return engineUsage; }
     void overrideEngineUsage(EngineUsage usage) { engineUsage = usage; }
+    void overridePriority(int newPriority) {
+        if (!priorityLevel.has_value()) {
+            priorityLevel = newPriority;
+        }
+    }
 
     bool isRegular() const { return engineUsage == EngineUsage::regular; }
     bool isLowPriority() const { return engineUsage == EngineUsage::lowPriority; }
@@ -55,6 +61,8 @@ class OsContext : public ReferenceTrackedObject<OsContext> {
                                              bool &startOnInit,
                                              bool &startInContext);
     virtual void reInitializeContext() {}
+
+    inline static constexpr uint8_t getUmdPowerHintMax() { return NEO::OsContext::powerHintMax; }
     uint8_t getUmdPowerHintValue() { return powerHintValue; }
     void setUmdPowerHintValue(uint8_t powerHintValue) { this->powerHintValue = powerHintValue; }
 
@@ -113,6 +121,7 @@ class OsContext : public ReferenceTrackedObject<OsContext> {
     const uint32_t numSupportedDevices;
     aub_stream::EngineType engineType = aub_stream::ENGINE_RCS;
     EngineUsage engineUsage;
+    std::optional<int> priorityLevel;
     const bool rootDevice = false;
     bool defaultContext = false;
     bool directSubmissionActive = false;
@@ -120,6 +129,7 @@ class OsContext : public ReferenceTrackedObject<OsContext> {
     bool contextInitialized = false;
     bool debuggableContext = false;
     uint8_t powerHintValue = 0;
+    static constexpr inline uint8_t powerHintMax = 100u; // by definition: 100% power-saving
 
     bool isContextGroup = false;
     const OsContext *primaryContext = nullptr;

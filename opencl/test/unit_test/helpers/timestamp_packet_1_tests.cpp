@@ -227,7 +227,7 @@ HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledWhenEstimatingStr
 
     size_t sizeForPipeControl = 0;
     if (isResolveDependenciesByPipeControlsEnabled) {
-        sizeForPipeControl = MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier(false);
+        sizeForPipeControl = MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier();
     }
 
     size_t extendedSize = sizeWithDisabled + EnqueueOperation<FamilyType>::getSizeRequiredForTimestampPacketWrite() + sizeForNodeDependency + sizeForPipeControl;
@@ -416,7 +416,7 @@ HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledWhenEnqueueingThe
 
 HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledWhenEnqueueingThenWriteWalkerStamp) {
     DebugManagerStateRestore restorer{};
-    debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    debugManager.flags.EnableL3FlushAfterPostSync.set(0);
     using WalkerVariant = typename FamilyType::WalkerVariant;
     using PIPE_CONTROL = typename FamilyType::PIPE_CONTROL;
 
@@ -1332,11 +1332,12 @@ HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledOnDifferentCSRsFr
     verifySemaphore<FamilyType>(genCmdCast<MI_SEMAPHORE_WAIT *>(*(queueSemaphores[4])), timestamp6.getNode(1), 0);
 }
 
-HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledWhenEnqueueingBlockedThenProgramSemaphoresOnQueueStreamOnFlush) {
+using TimestampPacketTestsWithMockCsrHw2 = TimestampPacketTestsWithMockCsrT<MockCsrHw2>;
+
+HWTEST_TEMPLATED_F(TimestampPacketTestsWithMockCsrHw2, givenTimestampPacketWriteEnabledWhenEnqueueingBlockedThenProgramSemaphoresOnQueueStreamOnFlush) {
     using MI_SEMAPHORE_WAIT = typename FamilyType::MI_SEMAPHORE_WAIT;
 
-    auto mockCsr = new MockCsrHw2<FamilyType>(*device->getExecutionEnvironment(), device->getRootDeviceIndex(), device->getDeviceBitfield());
-    device->resetCommandStreamReceiver(mockCsr);
+    auto mockCsr = static_cast<MockCsrHw2<FamilyType> *>(&device->getGpgpuCommandStreamReceiver());
     mockCsr->timestampPacketWriteEnabled = true;
     mockCsr->storeFlushedTaskStream = true;
 
@@ -1358,6 +1359,9 @@ HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledWhenEnqueueingBlo
 
     cl_event waitlist[] = {&userEvent, &event0, &event1};
     cmdQ1->enqueueKernel(kernel->mockKernel, 1, nullptr, gws, nullptr, 3, waitlist, nullptr);
+
+    mockCsr->commandStream.replaceBuffer(mockCsr->commandStream.getCpuBase(), mockCsr->commandStream.getMaxAvailableSpace());
+
     auto initialCsrStreamOffset = mockCsr->commandStream.getUsed();
     EXPECT_EQ(0u, initialCsrStreamOffset);
     userEvent.setStatus(CL_COMPLETE);
@@ -1396,11 +1400,10 @@ HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledWhenEnqueueingBlo
     context2->release();
 }
 
-HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledOnDifferentCSRsFromOneDeviceWhenEnqueueingBlockedThenProgramSemaphoresOnQueueStreamOnFlush) {
+HWTEST_TEMPLATED_F(TimestampPacketTestsWithMockCsrHw2, givenTimestampPacketWriteEnabledOnDifferentCSRsFromOneDeviceWhenEnqueueingBlockedThenProgramSemaphoresOnQueueStreamOnFlush) {
     using MI_SEMAPHORE_WAIT = typename FamilyType::MI_SEMAPHORE_WAIT;
 
-    auto mockCsr = new MockCsrHw2<FamilyType>(*device->getExecutionEnvironment(), device->getRootDeviceIndex(), device->getDeviceBitfield());
-    device->resetCommandStreamReceiver(mockCsr);
+    auto mockCsr = static_cast<MockCsrHw2<FamilyType> *>(&device->getGpgpuCommandStreamReceiver());
     mockCsr->timestampPacketWriteEnabled = true;
     mockCsr->storeFlushedTaskStream = true;
 
@@ -1422,6 +1425,8 @@ HWTEST_F(TimestampPacketTests, givenTimestampPacketWriteEnabledOnDifferentCSRsFr
 
     cl_event waitlist[] = {&userEvent, &event0, &event1};
     cmdQ1->enqueueKernel(kernel->mockKernel, 1, nullptr, gws, nullptr, 3, waitlist, nullptr);
+
+    mockCsr->commandStream.replaceBuffer(mockCsr->commandStream.getCpuBase(), mockCsr->commandStream.getMaxAvailableSpace());
 
     auto initialCsrStreamOffset = mockCsr->commandStream.getUsed();
     EXPECT_EQ(0u, initialCsrStreamOffset);

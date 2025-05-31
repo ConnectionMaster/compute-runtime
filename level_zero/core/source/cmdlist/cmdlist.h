@@ -19,11 +19,13 @@
 #include "shared/source/unified_memory/unified_memory.h"
 #include "shared/source/utilities/stackvec.h"
 
-#include "level_zero/core/source/cmdlist/cmdlist_launch_params.h"
+#include "level_zero/core/source/cmdlist/command_to_patch.h"
 #include "level_zero/core/source/helpers/api_handle_helper.h"
 #include "level_zero/include/level_zero/ze_intel_gpu.h"
 #include <level_zero/ze_api.h>
 #include <level_zero/zet_api.h>
+
+#include "copy_offload_mode.h"
 
 #include <map>
 #include <optional>
@@ -44,6 +46,8 @@ struct EventPool;
 struct Event;
 struct Kernel;
 struct CommandQueue;
+struct CmdListKernelLaunchParams;
+struct CmdListMemoryCopyParams;
 
 struct CmdListReturnPoint {
     NEO::StreamProperties configSnapshot;
@@ -88,31 +92,31 @@ struct CommandList : _ze_command_list_handle_t {
     virtual ze_result_t appendImageCopyFromMemory(ze_image_handle_t hDstImage, const void *srcptr,
                                                   const ze_image_region_t *pDstRegion,
                                                   ze_event_handle_t hEvent, uint32_t numWaitEvents,
-                                                  ze_event_handle_t *phWaitEvents, bool relaxedOrderingDispatch) = 0;
+                                                  ze_event_handle_t *phWaitEvents, CmdListMemoryCopyParams &memoryCopyParams) = 0;
     virtual ze_result_t appendImageCopyToMemory(void *dstptr, ze_image_handle_t hSrcImage,
                                                 const ze_image_region_t *pSrcRegion,
                                                 ze_event_handle_t hEvent, uint32_t numWaitEvents,
-                                                ze_event_handle_t *phWaitEvents, bool relaxedOrderingDispatch) = 0;
+                                                ze_event_handle_t *phWaitEvents, CmdListMemoryCopyParams &memoryCopyParams) = 0;
     virtual ze_result_t appendImageCopyFromMemoryExt(ze_image_handle_t hDstImage, const void *srcptr,
                                                      const ze_image_region_t *pDstRegion,
                                                      uint32_t srcRowPitch, uint32_t srcSlicePitch,
                                                      ze_event_handle_t hEvent, uint32_t numWaitEvents,
-                                                     ze_event_handle_t *phWaitEvents, bool relaxedOrderingDispatch) = 0;
+                                                     ze_event_handle_t *phWaitEvents, CmdListMemoryCopyParams &memoryCopyParams) = 0;
     virtual ze_result_t appendImageCopyToMemoryExt(void *dstptr, ze_image_handle_t hSrcImage,
                                                    const ze_image_region_t *pSrcRegion,
                                                    uint32_t destRowPitch, uint32_t destSlicePitch,
                                                    ze_event_handle_t hEvent, uint32_t numWaitEvents,
-                                                   ze_event_handle_t *phWaitEvents, bool relaxedOrderingDispatch) = 0;
+                                                   ze_event_handle_t *phWaitEvents, CmdListMemoryCopyParams &memoryCopyParams) = 0;
     virtual ze_result_t appendImageCopyRegion(ze_image_handle_t hDstImage, ze_image_handle_t hSrcImage,
                                               const ze_image_region_t *pDstRegion, const ze_image_region_t *pSrcRegion,
                                               ze_event_handle_t hSignalEvent, uint32_t numWaitEvents,
-                                              ze_event_handle_t *phWaitEvents, bool relaxedOrderingDispatch) = 0;
+                                              ze_event_handle_t *phWaitEvents, CmdListMemoryCopyParams &memoryCopyParams) = 0;
     virtual ze_result_t appendImageCopy(ze_image_handle_t hDstImage, ze_image_handle_t hSrcImage,
                                         ze_event_handle_t hEvent, uint32_t numWaitEvents,
-                                        ze_event_handle_t *phWaitEvents, bool relaxedOrderingDispatch) = 0;
+                                        ze_event_handle_t *phWaitEvents, CmdListMemoryCopyParams &memoryCopyParams) = 0;
     virtual ze_result_t appendLaunchKernel(ze_kernel_handle_t kernelHandle, const ze_group_count_t &threadGroupDimensions,
                                            ze_event_handle_t hEvent, uint32_t numWaitEvents, ze_event_handle_t *phWaitEvents,
-                                           CmdListKernelLaunchParams &launchParams, bool relaxedOrderingDispatch) = 0;
+                                           CmdListKernelLaunchParams &launchParams) = 0;
     virtual ze_result_t appendLaunchKernelIndirect(ze_kernel_handle_t kernelHandle,
                                                    const ze_group_count_t &pDispatchArgumentsBuffer,
                                                    ze_event_handle_t hEvent, uint32_t numWaitEvents,

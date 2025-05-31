@@ -405,7 +405,6 @@ TEST_F(KernelImpSetGroupSizeTest, givenLocalIdGenerationByRuntimeEnabledWhenSett
         mockKernel.descriptor.kernelAttributes.simdSize,
         groupSize[0] * groupSize[1] * groupSize[2],
         numGrf,
-        mockKernel.kernelRequiresGenerationOfLocalIdsByRuntime,
         rootDeviceEnvironment);
     auto perThreadDataSizeForWholeTGNeeded =
         static_cast<uint32_t>(NEO::PerThreadDataHelper::getPerThreadDataSizeTotal(
@@ -414,7 +413,6 @@ TEST_F(KernelImpSetGroupSizeTest, givenLocalIdGenerationByRuntimeEnabledWhenSett
             numGrf,
             mockKernel.descriptor.kernelAttributes.numLocalIdChannels,
             groupSize[0] * groupSize[1] * groupSize[2],
-            !mockKernel.kernelRequiresGenerationOfLocalIdsByRuntime,
             rootDeviceEnvironment));
 
     EXPECT_EQ(numThreadsPerTG, mockKernel.getNumThreadsPerThreadGroup());
@@ -1968,7 +1966,7 @@ TEST_F(KernelPropertiesTests, whenPassingKernelMaxGroupSizePropertiesStructToGet
     EXPECT_EQ(ZE_RESULT_SUCCESS, res);
     auto &device = *module->getDevice();
     auto &gfxCoreHelper = device.getGfxCoreHelper();
-    uint32_t maxKernelWorkGroupSize = gfxCoreHelper.adjustMaxWorkGroupSize(kernelDescriptor.kernelAttributes.numGrfRequired, kernelDescriptor.kernelAttributes.simdSize, false, static_cast<uint32_t>(this->module->getMaxGroupSize(kernelDescriptor)), device.getNEODevice()->getRootDeviceEnvironment());
+    uint32_t maxKernelWorkGroupSize = gfxCoreHelper.adjustMaxWorkGroupSize(kernelDescriptor.kernelAttributes.numGrfRequired, kernelDescriptor.kernelAttributes.simdSize, static_cast<uint32_t>(this->module->getMaxGroupSize(kernelDescriptor)), device.getNEODevice()->getRootDeviceEnvironment());
     EXPECT_EQ(maxKernelWorkGroupSize, maxGroupSizeProperties.maxGroupSize);
 }
 
@@ -2100,7 +2098,7 @@ TEST_F(KernelPropertiesTests, givenValidKernelWithIndirectAccessFlagsAndDisableI
     EXPECT_TRUE(unifiedMemoryControls.indirectSharedAllocationsAllowed);
 }
 
-HWTEST2_F(KernelPropertiesTests, whenHasRTCallsIsTrueThenUsesRayTracingIsTrue, MatchAny) {
+HWTEST_F(KernelPropertiesTests, whenHasRTCallsIsTrueThenUsesRayTracingIsTrue) {
     WhiteBoxKernelHw<FamilyType::gfxCoreFamily> mockKernel;
     KernelDescriptor mockDescriptor = {};
     mockDescriptor.kernelAttributes.flags.hasRTCalls = true;
@@ -2112,7 +2110,7 @@ HWTEST2_F(KernelPropertiesTests, whenHasRTCallsIsTrueThenUsesRayTracingIsTrue, M
     EXPECT_TRUE(mockKernel.usesRayTracing());
 }
 
-HWTEST2_F(KernelPropertiesTests, whenHasRTCallsIsFalseThenUsesRayTracingIsFalse, MatchAny) {
+HWTEST_F(KernelPropertiesTests, whenHasRTCallsIsFalseThenUsesRayTracingIsFalse) {
     WhiteBoxKernelHw<FamilyType::gfxCoreFamily> mockKernel;
     KernelDescriptor mockDescriptor = {};
     mockDescriptor.kernelAttributes.flags.hasRTCalls = false;
@@ -2435,7 +2433,7 @@ TEST_F(KernelImpPatchBindlessTest, GivenKernelImpWhenPatchBindlessOffsetCalledTh
     neoDevice->decRefInternal();
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenBindlessKernelAndNoGlobalBindlessAllocatorWhenInitializedThenBindlessOffsetSetAndUsingSurfaceStateAreFalse, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenBindlessKernelAndNoGlobalBindlessAllocatorWhenInitializedThenBindlessOffsetSetAndUsingSurfaceStateAreFalse) {
     ModuleBuildLog *moduleBuildLog = nullptr;
     this->module.reset(new WhiteBox<::L0::Module>{this->device, moduleBuildLog, ModuleType::user});
     this->createModuleFromMockBinary(ModuleType::user);
@@ -2459,7 +2457,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenBindlessKernelAndNoGlobalBindlessAllo
     EXPECT_FALSE(mockKernel.usingSurfaceStateHeap[0]);
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindlessThenSurfaceStateUpdated, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindlessThenSurfaceStateUpdated) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     ze_kernel_desc_t desc = {};
@@ -2497,7 +2495,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindlessT
     EXPECT_FALSE(mockKernel.usingSurfaceStateHeap[0]);
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedBufferAddressWhenSettingSurfaceStateThenSurfaceStateInKernelHeapIsUsed, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenMisalignedBufferAddressWhenSettingSurfaceStateThenSurfaceStateInKernelHeapIsUsed) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     ze_kernel_desc_t desc = {};
@@ -2546,7 +2544,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedBufferAddressWhenSettingSur
     EXPECT_EQ(mockKernel.surfaceStateHeapDataSize, mockKernel.getSurfaceStateHeapDataSize());
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedAndAlignedBufferAddressWhenSettingSurfaceStateThenKernelReportsNonZeroSurfaceStateHeapDataSize, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenMisalignedAndAlignedBufferAddressWhenSettingSurfaceStateThenKernelReportsNonZeroSurfaceStateHeapDataSize) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     ze_kernel_desc_t desc = {};
@@ -2596,7 +2594,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedAndAlignedBufferAddressWhen
     EXPECT_EQ(mockKernel.surfaceStateHeapDataSize, mockKernel.getSurfaceStateHeapDataSize());
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindfulThenSurfaceStateNotUpdated, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindfulThenSurfaceStateNotUpdated) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
     ze_kernel_desc_t desc = {};
     desc.pKernelName = kernelName.c_str();
@@ -2632,7 +2630,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindfulTh
 
 using KernelImpL3CachingTests = Test<ModuleFixture>;
 
-HWTEST2_F(KernelImpL3CachingTests, GivenKernelImpWhenSetSurfaceStateWithUnalignedMemoryThenL3CachingIsDisabled, MatchAny) {
+HWTEST_F(KernelImpL3CachingTests, GivenKernelImpWhenSetSurfaceStateWithUnalignedMemoryThenL3CachingIsDisabled) {
     ze_kernel_desc_t desc = {};
     desc.pKernelName = kernelName.c_str();
 
@@ -3380,7 +3378,7 @@ HWTEST2_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgRed
     EXPECT_EQ(nullptr, bindlessInfo.heapAllocation);
 }
 
-HWTEST2_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgBufferCalledThenOutOfMemoryErrorReturned, MatchAny) {
+HWTEST_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgBufferCalledThenOutOfMemoryErrorReturned) {
 
     auto mockMemManager = static_cast<MockMemoryManager *>(neoDevice->getMemoryManager());
     auto bindlessHelper = new MockBindlesHeapsHelper(neoDevice,
@@ -3411,7 +3409,7 @@ HWTEST2_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgBuf
     svmAllocsManager->freeSVMAlloc(svmAllocation);
 }
 
-HWTEST2_F(SetKernelArg, givenSlmPointerWhenSettingKernelArgThenPropertyIsSaved, MatchAny) {
+HWTEST_F(SetKernelArg, givenSlmPointerWhenSettingKernelArgThenPropertyIsSaved) {
     ze_kernel_desc_t desc = {};
     desc.pKernelName = kernelName.c_str();
     WhiteBoxKernelHw<FamilyType::gfxCoreFamily> mockKernel;

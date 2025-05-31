@@ -65,7 +65,6 @@ TbxCommandStreamReceiverHw<GfxFamily>::TbxCommandStreamReceiverHw(ExecutionEnvir
     this->aubDeviceId = debugDeviceId == -1
                             ? this->peekHwInfo().capabilityTable.aubDeviceId
                             : static_cast<uint32_t>(debugDeviceId);
-    this->stream = &tbxStream;
     this->downloadAllocationImpl = [this](GraphicsAllocation &graphicsAllocation) {
         this->downloadAllocationTbx(graphicsAllocation);
     };
@@ -78,8 +77,6 @@ TbxCommandStreamReceiverHw<GfxFamily>::~TbxCommandStreamReceiverHw() {
     if (streamInitialized) {
         tbxStream.close();
     }
-
-    this->freeEngineInfo(gttRemap);
 }
 
 template <typename GfxFamily>
@@ -147,84 +144,6 @@ void TbxCommandStreamReceiverHw<GfxFamily>::initializeEngine() {
         return;
     }
     DEBUG_BREAK_IF(this->aubManager);
-
-    auto csTraits = this->getCsTraits(osContext->getEngineType());
-
-    if (engineInfo.pLRCA) {
-        return;
-    }
-
-    this->initGlobalMMIO();
-    this->initEngineMMIO();
-    this->initAdditionalMMIO();
-
-    // Global HW Status Page
-    {
-        const size_t sizeHWSP = 0x1000;
-        const size_t alignHWSP = 0x1000;
-        engineInfo.pGlobalHWStatusPage = alignedMalloc(sizeHWSP, alignHWSP);
-        engineInfo.ggttHWSP = gttRemap.map(engineInfo.pGlobalHWStatusPage, sizeHWSP);
-        auto physHWSP = ggtt->map(engineInfo.ggttHWSP, sizeHWSP, this->getGTTBits(), this->getMemoryBankForGtt());
-
-        // Write our GHWSP
-        AubGTTData data = {0};
-        this->getGTTData(reinterpret_cast<void *>(physHWSP), data);
-        AUB::reserveAddressGGTT(tbxStream, engineInfo.ggttHWSP, sizeHWSP, physHWSP, data);
-        tbxStream.writeMMIO(AubMemDump::computeRegisterOffset(csTraits.mmioBase, 0x2080), engineInfo.ggttHWSP);
-    }
-
-    // Allocate the LRCA
-    const size_t sizeLRCA = csTraits.sizeLRCA;
-    const size_t alignLRCA = csTraits.alignLRCA;
-    auto pLRCABase = alignedMalloc(sizeLRCA, alignLRCA);
-    engineInfo.pLRCA = pLRCABase;
-
-    // Initialize the LRCA to a known state
-    csTraits.initialize(pLRCABase);
-
-    // Reserve the RCS ring buffer
-    engineInfo.sizeRingBuffer = 0x4 * 0x1000;
-    {
-        const size_t alignRCS = 0x1000;
-        engineInfo.pRingBuffer = alignedMalloc(engineInfo.sizeRingBuffer, alignRCS);
-        engineInfo.ggttRingBuffer = gttRemap.map(engineInfo.pRingBuffer, engineInfo.sizeRingBuffer);
-        auto physRCS = ggtt->map(engineInfo.ggttRingBuffer, engineInfo.sizeRingBuffer, this->getGTTBits(), this->getMemoryBankForGtt());
-
-        AubGTTData data = {0};
-        this->getGTTData(reinterpret_cast<void *>(physRCS), data);
-        AUB::reserveAddressGGTT(tbxStream, engineInfo.ggttRingBuffer, engineInfo.sizeRingBuffer, physRCS, data);
-    }
-
-    // Initialize the ring MMIO registers
-    {
-        uint32_t ringHead = 0x000;
-        uint32_t ringTail = 0x000;
-        auto ringBase = engineInfo.ggttRingBuffer;
-        auto ringCtrl = (uint32_t)((engineInfo.sizeRingBuffer - 0x1000) | 1);
-        csTraits.setRingHead(pLRCABase, ringHead);
-        csTraits.setRingTail(pLRCABase, ringTail);
-        csTraits.setRingBase(pLRCABase, ringBase);
-        csTraits.setRingCtrl(pLRCABase, ringCtrl);
-    }
-
-    // Write our LRCA
-    {
-        engineInfo.ggttLRCA = gttRemap.map(engineInfo.pLRCA, sizeLRCA);
-        auto lrcAddressPhys = ggtt->map(engineInfo.ggttLRCA, sizeLRCA, this->getGTTBits(), this->getMemoryBankForGtt());
-
-        AubGTTData data = {0};
-        this->getGTTData(reinterpret_cast<void *>(lrcAddressPhys), data);
-        AUB::reserveAddressGGTT(tbxStream, engineInfo.ggttLRCA, sizeLRCA, lrcAddressPhys, data);
-        AUB::addMemoryWrite(
-            tbxStream,
-            lrcAddressPhys,
-            pLRCABase,
-            sizeLRCA,
-            this->getAddressSpace(csTraits.aubHintLRCA),
-            csTraits.aubHintLRCA);
-    }
-
-    DEBUG_BREAK_IF(!engineInfo.pLRCA);
 }
 
 template <typename GfxFamily>
@@ -237,7 +156,6 @@ CommandStreamReceiver *TbxCommandStreamReceiverHw<GfxFamily>::create(const std::
     auto &rootDeviceEnvironment = *executionEnvironment.rootDeviceEnvironments[rootDeviceIndex];
     auto &hwInfo = *rootDeviceEnvironment.getHardwareInfo();
     auto &gfxCoreHelper = rootDeviceEnvironment.getHelper<GfxCoreHelper>();
-    const auto &productHelper = rootDeviceEnvironment.getHelper<ProductHelper>();
     if (withAubDump) {
         auto localMemoryEnabled = gfxCoreHelper.getEnableLocalMemory(hwInfo);
         auto fullName = AUBCommandStreamReceiver::createFullFilePath(hwInfo, baseName, rootDeviceIndex);
@@ -266,15 +184,6 @@ CommandStreamReceiver *TbxCommandStreamReceiverHw<GfxFamily>::create(const std::
         }
     } else {
         csr = new TbxCommandStreamReceiverHw<GfxFamily>(executionEnvironment, rootDeviceIndex, deviceBitfield);
-    }
-
-    if (!csr->aubManager) {
-        // Open our stream
-        csr->stream->open(nullptr);
-
-        // Add the file header.
-        bool streamInitialized = csr->stream->init(productHelper.getAubStreamSteppingFromHwRevId(hwInfo), csr->aubDeviceId);
-        csr->streamInitialized = streamInitialized;
     }
     return csr;
 }
@@ -333,128 +242,8 @@ SubmissionStatus TbxCommandStreamReceiverHw<GfxFamily>::flush(BatchBuffer &batch
 
 template <typename GfxFamily>
 void TbxCommandStreamReceiverHw<GfxFamily>::submitBatchBufferTbx(uint64_t batchBufferGpuAddress, const void *batchBuffer, size_t batchBufferSize, uint32_t memoryBank, uint64_t entryBits, bool overrideRingHead) {
-    if (hardwareContextController) {
-        if (batchBufferSize) {
-            hardwareContextController->submit(batchBufferGpuAddress, batchBuffer, batchBufferSize, memoryBank, MemoryConstants::pageSize64k, overrideRingHead);
-        }
-        return;
-    }
-
-    auto csTraits = this->getCsTraits(osContext->getEngineType());
-
-    {
-        auto physBatchBuffer = ppgtt->map(static_cast<uintptr_t>(batchBufferGpuAddress), batchBufferSize, entryBits, memoryBank);
-
-        AubHelperHw<GfxFamily> aubHelperHw(this->localMemoryEnabled);
-        AUB::reserveAddressPPGTT(tbxStream, static_cast<uintptr_t>(batchBufferGpuAddress), batchBufferSize, physBatchBuffer,
-                                 entryBits, aubHelperHw);
-
-        AUB::addMemoryWrite(
-            tbxStream,
-            physBatchBuffer,
-            batchBuffer,
-            batchBufferSize,
-            this->getAddressSpace(AubMemDump::DataTypeHintValues::TraceBatchBufferPrimary),
-            AubMemDump::DataTypeHintValues::TraceBatchBufferPrimary);
-    }
-
-    // Add a batch buffer start to the RCS
-    auto previousTail = engineInfo.tailRingBuffer;
-    {
-        typedef typename GfxFamily::MI_LOAD_REGISTER_IMM MI_LOAD_REGISTER_IMM;
-        typedef typename GfxFamily::MI_BATCH_BUFFER_START MI_BATCH_BUFFER_START;
-        typedef typename GfxFamily::MI_NOOP MI_NOOP;
-
-        auto pTail = ptrOffset(engineInfo.pRingBuffer, engineInfo.tailRingBuffer);
-        auto ggttTail = ptrOffset(engineInfo.ggttRingBuffer, engineInfo.tailRingBuffer);
-
-        auto sizeNeeded =
-            sizeof(MI_BATCH_BUFFER_START) +
-            sizeof(MI_NOOP) +
-            sizeof(MI_LOAD_REGISTER_IMM);
-        if (engineInfo.tailRingBuffer + sizeNeeded >= engineInfo.sizeRingBuffer) {
-            // Pad the remaining ring with NOOPs
-            auto sizeToWrap = engineInfo.sizeRingBuffer - engineInfo.tailRingBuffer;
-            memset(pTail, 0, sizeToWrap);
-            // write remaining ring
-            auto physDumpStart = ggtt->map(ggttTail, sizeToWrap, this->getGTTBits(), this->getMemoryBankForGtt());
-            AUB::addMemoryWrite(
-                tbxStream,
-                physDumpStart,
-                pTail,
-                sizeToWrap,
-                this->getAddressSpace(AubMemDump::DataTypeHintValues::TraceCommandBuffer),
-                AubMemDump::DataTypeHintValues::TraceCommandBuffer);
-            previousTail = 0;
-            engineInfo.tailRingBuffer = 0;
-            pTail = engineInfo.pRingBuffer;
-        } else if (engineInfo.tailRingBuffer == 0) {
-            // Add a LRI if this is our first submission
-            auto lri = GfxFamily::cmdInitLoadRegisterImm;
-            lri.setRegisterOffset(AubMemDump::computeRegisterOffset(csTraits.mmioBase, 0x2244));
-            lri.setDataDword(0x00010000);
-            *(MI_LOAD_REGISTER_IMM *)pTail = lri;
-            pTail = ((MI_LOAD_REGISTER_IMM *)pTail) + 1;
-        }
-
-        // Add our BBS
-        auto bbs = GfxFamily::cmdInitBatchBufferStart;
-        bbs.setBatchBufferStartAddress(static_cast<uint64_t>(batchBufferGpuAddress));
-        bbs.setAddressSpaceIndicator(MI_BATCH_BUFFER_START::ADDRESS_SPACE_INDICATOR_PPGTT);
-        *(MI_BATCH_BUFFER_START *)pTail = bbs;
-        pTail = ((MI_BATCH_BUFFER_START *)pTail) + 1;
-
-        // Add a NOOP as our tail needs to be aligned to a QWORD
-        *(MI_NOOP *)pTail = GfxFamily::cmdInitNoop;
-        pTail = ((MI_NOOP *)pTail) + 1;
-
-        // Compute our new ring tail.
-        engineInfo.tailRingBuffer = (uint32_t)ptrDiff(pTail, engineInfo.pRingBuffer);
-
-        // Only dump the new commands
-        auto ggttDumpStart = ptrOffset(engineInfo.ggttRingBuffer, previousTail);
-        auto dumpStart = ptrOffset(engineInfo.pRingBuffer, previousTail);
-        auto dumpLength = engineInfo.tailRingBuffer - previousTail;
-
-        // write RCS
-        auto physDumpStart = ggtt->map(ggttDumpStart, dumpLength, this->getGTTBits(), this->getMemoryBankForGtt());
-        AUB::addMemoryWrite(
-            tbxStream,
-            physDumpStart,
-            dumpStart,
-            dumpLength,
-            this->getAddressSpace(AubMemDump::DataTypeHintValues::TraceCommandBuffer),
-            AubMemDump::DataTypeHintValues::TraceCommandBuffer);
-
-        // update the RCS mmio tail in the LRCA
-        auto physLRCA = ggtt->map(engineInfo.ggttLRCA, sizeof(engineInfo.tailRingBuffer), this->getGTTBits(), this->getMemoryBankForGtt());
-        AUB::addMemoryWrite(
-            tbxStream,
-            physLRCA + 0x101c,
-            &engineInfo.tailRingBuffer,
-            sizeof(engineInfo.tailRingBuffer),
-            this->getAddressSpace(AubMemDump::DataTypeHintValues::TraceNotype));
-
-        DEBUG_BREAK_IF(engineInfo.tailRingBuffer >= engineInfo.sizeRingBuffer);
-    }
-
-    // Submit our execlist by submitting to the execlist submit ports
-    {
-        typename AUB::MiContextDescriptorReg contextDescriptor = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
-
-        contextDescriptor.sData.valid = true;
-        contextDescriptor.sData.forcePageDirRestore = false;
-        contextDescriptor.sData.forceRestore = false;
-        contextDescriptor.sData.legacy = true;
-        contextDescriptor.sData.faultSupport = 0;
-        contextDescriptor.sData.privilegeAccessOrPPGTT = true;
-        contextDescriptor.sData.aDor64bitSupport = AUB::Traits::addressingBits > 32;
-
-        auto ggttLRCA = engineInfo.ggttLRCA;
-        contextDescriptor.sData.logicalRingCtxAddress = ggttLRCA / 4096;
-        contextDescriptor.sData.contextID = 0;
-
-        this->submitLRCA(contextDescriptor);
+    if (hardwareContextController && batchBufferSize) {
+        hardwareContextController->submit(batchBufferGpuAddress, batchBuffer, batchBufferSize, memoryBank, MemoryConstants::pageSize64k, overrideRingHead);
     }
 }
 

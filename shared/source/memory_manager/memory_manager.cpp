@@ -28,6 +28,7 @@
 #include "shared/source/helpers/string_helpers.h"
 #include "shared/source/helpers/surface_format_info.h"
 #include "shared/source/memory_manager/allocation_properties.h"
+#include "shared/source/memory_manager/allocations_list.h"
 #include "shared/source/memory_manager/compression_selector.h"
 #include "shared/source/memory_manager/deferrable_allocation_deletion.h"
 #include "shared/source/memory_manager/deferred_deleter.h"
@@ -42,6 +43,7 @@
 #include "shared/source/os_interface/os_interface.h"
 #include "shared/source/os_interface/product_helper.h"
 #include "shared/source/page_fault_manager/cpu_page_fault_manager.h"
+#include "shared/source/release_helper/release_helper.h"
 #include "shared/source/utilities/logger_neo_only.h"
 
 namespace NEO {
@@ -89,6 +91,58 @@ MemoryManager::MemoryManager(ExecutionEnvironment &executionEnvironment) : execu
     if (debugManager.flags.EnableMultiStorageResources.get() != -1) {
         supportsMultiStorageResources = !!debugManager.flags.EnableMultiStorageResources.get();
     }
+
+    if (debugManager.flags.UseSingleListForTemporaryAllocations.get() != 0) {
+        singleTemporaryAllocationsList = true;
+        temporaryAllocations = std::make_unique<AllocationsList>(AllocationUsage::TEMPORARY_ALLOCATION);
+    }
+}
+
+void MemoryManager::storeTemporaryAllocation(std::unique_ptr<GraphicsAllocation> &&gfxAllocation, uint32_t osContextId, TaskCountType taskCount) {
+    gfxAllocation->updateTaskCount(taskCount, osContextId);
+    temporaryAllocations->pushTailOne(*gfxAllocation.release());
+}
+
+void MemoryManager::cleanTemporaryAllocations(const CommandStreamReceiver &csr, TaskCountType waitedTaskCount) {
+    auto lock = getHostPtrManager()->obtainOwnership();
+
+    GraphicsAllocation *currentAlloc = temporaryAllocations->detachNodes();
+
+    IDList<GraphicsAllocation, false, true> allocationsLeft;
+
+    while (currentAlloc != nullptr) {
+        const auto waitedOsContextId = csr.getOsContext().getContextId();
+        auto *nextAlloc = currentAlloc->next;
+        bool freeAllocation = false;
+
+        if (currentAlloc->hostPtrTaskCountAssignment == 0) {
+            if (currentAlloc->isUsedByOsContext(waitedOsContextId)) {
+                if (currentAlloc->getTaskCount(waitedOsContextId) <= waitedTaskCount) {
+                    if (!currentAlloc->isUsedByManyOsContexts() || !allocInUse(*currentAlloc)) {
+                        freeAllocation = true;
+                    }
+                }
+            } else if (!allocInUse(*currentAlloc)) {
+                freeAllocation = true;
+            }
+        }
+
+        if (freeAllocation) {
+            freeGraphicsMemory(currentAlloc);
+        } else {
+            allocationsLeft.pushTailOne(*currentAlloc);
+        }
+
+        currentAlloc = nextAlloc;
+    }
+
+    if (!allocationsLeft.peekIsEmpty()) {
+        temporaryAllocations->splice(*allocationsLeft.detachNodes());
+    }
+}
+
+std::unique_ptr<GraphicsAllocation> MemoryManager::obtainTemporaryAllocationWithPtr(CommandStreamReceiver *csr, size_t requiredSize, const void *requiredPtr, AllocationType allocationType) {
+    return temporaryAllocations->detachAllocation(requiredSize, requiredPtr, csr, allocationType);
 }
 
 MemoryManager::~MemoryManager() {
@@ -614,7 +668,8 @@ bool MemoryManager::getAllocationData(AllocationData &allocationData, const Allo
     }
 
     allocationData.hostPtr = hostPtr;
-    if (GraphicsAllocation::isKernelIsaAllocationType(properties.allocationType)) {
+    if (GraphicsAllocation::isKernelIsaAllocationType(properties.allocationType) &&
+        !properties.isaPaddingIncluded) {
         allocationData.size = properties.size + helper.getPaddingForISAAllocation();
     } else {
         allocationData.size = properties.size;
@@ -653,11 +708,12 @@ bool MemoryManager::getAllocationData(AllocationData &allocationData, const Allo
     case AllocationType::svmGpu:
     case AllocationType::image:
         if (false == allocationData.flags.uncacheable && useLocalPreferredForCacheableBuffers) {
-            if (!allocationData.flags.preferCompressed) {
+            if ((usmDeviceAllocationMode == LocalMemAllocationMode::hwDefault) && !allocationData.flags.preferCompressed) {
                 allocationData.storageInfo.localOnlyRequired = false;
             }
             allocationData.storageInfo.systemMemoryPlacement = false;
         }
+        break;
     default:
         break;
     }
@@ -974,14 +1030,24 @@ void MemoryManager::waitForEnginesCompletion(GraphicsAllocation &graphicsAllocat
     }
 }
 
-bool MemoryManager::allocInUse(GraphicsAllocation &graphicsAllocation) {
+bool MemoryManager::allocInUse(GraphicsAllocation &graphicsAllocation) const {
+    uint32_t numEnginesChecked = 0;
+    const uint32_t numContextsToCheck = graphicsAllocation.getNumRegisteredContexts();
+
     for (auto &engine : getRegisteredEngines(graphicsAllocation.getRootDeviceIndex())) {
         auto osContextId = engine.osContext->getContextId();
         auto allocationTaskCount = graphicsAllocation.getTaskCount(osContextId);
-        if (graphicsAllocation.isUsedByOsContext(osContextId) &&
-            engine.commandStreamReceiver->getTagAllocation() != nullptr &&
-            allocationTaskCount > *engine.commandStreamReceiver->getTagAddress()) {
-            return true;
+
+        if (graphicsAllocation.isUsedByOsContext(osContextId)) {
+            numEnginesChecked++;
+
+            if (engine.commandStreamReceiver->getTagAddress() && (allocationTaskCount > *engine.commandStreamReceiver->getTagAddress())) {
+                return true;
+            }
+        }
+
+        if (numEnginesChecked == numContextsToCheck) {
+            return false;
         }
     }
     return false;
@@ -991,10 +1057,15 @@ void MemoryManager::cleanTemporaryAllocationListOnAllEngines(bool waitForComplet
     for (auto &engineContainer : allRegisteredEngines) {
         for (auto &engine : engineContainer) {
             auto csr = engine.commandStreamReceiver;
+
             if (waitForCompletion) {
                 csr->waitForCompletionWithTimeout(WaitParams{false, false, false, 0}, csr->peekLatestSentTaskCount());
             }
             csr->getInternalAllocationStorage()->cleanAllocationList(*csr->getTagAddress(), AllocationUsage::TEMPORARY_ALLOCATION);
+
+            if (isSingleTemporaryAllocationsListEnabled() && (temporaryAllocations->peekIsEmpty() || !waitForCompletion)) {
+                return;
+            }
         }
     }
 }
@@ -1250,4 +1321,12 @@ void MemoryManager::removeCustomHeapAllocatorConfig(AllocationType allocationTyp
     customHeapAllocators.erase({allocationType, isFrontWindowPool});
 }
 
+bool MemoryManager::getLocalOnlyRequired(AllocationType allocationType, const ProductHelper &productHelper, const ReleaseHelper *releaseHelper, bool preferCompressed) const {
+    const bool enabledForRelease{!releaseHelper || releaseHelper->isLocalOnlyAllowed()};
+
+    if (allocationType == AllocationType::buffer || allocationType == AllocationType::svmGpu) {
+        return productHelper.getStorageInfoLocalOnlyFlag(usmDeviceAllocationMode, enabledForRelease);
+    }
+    return (preferCompressed ? enabledForRelease : false);
+}
 } // namespace NEO

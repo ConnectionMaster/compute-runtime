@@ -247,17 +247,21 @@ ze_result_t IpSamplingMetricSourceImp::handleMetricGroupExtendedProperties(zet_m
 
 ze_result_t IpSamplingMetricSourceImp::calcOperationCreate(MetricDeviceContext &metricDeviceContext,
                                                            zet_intel_metric_calculate_exp_desc_t *pCalculateDesc,
-                                                           uint32_t *pCount,
+                                                           uint32_t *pExcludedMetricCount,
                                                            zet_metric_handle_t *phExcludedMetrics,
                                                            zet_intel_metric_calculate_operation_exp_handle_t *phCalculateOperation) {
     ze_result_t status = ZE_RESULT_ERROR_UNKNOWN;
 
     // All metrics in Ip sampling allow calculation
-    *pCount = 0;
+    *pExcludedMetricCount = 0;
 
     bool isMultiDevice = (metricDeviceContext.isImplicitScalingCapable()) ? true : false;
     status = IpSamplingMetricCalcOpImp::create(*this, pCalculateDesc, isMultiDevice, phCalculateOperation);
     return status;
+}
+
+bool IpSamplingMetricSourceImp::canDisable() {
+    return !activationTracker->isAnyMetricGroupActivated();
 }
 
 IpSamplingMetricGroupImp::IpSamplingMetricGroupImp(IpSamplingMetricSourceImp &metricSource,
@@ -410,12 +414,14 @@ ze_result_t IpSamplingMetricGroupImp::getCalculatedMetricCount(const uint8_t *pR
         return ZE_RESULT_ERROR_INVALID_SIZE;
     }
 
+    DeviceImp *deviceImp = static_cast<DeviceImp *>(&this->getMetricSource().getMetricDeviceContext().getDevice());
+    auto &l0GfxCoreHelper = deviceImp->getNEODevice()->getRootDeviceEnvironment().getHelper<L0GfxCoreHelper>();
     const uint32_t rawReportCount = static_cast<uint32_t>(rawDataSize) / rawReportSize;
 
     for (const uint8_t *pRawIpData = pRawData; pRawIpData < pRawData + (rawReportCount * rawReportSize); pRawIpData += rawReportSize) {
         uint64_t ip = 0ULL;
         memcpy_s(reinterpret_cast<uint8_t *>(&ip), sizeof(ip), pRawIpData, sizeof(ip));
-        ip &= 0x1fffffff;
+        ip &= l0GfxCoreHelper.getIpSamplingIpMask();
         stallReportIpCount.insert(ip);
     }
 

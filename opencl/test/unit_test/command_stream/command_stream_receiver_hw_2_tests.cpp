@@ -92,7 +92,7 @@ HWTEST_F(BcsTests, givenDebugCapabilityWhenEstimatingCommandSizeThenAddAllRequir
     constexpr size_t bltSize = (numberOfBlts * max2DBlitSize);
 
     waArgs.isWaRequired = true;
-    auto expectedSize = (cmdsSizePerBlit * numberOfBlts) + debugCommandsSize + (2 * MemorySynchronizationCommands<FamilyType>::getSizeForAdditonalSynchronization(pDevice->getRootDeviceEnvironment())) +
+    auto expectedSize = (cmdsSizePerBlit * numberOfBlts) + debugCommandsSize + (2 * MemorySynchronizationCommands<FamilyType>::getSizeForAdditionalSynchronization(NEO::FenceType::release, pDevice->getRootDeviceEnvironment())) +
                         EncodeMiFlushDW<FamilyType>::getCommandSizeWithWa(waArgs) + sizeof(typename FamilyType::MI_BATCH_BUFFER_END);
     expectedSize = alignUp(expectedSize, MemoryConstants::cacheLineSize);
 
@@ -123,7 +123,7 @@ HWTEST_F(BcsTests, givenRelaxedOrderingEnabledWhenEstimatingCommandSizeThenAddAl
     blitProperties.csrDependencies.timestampPacketContainer.push_back(&timestamp);
 
     waArgs.isWaRequired = true;
-    auto expectedSize = cmdsSizePerBlit + (2 * MemorySynchronizationCommands<FamilyType>::getSizeForAdditonalSynchronization(pDevice->getRootDeviceEnvironment())) +
+    auto expectedSize = cmdsSizePerBlit + (2 * MemorySynchronizationCommands<FamilyType>::getSizeForAdditionalSynchronization(NEO::FenceType::release, pDevice->getRootDeviceEnvironment())) +
                         EncodeMiFlushDW<FamilyType>::getCommandSizeWithWa(waArgs) + sizeof(typename FamilyType::MI_BATCH_BUFFER_END) +
                         TimestampPacketHelper::getRequiredCmdStreamSize<FamilyType>(blitProperties.csrDependencies, true) + (2 * EncodeSetMMIO<FamilyType>::sizeREG);
     expectedSize = alignUp(expectedSize, MemoryConstants::cacheLineSize);
@@ -620,7 +620,7 @@ HWTEST_F(BcsTests, givenProfilingEnabledWhenBlitBufferThenCommandBufferIsConstru
 
 HWTEST_F(BcsTests, givenProfilingEnabledWhenBlitBufferAndForceTlbFlushAfterCopyThenCommandBufferIsConstructedProperlyAndTlbFlushDetected) {
     DebugManagerStateRestore restorer;
-    debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    debugManager.flags.EnableL3FlushAfterPostSync.set(0);
     debugManager.flags.ForceTlbFlushWithTaskCountAfterCopy.set(1);
     using MI_FLUSH_DW = typename FamilyType::MI_FLUSH_DW;
     auto bcsOsContext = std::unique_ptr<OsContext>(OsContext::create(nullptr, pDevice->getRootDeviceIndex(), 0,
@@ -677,7 +677,7 @@ HWTEST_F(BcsTests, givenProfilingEnabledWhenBlitBufferAndForceTlbFlushAfterCopyT
 HWTEST_F(BcsTests, givenProfilingDisabledWhenBlitBufferAndForceTlbFlushAfterCopyThenCommandBufferIsConstructedProperlyAndTlbFlushDetected) {
     DebugManagerStateRestore restorer;
     debugManager.flags.ForceTlbFlushWithTaskCountAfterCopy.set(1);
-    debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    debugManager.flags.EnableL3FlushAfterPostSync.set(0);
     using MI_FLUSH_DW = typename FamilyType::MI_FLUSH_DW;
     auto bcsOsContext = std::unique_ptr<OsContext>(OsContext::create(nullptr, pDevice->getRootDeviceIndex(), 0,
                                                                      EngineDescriptorHelper::getDefaultDescriptor({aub_stream::ENGINE_BCS, EngineUsage::regular}, pDevice->getDeviceBitfield())));
@@ -1769,7 +1769,7 @@ HWTEST_F(BcsTests, givenAuxTranslationRequestWhenBlitCalledThenProgramCommandCor
 HWTEST_F(BcsTests, givenInvalidBlitDirectionWhenConstructPropertiesThenExceptionIsThrow) {
     auto &csr = pDevice->getUltCommandStreamReceiver<FamilyType>();
 
-    EXPECT_THROW(ClBlitProperties::constructProperties(static_cast<BlitterConstants::BlitDirection>(7), csr, {}), std::exception); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    EXPECT_THROW(ClBlitProperties::constructProperties(static_cast<BlitterConstants::BlitDirection>(7), csr, {}), std::exception); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 }
 
 HWTEST_F(BcsTests, givenBlitterDirectSubmissionEnabledWhenProgrammingBlitterThenExpectRingBufferDispatched) {

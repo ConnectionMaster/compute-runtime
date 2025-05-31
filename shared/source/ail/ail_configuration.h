@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "igfxfmid.h"
+#include "neo_igfxfmid.h"
 
 #include <cstdint>
 #include <memory>
@@ -41,6 +41,7 @@ enum class AILEnumeration : uint32_t {
     disableHostPtrTracking,
     enableLegacyPlatformName,
     disableDirectSubmission,
+    disableDirectSubmissionAllEngines,
     handleDivergentBarriers,
     disableBindlessAddressing,
 };

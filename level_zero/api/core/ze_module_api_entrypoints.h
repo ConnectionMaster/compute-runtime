@@ -8,6 +8,7 @@
 #pragma once
 
 #include "level_zero/core/source/cmdlist/cmdlist.h"
+#include "level_zero/core/source/cmdlist/cmdlist_launch_params.h"
 #include "level_zero/core/source/kernel/kernel.h"
 #include "level_zero/core/source/module/module.h"
 #include "level_zero/core/source/module/module_build_log.h"
@@ -160,7 +161,7 @@ ze_result_t zeCommandListAppendLaunchKernel(
     L0::CmdListKernelLaunchParams launchParams = {};
     launchParams.skipInOrderNonWalkerSignaling = cmdList->skipInOrderNonWalkerSignalingAllowed(hSignalEvent);
 
-    return cmdList->appendLaunchKernel(kernelHandle, *launchKernelArgs, hSignalEvent, numWaitEvents, phWaitEvents, launchParams, false);
+    return cmdList->appendLaunchKernel(kernelHandle, *launchKernelArgs, hSignalEvent, numWaitEvents, phWaitEvents, launchParams);
 }
 
 ze_result_t zeCommandListAppendLaunchCooperativeKernel(
@@ -174,7 +175,7 @@ ze_result_t zeCommandListAppendLaunchCooperativeKernel(
     L0::CmdListKernelLaunchParams launchParams = {};
     launchParams.isCooperative = true;
 
-    return L0::CommandList::fromHandle(hCommandList)->appendLaunchKernel(kernelHandle, *launchKernelArgs, hSignalEvent, numWaitEvents, phWaitEvents, launchParams, false);
+    return L0::CommandList::fromHandle(hCommandList)->appendLaunchKernel(kernelHandle, *launchKernelArgs, hSignalEvent, numWaitEvents, phWaitEvents, launchParams);
 }
 
 ze_result_t zeCommandListAppendLaunchKernelIndirect(

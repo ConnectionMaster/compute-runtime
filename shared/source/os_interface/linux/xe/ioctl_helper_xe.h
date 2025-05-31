@@ -140,6 +140,7 @@ class IoctlHelperXe : public IoctlHelper {
     }
     uint32_t getGtIdFromTileId(uint32_t tileId, uint16_t engineClass) const override;
     bool makeResidentBeforeLockNeeded() const override;
+    bool isSmallBarConfigAllowed() const override { return false; }
 
   protected:
     static constexpr uint32_t maxContextSetProperties = 4;
@@ -223,18 +224,6 @@ class IoctlHelperXe : public IoctlHelper {
         uint32_t drmContextId;
     };
 
-    struct SupportedFeatures {
-        union {
-            struct {
-                uint32_t pageFault : 1;
-                uint32_t reserved : 31;
-            } flags;
-            uint32_t allFlags = 0;
-        };
-    } supportedFeatures{};
-    static_assert(sizeof(SupportedFeatures::flags) == sizeof(SupportedFeatures::allFlags), "");
-
-    void querySupportedFeatures();
     std::unique_ptr<EuDebugInterface> euDebugInterface;
 };
 

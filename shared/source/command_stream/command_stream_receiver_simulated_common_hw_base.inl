@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2024 Intel Corporation
+ * Copyright (C) 2019-2025 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -17,7 +17,6 @@
 #include "shared/source/helpers/aligned_memory.h"
 #include "shared/source/helpers/basic_math.h"
 #include "shared/source/helpers/hardware_context_controller.h"
-#include "shared/source/memory_manager/address_mapper.h"
 #include "shared/source/memory_manager/memory_manager.h"
 #include "shared/source/os_interface/os_context.h"
 
@@ -25,16 +24,6 @@
 #include "aubstream/aubstream.h"
 
 namespace NEO {
-
-template <typename GfxFamily>
-void CommandStreamReceiverSimulatedCommonHw<GfxFamily>::initAdditionalMMIO() {
-    if (debugManager.flags.AubDumpAddMmioRegistersList.get() != "unk") {
-        auto mmioList = AubHelper::getAdditionalMmioList();
-        for (auto &mmioPair : mmioList) {
-            stream->writeMMIO(mmioPair.first, mmioPair.second);
-        }
-    }
-}
 
 template <typename GfxFamily>
 void CommandStreamReceiverSimulatedCommonHw<GfxFamily>::setupContext(OsContext &osContext) {
@@ -97,21 +86,6 @@ template <typename GfxFamily>
 bool CommandStreamReceiverSimulatedCommonHw<GfxFamily>::expectMemoryCompressed(void *gfxAddress, const void *srcAddress, size_t length) {
     return this->expectMemory(gfxAddress, srcAddress, length,
                               AubMemDump::CmdServicesMemTraceMemoryCompare::CompareOperationValues::CompareNotEqual);
-}
-
-template <typename GfxFamily>
-void CommandStreamReceiverSimulatedCommonHw<GfxFamily>::freeEngineInfo(AddressMapper &gttRemap) {
-    alignedFree(engineInfo.pLRCA);
-    gttRemap.unmap(engineInfo.pLRCA);
-    engineInfo.pLRCA = nullptr;
-
-    alignedFree(engineInfo.pGlobalHWStatusPage);
-    gttRemap.unmap(engineInfo.pGlobalHWStatusPage);
-    engineInfo.pGlobalHWStatusPage = nullptr;
-
-    alignedFree(engineInfo.pRingBuffer);
-    gttRemap.unmap(engineInfo.pRingBuffer);
-    engineInfo.pRingBuffer = nullptr;
 }
 
 template <typename GfxFamily>

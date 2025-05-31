@@ -1934,6 +1934,7 @@ kernels:
         work_group_walk_order_dimensions: [0, 1, 2]
         thread_scheduling_mode: age_based
         indirect_stateless_count: 2
+        has_lsc_stores_with_non_default_l1_cache_controls: true
 ...
 )===";
 
@@ -1981,6 +1982,7 @@ kernels:
     using ThreadSchedulingMode = NEO::Zebin::ZeInfo::Types::Kernel::ExecutionEnv::ThreadSchedulingMode;
     EXPECT_EQ(ThreadSchedulingMode::ThreadSchedulingModeAgeBased, execEnv.threadSchedulingMode);
     EXPECT_EQ(2, execEnv.indirectStatelessCount);
+    EXPECT_TRUE(execEnv.hasLscStoresWithNonDefaultL1CacheControls);
 }
 
 TEST(ReadZeInfoExecutionEnvironment, GivenUnknownEntryThenEmitsError) {
@@ -2094,6 +2096,7 @@ kernels:
       work_group_size_hint: [256, 2, 1]
       new_user_hint: new_user_hint_value
       invalid_kernel: invalid_kernel_reason
+      intel_reqd_thread_group_dispatch_size: 8
 ...
 )===";
 
@@ -2125,6 +2128,7 @@ kernels:
     EXPECT_TRUE(equals(attributes.otherHints[0].first, "new_user_hint"));
     EXPECT_TRUE(equals(attributes.otherHints[0].second, "new_user_hint_value"));
     EXPECT_TRUE(equals(attributes.invalidKernel.value(), "invalid_kernel_reason"));
+    EXPECT_EQ(8, attributes.intelReqdThreadgroupDispatchSize.value());
 }
 
 TEST(ReadZeInfoDebugEnvironment, givenSipSurfaceBtiEntryThenSetProperMembers) {
@@ -2366,6 +2370,7 @@ kernels:
       intel_reqd_sub_group_size: 16
       intel_reqd_workgroup_walk_order: [0, 1, 2]
       reqd_work_group_size: [256, 2, 1]
+      intel_reqd_thread_group_dispatch_size: 8
       vec_type_hint:   uint
       work_group_size_hint: [256, 2, 1]
       new_user_hint: new_user_hint_value
@@ -2376,8 +2381,9 @@ kernels:
     EXPECT_TRUE(warnings.empty()) << warnings;
     EXPECT_TRUE(errors.empty()) << errors;
 
-    EXPECT_STREQ("new_user_hint(new_user_hint_value) intel_reqd_sub_group_size(16) intel_reqd_workgroup_walk_order(0,1,2) reqd_work_group_size(256,2,1) work_group_size_hint(256,2,1) vec_type_hint(uint)", kernelDescriptor->kernelMetadata.kernelLanguageAttributes.c_str());
+    EXPECT_STREQ("new_user_hint(new_user_hint_value) intel_reqd_sub_group_size(16) intel_reqd_workgroup_walk_order(0,1,2) reqd_work_group_size(256,2,1) work_group_size_hint(256,2,1) vec_type_hint(uint) intel_reqd_thread_group_dispatch_size(8)", kernelDescriptor->kernelMetadata.kernelLanguageAttributes.c_str());
     EXPECT_EQ(16U, kernelDescriptor->kernelMetadata.requiredSubGroupSize);
+    EXPECT_EQ(8U, kernelDescriptor->kernelMetadata.requiredThreadGroupDispatchSize);
     EXPECT_FALSE(kernelDescriptor->kernelAttributes.flags.isInvalid);
 }
 
@@ -5396,6 +5402,46 @@ kernels:
     EXPECT_TRUE(kernelDescriptor->kernelAttributes.flags.requiresImplicitArgs);
 }
 
+TEST_F(decodeZeInfoKernelEntryTest, GivenExecEnvRequireImplicitArgBufferTrueWhenPopulatingKernelDescriptorThenImplicitArgsAreRequired) {
+    ConstStringRef zeinfo = R"===(
+kernels:
+    - name : some_kernel
+      execution_env:
+        simd_size: 32
+        require_iab: true
+      payload_arguments:
+        - arg_type: work_dimensions
+            offset: 32
+            size: 4
+)===";
+    auto err = decodeZeInfoKernelEntry(zeinfo);
+    EXPECT_EQ(NEO::DecodeError::success, err);
+    EXPECT_TRUE(errors.empty()) << errors;
+    EXPECT_TRUE(warnings.empty()) << warnings;
+    EXPECT_TRUE(NEO::isUndefinedOffset(kernelDescriptor->payloadMappings.implicitArgs.implicitArgsBuffer));
+    EXPECT_TRUE(kernelDescriptor->kernelAttributes.flags.requiresImplicitArgs);
+}
+
+TEST_F(decodeZeInfoKernelEntryTest, GivenExecEnvRequireImplicitArgBufferFalseWhenPopulatingKernelDescriptorThenImplicitArgsAreNotRequired) {
+    ConstStringRef zeinfo = R"===(
+kernels:
+    - name : some_kernel
+      execution_env:
+        simd_size: 32
+        require_iab: false
+      payload_arguments:
+        - arg_type: work_dimensions
+            offset: 32
+            size: 4
+)===";
+    auto err = decodeZeInfoKernelEntry(zeinfo);
+    EXPECT_EQ(NEO::DecodeError::success, err);
+    EXPECT_TRUE(errors.empty()) << errors;
+    EXPECT_TRUE(warnings.empty()) << warnings;
+    EXPECT_TRUE(NEO::isUndefinedOffset(kernelDescriptor->payloadMappings.implicitArgs.implicitArgsBuffer));
+    EXPECT_FALSE(kernelDescriptor->kernelAttributes.flags.requiresImplicitArgs);
+}
+
 TEST(PopulateArgDescriptorCrossthreadPayload, GivenArgTypeWorkDimensionsWhenSizeIsInvalidThenPopulateKernelDescriptorFails) {
     NEO::KernelDescriptor kernelDescriptor;
     kernelDescriptor.payloadMappings.explicitArgs.resize(1);
@@ -6557,7 +6603,7 @@ TEST(ValidateTargetDeviceTests, givenMismatechAotConfigWhenValidatingTargetDevic
     targetDevice.aotConfig.value = 0x00001234;
     targetDevice.maxPointerSizeInBytes = 8u;
 
-    auto mismatchedAotConfig = static_cast<AOT::PRODUCT_CONFIG>(0x00004321); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange), NEO-12901
+    auto mismatchedAotConfig = static_cast<AOT::PRODUCT_CONFIG>(0x00004321); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
     Zebin::Elf::ZebinTargetFlags targetMetadata;
     auto res = validateTargetDevice(targetDevice, Zebin::Elf::EI_CLASS_64, productFamily, renderCoreFamily, mismatchedAotConfig, targetMetadata);
     EXPECT_FALSE(res);

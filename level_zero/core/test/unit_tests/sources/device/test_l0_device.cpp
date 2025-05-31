@@ -292,32 +292,6 @@ TEST(L0DeviceTest, givenDisabledPreemptionWhenCreatingDeviceThenSipKernelIsNotIn
     EXPECT_FALSE(NEO::MockSipData::called);
 }
 
-TEST(L0DeviceTest, givenMidThreadPreemptionAndIncorrectStateSaveAreaHeaderWhenCreatingL0DeviceThenErrorIsReturned) {
-
-    VariableBackup<bool> mockSipCalled(&NEO::MockSipData::called, false);
-    VariableBackup<NEO::SipKernelType> mockSipCalledType(&NEO::MockSipData::calledType, NEO::SipKernelType::count);
-    VariableBackup<bool> backupSipInitType(&MockSipData::useMockSip, true);
-    NonCopyableVariableBackup<std::unique_ptr<MockSipKernel>> backupSipKernel(&MockSipData::mockSipKernel, std::make_unique<MockSipKernel>());
-
-    MockSipData::mockSipKernel->mockStateSaveAreaHeader = MockSipData::createStateSaveAreaHeader(1);
-    auto header = reinterpret_cast<SIP::StateSaveAreaHeader *>(MockSipData::mockSipKernel->mockStateSaveAreaHeader.data());
-    header->versionHeader.version.major = 5u;
-
-    std::unique_ptr<DriverHandleImp> driverHandle(new DriverHandleImp);
-    auto hwInfo = *NEO::defaultHwInfo;
-    hwInfo.capabilityTable.defaultPreemptionMode = NEO::PreemptionMode::MidThread;
-
-    auto neoDevice = std::unique_ptr<NEO::Device>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&hwInfo, 0));
-    ze_result_t returnValue = ZE_RESULT_SUCCESS;
-
-    auto device = std::unique_ptr<L0::Device>(Device::create(driverHandle.get(), neoDevice.release(), false, &returnValue));
-    EXPECT_NE(nullptr, device);
-    EXPECT_EQ(ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE, returnValue);
-
-    EXPECT_EQ(NEO::SipKernelType::csr, NEO::MockSipData::calledType);
-    EXPECT_TRUE(NEO::MockSipData::called);
-}
-
 TEST(L0DeviceTest, givenDeviceWithoutIGCCompilerLibraryThenInvalidDependencyIsNotReturned) {
     ze_result_t returnValue = ZE_RESULT_SUCCESS;
 
@@ -351,46 +325,6 @@ TEST(L0DeviceTest, givenDeviceWithoutAnyCompilerLibraryThenInvalidDependencyIsNo
     Os::frontEndDllName = oldFclDllName;
     ASSERT_NE(nullptr, device);
     EXPECT_EQ(returnValue, ZE_RESULT_SUCCESS);
-}
-
-TEST(L0DeviceTest, givenDeviceWithoutIGCCompilerLibraryAndMidThreadPreemptionThenInvalidDependencyIsReturned) {
-    DebugManagerStateRestore restore{};
-    debugManager.flags.ForcePreemptionMode.set(PreemptionMode::MidThread);
-    ze_result_t returnValue = ZE_RESULT_SUCCESS;
-
-    std::unique_ptr<DriverHandleImp> driverHandle(new DriverHandleImp);
-    auto hwInfo = *NEO::defaultHwInfo;
-
-    auto igcNameGuard = NEO::pushIgcDllName("_invalidIGC");
-    auto neoDevice = std::unique_ptr<NEO::Device>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&hwInfo, 0));
-    auto mockDevice = reinterpret_cast<NEO::MockDevice *>(neoDevice.get());
-    mockDevice->setPreemptionMode(NEO::PreemptionMode::MidThread);
-
-    auto device = std::unique_ptr<L0::Device>(Device::create(driverHandle.get(), neoDevice.release(), false, &returnValue));
-    ASSERT_NE(nullptr, device);
-    EXPECT_EQ(returnValue, ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE);
-}
-
-TEST(L0DeviceTest, givenDeviceWithoutAnyCompilerLibraryAndMidThreadPreemptionThenInvalidDependencyIsReturned) {
-    DebugManagerStateRestore restore{};
-    debugManager.flags.ForcePreemptionMode.set(PreemptionMode::MidThread);
-    ze_result_t returnValue = ZE_RESULT_SUCCESS;
-
-    std::unique_ptr<DriverHandleImp> driverHandle(new DriverHandleImp);
-    auto hwInfo = *NEO::defaultHwInfo;
-
-    auto oldFclDllName = Os::frontEndDllName;
-    Os::frontEndDllName = "_invalidFCL";
-    auto igcNameGuard = NEO::pushIgcDllName("_invalidIGC");
-    auto neoDevice = std::unique_ptr<NEO::Device>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&hwInfo, 0));
-    auto mockDevice = reinterpret_cast<NEO::MockDevice *>(neoDevice.get());
-    mockDevice->setPreemptionMode(NEO::PreemptionMode::MidThread);
-
-    auto device = std::unique_ptr<L0::Device>(Device::create(driverHandle.get(), neoDevice.release(), false, &returnValue));
-    ASSERT_NE(nullptr, device);
-    EXPECT_EQ(returnValue, ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE);
-
-    Os::frontEndDllName = oldFclDllName;
 }
 
 TEST(L0DeviceTest, givenFilledTopologyWhenGettingApiSliceThenCorrectSliceIdIsReturned) {
@@ -450,12 +384,12 @@ TEST(L0DeviceTest, whenCallingGetDeviceMemoryNameThenCorrectTypeIsReturned) {
 
     auto &sysInfo = device->getNEODevice()->getRootDeviceEnvironment().getMutableHardwareInfo()->gtSystemInfo;
 
-    for (uint32_t i = 0; i < 11; i++) {
+    for (uint32_t i = 0; i < 10; i++) {
         sysInfo.MemoryType = i;
 
         EXPECT_EQ(ZE_RESULT_SUCCESS, device->getMemoryProperties(&count, &memProperties));
 
-        if (i == 2 || i == 3 || i == 5 || i == 8) {
+        if (i == 2 || i == 3 || i == 5 || i == 8 || i == 9) {
             EXPECT_STREQ("HBM", memProperties.name);
         } else {
             EXPECT_STREQ("DDR", memProperties.name);
@@ -773,7 +707,7 @@ struct DeviceTest : public ::testing::Test {
     DebugManagerStateRestore restorer;
     std::unique_ptr<Mock<L0::DriverHandleImp>> driverHandle;
     NEO::ExecutionEnvironment *execEnv;
-    NEO::Device *neoDevice = nullptr;
+    NEO::MockDevice *neoDevice = nullptr;
     L0::Device *device = nullptr;
     const uint32_t rootDeviceIndex = 1u;
     const uint32_t numRootDevices = 2u;
@@ -1015,12 +949,6 @@ HWTEST_F(DeviceTest, givenTsAllocatorWhenGettingNewTagThenDoInitialize) {
     EXPECT_EQ(static_cast<uint32_t>(Event::STATE_INITIAL), tag->tagForCpuAccess->getGlobalStartValue(0));
     EXPECT_EQ(static_cast<uint32_t>(Event::STATE_INITIAL), tag->tagForCpuAccess->getContextEndValue(0));
     EXPECT_EQ(static_cast<uint32_t>(Event::STATE_INITIAL), tag->tagForCpuAccess->getGlobalEndValue(0));
-
-    auto tag3 = static_cast<NEO::TagNode<TimestampPacketsT> *>(allocator->getTag());
-
-    auto minSize = alignUp(TimestampPacketsT::getSinglePacketSize() * 2, neoMockDevice->getGfxCoreHelper().getTimestampPacketAllocatorAlignment());
-
-    EXPECT_TRUE(ptrDiff(tag3->getCpuBase(), tag2->getCpuBase()) >= minSize);
 }
 
 TEST_F(DeviceTest, givenMoreThanOneExtendedPropertiesStructuresWhenKernelPropertiesCalledThenSuccessIsReturnedAndPropertiesAreSet) {
@@ -1180,7 +1108,7 @@ HWTEST2_F(DeviceTest, givenIncorrectThreadArbitrationPolicyWhenPassingScheduling
     EXPECT_EQ(0u, schedulingHintProperties.schedulingHintFlags);
 }
 
-HWTEST2_F(DeviceTest, whenPassingRaytracingExpStructToGetPropertiesThenPropertiesWithCorrectFlagIsReturned, MatchAny) {
+HWTEST_F(DeviceTest, whenPassingRaytracingExpStructToGetPropertiesThenPropertiesWithCorrectFlagIsReturned) {
     ze_device_module_properties_t kernelProperties = {};
     kernelProperties.stype = ZE_STRUCTURE_TYPE_KERNEL_PROPERTIES;
 
@@ -1207,7 +1135,7 @@ HWTEST2_F(DeviceTest, whenPassingRaytracingExpStructToGetPropertiesThenPropertie
     EXPECT_EQ(expectedMaxBVHLevels, rayTracingProperties.maxBVHLevels);
 }
 
-HWTEST2_F(DeviceTest, givenSetMaxBVHLevelsWhenPassingRaytracingExpStructToGetPropertiesThenPropertiesWithCorrectFlagIsReturned, MatchAny) {
+HWTEST_F(DeviceTest, givenSetMaxBVHLevelsWhenPassingRaytracingExpStructToGetPropertiesThenPropertiesWithCorrectFlagIsReturned) {
 
     DebugManagerStateRestore dbgRestorer;
     debugManager.flags.SetMaxBVHLevels.set(7);
@@ -1481,11 +1409,33 @@ TEST_F(DeviceTest, givenDeviceIpVersionWhenGetDevicePropertiesThenCorrectResultI
     deviceProperties.pNext = &zeDeviceIpVersion;
 
     auto &compilerProductHelper = device->getCompilerProductHelper();
+
     auto expectedIpVersion = compilerProductHelper.getHwIpVersion(device->getHwInfo());
 
     device->getProperties(&deviceProperties);
     EXPECT_NE(std::numeric_limits<uint32_t>::max(), zeDeviceIpVersion.ipVersion);
     EXPECT_EQ(expectedIpVersion, zeDeviceIpVersion.ipVersion);
+}
+
+TEST_F(DeviceTest, givenDeviceIpVersionOverrideWhenGetDevicePropertiesThenReturnedOverridenIpVersion) {
+    ze_device_properties_t deviceProperties = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
+    ze_device_ip_version_ext_t zeDeviceIpVersion = {ZE_STRUCTURE_TYPE_DEVICE_IP_VERSION_EXT};
+    zeDeviceIpVersion.ipVersion = std::numeric_limits<uint32_t>::max();
+    deviceProperties.pNext = &zeDeviceIpVersion;
+
+    auto &compilerProductHelper = device->getCompilerProductHelper();
+    auto originalIpVersion = compilerProductHelper.getHwIpVersion(device->getHwInfo());
+    auto overridenHwInfo = device->getHwInfo();
+    overridenHwInfo.ipVersionOverrideExposedToTheApplication.value = originalIpVersion + 1;
+
+    NEO::DeviceVector neoDevices;
+    neoDevices.push_back(std::unique_ptr<NEO::Device>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&overridenHwInfo, rootDeviceIndex)));
+    auto driverHandle = std::make_unique<Mock<L0::DriverHandleImp>>();
+    driverHandle->initialize(std::move(neoDevices));
+    auto l0DeviceWithOverride = driverHandle->devices[0];
+
+    l0DeviceWithOverride->getProperties(&deviceProperties);
+    EXPECT_EQ(overridenHwInfo.ipVersionOverrideExposedToTheApplication.value, zeDeviceIpVersion.ipVersion);
 }
 
 TEST_F(DeviceTest, givenCallToDevicePropertiesThenMaximumMemoryToBeAllocatedIsCorrectlyReturned) {
@@ -2153,17 +2103,23 @@ HWTEST2_F(DeviceGetMemoryTests, whenCallingGetMemoryPropertiesForMemoryExtProper
     res = device->getMemoryProperties(&count, &memProperties);
     EXPECT_EQ(res, ZE_RESULT_SUCCESS);
     EXPECT_EQ(1u, count);
-    const std::array<ze_device_memory_ext_type_t, 5> sysInfoMemType = {
+    const std::array<ze_device_memory_ext_type_t, 10> sysInfoMemType = {
         ZE_DEVICE_MEMORY_EXT_TYPE_LPDDR4,
         ZE_DEVICE_MEMORY_EXT_TYPE_LPDDR5,
         ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
         ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
         ZE_DEVICE_MEMORY_EXT_TYPE_GDDR6,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
+        ZE_DEVICE_MEMORY_EXT_TYPE_DDR5,
+        ZE_DEVICE_MEMORY_EXT_TYPE_GDDR7,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
     };
 
     auto &hwInfo = device->getHwInfo();
     auto bandwidthPerNanoSecond = productHelper.getDeviceMemoryMaxBandWidthInBytesPerSecond(hwInfo, nullptr, 0) / 1000000000;
 
+    UNRECOVERABLE_IF(hwInfo.gtSystemInfo.MemoryType >= sizeof(sysInfoMemType));
     EXPECT_EQ(memExtProperties.type, sysInfoMemType[hwInfo.gtSystemInfo.MemoryType]);
     EXPECT_EQ(memExtProperties.physicalSize, productHelper.getDeviceMemoryPhysicalSizeInBytes(nullptr, 0));
     EXPECT_EQ(memExtProperties.readBandwidth, bandwidthPerNanoSecond);
@@ -2191,17 +2147,23 @@ HWTEST2_F(DeviceGetMemoryTests, whenCallingGetMemoryPropertiesWith2LevelsOfPnext
     res = device->getMemoryProperties(&count, &memProperties);
     EXPECT_EQ(res, ZE_RESULT_SUCCESS);
     EXPECT_EQ(1u, count);
-    const std::array<ze_device_memory_ext_type_t, 5> sysInfoMemType = {
+    const std::array<ze_device_memory_ext_type_t, 10> sysInfoMemType = {
         ZE_DEVICE_MEMORY_EXT_TYPE_LPDDR4,
         ZE_DEVICE_MEMORY_EXT_TYPE_LPDDR5,
         ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
         ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
         ZE_DEVICE_MEMORY_EXT_TYPE_GDDR6,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
+        ZE_DEVICE_MEMORY_EXT_TYPE_DDR5,
+        ZE_DEVICE_MEMORY_EXT_TYPE_GDDR7,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
     };
 
     auto &hwInfo = device->getHwInfo();
     auto bandwidthPerNanoSecond = productHelper.getDeviceMemoryMaxBandWidthInBytesPerSecond(hwInfo, nullptr, 0) / 1000000000;
 
+    UNRECOVERABLE_IF(hwInfo.gtSystemInfo.MemoryType >= sizeof(sysInfoMemType));
     EXPECT_EQ(memExtProperties.type, sysInfoMemType[hwInfo.gtSystemInfo.MemoryType]);
     EXPECT_EQ(memExtProperties.physicalSize, productHelper.getDeviceMemoryPhysicalSizeInBytes(nullptr, 0));
     EXPECT_EQ(memExtProperties.readBandwidth, bandwidthPerNanoSecond);
@@ -2638,16 +2600,22 @@ HWTEST2_F(MultipleDevicesEnabledImplicitScalingTest, GivenImplicitScalingEnabled
     res = device->getMemoryProperties(&count, &memProperties);
     EXPECT_EQ(res, ZE_RESULT_SUCCESS);
     EXPECT_EQ(1u, count);
-    const std::array<ze_device_memory_ext_type_t, 5> sysInfoMemType = {
+    const std::array<ze_device_memory_ext_type_t, 10> sysInfoMemType = {
         ZE_DEVICE_MEMORY_EXT_TYPE_LPDDR4,
         ZE_DEVICE_MEMORY_EXT_TYPE_LPDDR5,
         ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
         ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
         ZE_DEVICE_MEMORY_EXT_TYPE_GDDR6,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
+        ZE_DEVICE_MEMORY_EXT_TYPE_DDR5,
+        ZE_DEVICE_MEMORY_EXT_TYPE_GDDR7,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
+        ZE_DEVICE_MEMORY_EXT_TYPE_HBM2,
     };
 
     auto bandwidthPerNanoSecond = raii.mockProductHelper->getDeviceMemoryMaxBandWidthInBytesPerSecond(device->getHwInfo(), nullptr, 0) / 1000000000;
 
+    UNRECOVERABLE_IF(hwInfo.gtSystemInfo.MemoryType >= sizeof(sysInfoMemType));
     EXPECT_EQ(memExtProperties.type, sysInfoMemType[hwInfo.gtSystemInfo.MemoryType]);
     EXPECT_EQ(memExtProperties.physicalSize, raii.mockProductHelper->getDeviceMemoryPhysicalSizeInBytes(nullptr, 0) * numSubDevices);
     EXPECT_EQ(memExtProperties.readBandwidth, bandwidthPerNanoSecond * numSubDevices);
@@ -4929,7 +4897,7 @@ HWTEST_F(DeviceTest, givenContextGroupSupportedWhenGettingHighPriorityCsrThenCor
         ASSERT_TRUE(engineGroups[ordinalCopy].engineGroupType == NEO::EngineGroupType::copy);
 
         uint32_t index = 1;
-        auto result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        auto result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, deviceImp.queuePriorityHigh, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_NE(nullptr, highPriorityCsr);
 
@@ -4946,7 +4914,7 @@ HWTEST_F(DeviceTest, givenContextGroupSupportedWhenGettingHighPriorityCsrThenCor
         EXPECT_TRUE(highPriorityCsr->getOsContext().isPartOfContextGroup());
         EXPECT_NE(nullptr, highPriorityCsr->getOsContext().getPrimaryContext());
 
-        result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr2, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr2, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, deviceImp.queuePriorityHigh, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_NE(nullptr, highPriorityCsr2);
         EXPECT_NE(highPriorityCsr, highPriorityCsr2);
@@ -4955,24 +4923,24 @@ HWTEST_F(DeviceTest, givenContextGroupSupportedWhenGettingHighPriorityCsrThenCor
         EXPECT_TRUE(highPriorityCsr2->getOsContext().isPartOfContextGroup());
 
         index = 100;
-        result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, deviceImp.queuePriorityHigh, false);
         EXPECT_EQ(ZE_RESULT_ERROR_INVALID_ARGUMENT, result);
 
         index = 0;
         ordinal = 100;
-        result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, deviceImp.queuePriorityHigh, false);
         EXPECT_EQ(ZE_RESULT_ERROR_INVALID_ARGUMENT, result);
 
         // When no HP copy engine, then hp csr from group is returned
         NEO::CommandStreamReceiver *bcsEngine = nullptr, *bcsEngine2 = nullptr;
         EXPECT_EQ(nullptr, neoMockDevice->getHpCopyEngine());
 
-        result = deviceImp.getCsrForOrdinalAndIndex(&bcsEngine, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        result = deviceImp.getCsrForOrdinalAndIndex(&bcsEngine, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, deviceImp.queuePriorityHigh, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_NE(nullptr, bcsEngine);
         EXPECT_TRUE(bcsEngine->getOsContext().isHighPriority());
 
-        result = deviceImp.getCsrForOrdinalAndIndex(&bcsEngine2, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
+        result = deviceImp.getCsrForOrdinalAndIndex(&bcsEngine2, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, 0, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_EQ(bcsEngine2, bcsEngine->getPrimaryCsr());
         EXPECT_TRUE(bcsEngine2->getOsContext().isRegular());
@@ -5075,7 +5043,7 @@ HWTEST2_F(DeviceTest, givenHpCopyEngineWhenGettingHighPriorityCsrThenCorrectCsrA
                 ordinal = i;
 
                 uint32_t index = 0;
-                auto result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+                auto result = deviceImp.getCsrForOrdinalAndIndex(&highPriorityCsr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, 0, false);
                 EXPECT_EQ(ZE_RESULT_SUCCESS, result);
                 ASSERT_NE(nullptr, highPriorityCsr);
 
@@ -5294,7 +5262,7 @@ TEST_F(MultiSubDeviceEnabledImplicitScalingTest, GivenEnabledImplicitScalingWhen
     NEO::CommandStreamReceiver *csr = nullptr;
     EXPECT_EQ(ZE_RESULT_ERROR_UNKNOWN, deviceImp->getCsrForLowPriority(&csr, false));
 
-    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, 0, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, false);
+    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, 0, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, 0, false);
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
     EXPECT_EQ(defaultEngine.commandStreamReceiver, csr);
@@ -5306,7 +5274,7 @@ HWTEST2_F(MultiSubDeviceWithContextGroupAndImplicitScalingTest, GivenRootDeviceW
     NEO::CommandStreamReceiver *csr = nullptr;
     EXPECT_EQ(ZE_RESULT_ERROR_UNKNOWN, deviceImp->getCsrForLowPriority(&csr, false));
 
-    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, 0, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, false);
+    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, 0, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, 0, false);
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
     EXPECT_EQ(defaultEngine.commandStreamReceiver, csr);
@@ -5317,7 +5285,7 @@ HWTEST2_F(MultiSubDeviceWithContextGroupAndImplicitScalingTest, GivenRootDeviceW
     EXPECT_EQ(ZE_RESULT_ERROR_UNKNOWN, deviceImp->getCsrForLowPriority(&csr, true));
 
     auto ordinal = deviceImp->getCopyEngineOrdinal();
-    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, ordinal, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, false);
+    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, ordinal, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW, 0, false);
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
     EXPECT_NE(nullptr, csr);
@@ -5330,7 +5298,7 @@ HWTEST2_F(MultiSubDeviceWithContextGroupAndImplicitScalingTest, GivenRootDeviceW
     NEO::CommandStreamReceiver *csr = nullptr;
     auto ordinal = deviceImp->getCopyEngineOrdinal();
 
-    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, ordinal, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+    auto ret = deviceImp->getCsrForOrdinalAndIndex(&csr, ordinal, 0, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, 0, false);
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
     EXPECT_NE(nullptr, csr);
@@ -6423,7 +6391,7 @@ HWTEST_F(SingleDeviceModeTests, givenContextGroupSupportedWhenGettingCsrsThenSec
 
         uint32_t index = 0;
         CommandStreamReceiver *csr = nullptr;
-        auto result = device->getCsrForOrdinalAndIndex(&csr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
+        auto result = device->getCsrForOrdinalAndIndex(&csr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, 0, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_NE(nullptr, csr);
 
@@ -6440,24 +6408,24 @@ HWTEST_F(SingleDeviceModeTests, givenContextGroupSupportedWhenGettingCsrsThenSec
         EXPECT_NE(nullptr, secondaryEngines.engines[highPriorityIndex].osContext->getPrimaryContext());
 
         index = 100;
-        result = device->getCsrForOrdinalAndIndex(&csr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        result = device->getCsrForOrdinalAndIndex(&csr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, 0, false);
         EXPECT_EQ(ZE_RESULT_ERROR_INVALID_ARGUMENT, result);
 
         index = 0;
         ordinal = 100;
-        result = device->getCsrForOrdinalAndIndex(&csr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        result = device->getCsrForOrdinalAndIndex(&csr, ordinal, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, 0, false);
         EXPECT_EQ(ZE_RESULT_ERROR_INVALID_ARGUMENT, result);
 
         NEO::CommandStreamReceiver *bcsEngine = nullptr, *bcsEngine2 = nullptr;
         EXPECT_EQ(nullptr, neoMockDevice->getHpCopyEngine());
 
-        result = device->getCsrForOrdinalAndIndex(&bcsEngine, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, false);
+        result = device->getCsrForOrdinalAndIndex(&bcsEngine, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH, 0, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_NE(nullptr, bcsEngine);
         EXPECT_TRUE(bcsEngine->getOsContext().isHighPriority());
         EXPECT_EQ(1u, bcsEngine->getOsContext().getDeviceBitfield().count());
 
-        result = device->getCsrForOrdinalAndIndex(&bcsEngine2, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
+        result = device->getCsrForOrdinalAndIndex(&bcsEngine2, ordinalCopy, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, 0, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_EQ(bcsEngine2, bcsEngine->getPrimaryCsr());
         EXPECT_TRUE(bcsEngine2->getOsContext().getIsPrimaryEngine());
@@ -6465,7 +6433,7 @@ HWTEST_F(SingleDeviceModeTests, givenContextGroupSupportedWhenGettingCsrsThenSec
         EXPECT_TRUE(bcsEngine2->getOsContext().getDeviceBitfield().test(0));
 
         bcsEngine2 = nullptr;
-        result = device->getCsrForOrdinalAndIndex(&bcsEngine2, ordinalCopy + 1, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, false);
+        result = device->getCsrForOrdinalAndIndex(&bcsEngine2, ordinalCopy + 1, index, ZE_COMMAND_QUEUE_PRIORITY_NORMAL, 0, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         ASSERT_NE(bcsEngine2, bcsEngine->getPrimaryCsr());
         EXPECT_TRUE(bcsEngine2->getOsContext().getIsPrimaryEngine());
@@ -6576,7 +6544,7 @@ bool RTASDeviceTest::MockOsLibrary::libraryLoaded = false;
 bool RTASDeviceTest::MockOsLibrary::failLibraryLoad = false;
 bool RTASDeviceTest::MockOsLibrary::failGetProcAddress = false;
 
-HWTEST2_F(RTASDeviceTest, GivenValidRTASLibraryWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned, MatchAny) {
+HWTEST_F(RTASDeviceTest, GivenValidRTASLibraryWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned) {
     MockOsLibrary::libraryLoaded = false;
     MockOsLibrary::failLibraryLoad = false;
     MockOsLibrary::failGetProcAddress = false;
@@ -6602,7 +6570,7 @@ HWTEST2_F(RTASDeviceTest, GivenValidRTASLibraryWhenQueryingRTASProptertiesThenCo
     }
 }
 
-HWTEST2_F(RTASDeviceTest, GivenRTASLibraryPreLoadedWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned, MatchAny) {
+HWTEST_F(RTASDeviceTest, GivenRTASLibraryPreLoadedWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned) {
     MockOsLibrary::libraryLoaded = false;
     MockOsLibrary::failLibraryLoad = false;
     MockOsLibrary::failGetProcAddress = false;
@@ -6627,7 +6595,7 @@ HWTEST2_F(RTASDeviceTest, GivenRTASLibraryPreLoadedWhenQueryingRTASProptertiesTh
     }
 }
 
-HWTEST2_F(RTASDeviceTest, GivenInvalidRTASLibraryWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned, MatchAny) {
+HWTEST_F(RTASDeviceTest, GivenInvalidRTASLibraryWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned) {
     auto releaseHelper = this->neoDevice->getReleaseHelper();
 
     if (!releaseHelper || !releaseHelper->isRayTracingSupported()) {
@@ -6653,7 +6621,7 @@ HWTEST2_F(RTASDeviceTest, GivenInvalidRTASLibraryWhenQueryingRTASProptertiesThen
     EXPECT_EQ(ZE_RTAS_FORMAT_EXP_INVALID, rtasProperties.rtasFormat);
 }
 
-HWTEST2_F(RTASDeviceTest, GivenMissingSymbolsInRTASLibraryWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned, MatchAny) {
+HWTEST_F(RTASDeviceTest, GivenMissingSymbolsInRTASLibraryWhenQueryingRTASProptertiesThenCorrectPropertiesIsReturned) {
     auto releaseHelper = this->neoDevice->getReleaseHelper();
 
     if (!releaseHelper || !releaseHelper->isRayTracingSupported()) {
@@ -6861,6 +6829,59 @@ HWTEST_F(DeviceSimpleTests, givenGpuHangOnSecondaryCsrWhenSynchronizingDeviceThe
 
     auto result = zeDeviceSynchronize(device);
     EXPECT_EQ(ZE_RESULT_ERROR_DEVICE_LOST, result);
+}
+
+HWTEST2_F(DeviceSimpleTests, givenDeviceWhenQueryingPriorityLevelsThenHighAndLowLevelsAreReturned, IsAtMostXe3Core) {
+
+    struct MockGfxCoreHelper : NEO::GfxCoreHelperHw<FamilyType> {
+        uint32_t getQueuePriorityLevels() const override {
+            return numPriorityLevels;
+        }
+
+        uint32_t numPriorityLevels = 1;
+    };
+
+    auto rootDeviceIndex = device->getNEODevice()->getRootDeviceIndex();
+    RAIIGfxCoreHelperFactory<MockGfxCoreHelper> raii(*device->getNEODevice()->getExecutionEnvironment()->rootDeviceEnvironments[rootDeviceIndex]);
+
+    for (int numLevels = 1; numLevels < 10; numLevels++) {
+        raii.mockGfxCoreHelper->numPriorityLevels = numLevels;
+        int highestPriorityLevel = 0;
+        int lowestPriorityLevel = 0;
+
+        ze_result_t returnValue = ZE_RESULT_SUCCESS;
+        auto l0Device = std::unique_ptr<L0::Device>(Device::create(driverHandle.get(), neoDevice, false, &returnValue));
+        ASSERT_NE(nullptr, l0Device);
+
+        EXPECT_EQ(ZE_RESULT_SUCCESS, l0Device->getPriorityLevels(&lowestPriorityLevel, &highestPriorityLevel));
+
+        EXPECT_EQ(numLevels, lowestPriorityLevel - highestPriorityLevel + 1);
+        if (numLevels == 1) {
+            EXPECT_EQ(0, highestPriorityLevel);
+            EXPECT_EQ(0, lowestPriorityLevel);
+        } else if (numLevels == 2) {
+            EXPECT_EQ(0, highestPriorityLevel);
+            EXPECT_EQ(1, lowestPriorityLevel);
+        } else if (numLevels == 3) {
+            EXPECT_EQ(-1, highestPriorityLevel);
+            EXPECT_EQ(1, lowestPriorityLevel);
+        } else if (numLevels == 4) {
+            EXPECT_EQ(-1, highestPriorityLevel);
+            EXPECT_EQ(2, lowestPriorityLevel);
+        }
+    }
+}
+
+HWTEST2_F(DeviceSimpleTests, givenDeviceWhenQueryingPriorityLevelsThen2LevelsAreReturned, IsAtMostXe3Core) {
+
+    int highestPriorityLevel = 0;
+    int lowestPriorityLevel = 0;
+
+    auto result = zeDeviceGetPriorityLevels(device, &lowestPriorityLevel, &highestPriorityLevel);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+
+    EXPECT_EQ(0, highestPriorityLevel);
+    EXPECT_EQ(1, lowestPriorityLevel);
 }
 
 } // namespace ult
