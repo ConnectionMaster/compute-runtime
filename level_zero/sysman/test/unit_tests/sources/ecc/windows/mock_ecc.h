@@ -19,9 +19,13 @@ struct EccFwInterface : public L0::Sysman::FirmwareUtil {
 
     ze_result_t mockFwGetEccConfigResult = ZE_RESULT_SUCCESS;
     ze_result_t mockFwSetEccConfigResult = ZE_RESULT_SUCCESS;
+    ze_result_t mockFwGetEccAvailableResult = ZE_RESULT_SUCCESS;
+    ze_result_t mockFwGetEccConfigurableResult = ZE_RESULT_SUCCESS;
     ze_result_t mockFwDeviceInit = ZE_RESULT_SUCCESS;
 
     ze_bool_t mockSetConfig = true;
+    ze_bool_t mockEccAvailable = true;
+    ze_bool_t mockEccConfigurable = true;
     uint8_t mockCurrentState = 0;
     uint8_t mockPendingState = 0;
 
@@ -54,6 +58,24 @@ struct EccFwInterface : public L0::Sysman::FirmwareUtil {
         return ZE_RESULT_SUCCESS;
     }
 
+    ze_result_t fwGetEccAvailable(ze_bool_t *pAvailable) override {
+        if (mockFwGetEccAvailableResult != ZE_RESULT_SUCCESS) {
+            return mockFwGetEccAvailableResult;
+        }
+
+        *pAvailable = mockEccAvailable;
+        return ZE_RESULT_SUCCESS;
+    }
+
+    ze_result_t fwGetEccConfigurable(ze_bool_t *pAvailable) override {
+        if (mockFwGetEccConfigurableResult != ZE_RESULT_SUCCESS) {
+            return mockFwGetEccConfigurableResult;
+        }
+
+        *pAvailable = mockEccConfigurable;
+        return ZE_RESULT_SUCCESS;
+    }
+
     ADDMETHOD_NOBASE(getFwVersion, ze_result_t, ZE_RESULT_SUCCESS, (std::string fwType, std::string &firmwareVersion));
     ADDMETHOD_NOBASE(getFlashFirmwareProgress, ze_result_t, ZE_RESULT_SUCCESS, (uint32_t * pCompletionPercent));
     ADDMETHOD_NOBASE(flashFirmware, ze_result_t, ZE_RESULT_SUCCESS, (std::string fwType, void *pImage, uint32_t size));
@@ -63,6 +85,7 @@ struct EccFwInterface : public L0::Sysman::FirmwareUtil {
     ADDMETHOD_NOBASE(fwGetMemoryErrorCount, ze_result_t, ZE_RESULT_SUCCESS, (zes_ras_error_type_t category, uint32_t subDeviceCount, uint32_t subDeviceId, uint64_t &count));
     ADDMETHOD_NOBASE_VOIDRETURN(getDeviceSupportedFwTypes, (std::vector<std::string> & fwTypes));
     ADDMETHOD_NOBASE_VOIDRETURN(fwGetMemoryHealthIndicator, (zes_mem_health_t * health));
+    ADDMETHOD_NOBASE_VOIDRETURN(getLateBindingSupportedFwTypes, (std::vector<std::string> & fwTypes));
 };
 
 } // namespace ult

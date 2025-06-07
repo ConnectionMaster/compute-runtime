@@ -913,6 +913,16 @@ unsigned int IoctlHelperPrelim20::getIoctlRequestValue(DrmIoctl ioctlRequest) co
         return PRELIM_DRM_IOCTL_I915_GEM_CACHE_RESERVE;
     case DrmIoctl::getResetStatsPrelim:
         return PRELIM_DRM_IOCTL_I915_GET_RESET_STATS;
+    case DrmIoctl::syncObjFdToHandle:
+        return DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE;
+    case DrmIoctl::syncObjWait:
+        return DRM_IOCTL_SYNCOBJ_WAIT;
+    case DrmIoctl::syncObjSignal:
+        return DRM_IOCTL_SYNCOBJ_SIGNAL;
+    case DrmIoctl::syncObjTimelineWait:
+        return DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT;
+    case DrmIoctl::syncObjTimelineSignal:
+        return DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL;
     default:
         return IoctlHelperI915::getIoctlRequestValue(ioctlRequest);
     }

@@ -23,6 +23,7 @@
 #include "shared/test/common/mocks/mock_timestamp_packet.h"
 #include "shared/test/common/test_macros/hw_test.h"
 
+#include "level_zero/core/source/cmdlist/cmdlist_memory_copy_params.h"
 #include "level_zero/core/source/context/context_imp.h"
 #include "level_zero/core/source/driver/driver_handle_imp.h"
 #include "level_zero/core/source/event/event.h"
@@ -281,8 +282,6 @@ HWTEST_F(EventPoolCreate, givenTimestampEventsThenEventSizeSufficientForAllKerne
     if (l0GfxCoreHelper.useDynamicEventPacketsCount(hwInfo)) {
         maxPacketCount = l0GfxCoreHelper.getEventBaseMaxPacketCount(device->getNEODevice()->getRootDeviceEnvironment());
     }
-
-    maxPacketCount = std::max(maxPacketCount, 2u);
 
     uint32_t packetsSize = maxPacketCount *
                            static_cast<uint32_t>(NEO::TimestampPackets<typename FamilyType::TimestampPacketType, FamilyType::timestampPacketCount>::getSinglePacketSize());
@@ -2147,6 +2146,9 @@ HWTEST_F(EventAubCsrTest, givenCallToEventHostSynchronizeWithAubModeCsrReturnsSu
     NEO::MockDevice *neoDevice = nullptr;
     L0::Device *device = nullptr;
 
+    EnvironmentWithCsrWrapper environment;
+    environment.setCsrType<MockCsrAub<FamilyType>>();
+
     neoDevice = NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(NEO::defaultHwInfo.get());
     auto mockBuiltIns = new MockBuiltins();
     MockRootDeviceEnvironment::resetBuiltins(neoDevice->executionEnvironment->rootDeviceEnvironments[0].get(), mockBuiltIns);
@@ -2155,9 +2157,6 @@ HWTEST_F(EventAubCsrTest, givenCallToEventHostSynchronizeWithAubModeCsrReturnsSu
     driverHandle = std::make_unique<Mock<L0::DriverHandleImp>>();
     driverHandle->initialize(std::move(devices));
     device = driverHandle->devices[0];
-    int32_t tag;
-    auto aubCsr = new MockCsrAub<FamilyType>(tag, *neoDevice->executionEnvironment, neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield());
-    neoDevice->resetCommandStreamReceiver(aubCsr);
 
     std::unique_ptr<L0::EventPool> eventPool = nullptr;
     std::unique_ptr<L0::Event> event;
@@ -2820,7 +2819,7 @@ TEST_F(TimestampEventUsedPacketSignalCreate, givenEventWithBlitAdditionalPropert
     event->enableCounterBasedMode(true, ZE_EVENT_POOL_COUNTER_BASED_EXP_FLAG_IMMEDIATE);
     event->updateInOrderExecState(inOrderExecInfo, 1, 0);
 
-    event->resetAdditionalTimestampNode(blitTagAllocator.getTag(), 1);
+    event->resetAdditionalTimestampNode(blitTagAllocator.getTag(), 1, false);
 
     event->setPacketsInUse(2u);
 
@@ -3484,42 +3483,6 @@ TEST_F(EventTests, givenRegularEventUseMultiplePacketsWhenHostSignalThenExpectAl
     }
 }
 
-TEST_F(EventTests, givenRegularEventWithoutAdditionalPacketsThenGetAdditionalPacketsRetursZero) {
-    eventDesc.index = 0;
-    eventDesc.signal = 0;
-    eventDesc.wait = 0;
-
-    auto event = std::unique_ptr<L0::EventImp<uint32_t>>(static_cast<L0::EventImp<uint32_t> *>(L0::Event::create<uint32_t>(eventPool.get(),
-                                                                                                                           &eventDesc,
-                                                                                                                           device)));
-    ASSERT_NE(event, nullptr);
-
-    uint32_t *hostAddr = static_cast<uint32_t *>(event->getCompletionFieldHostAddress());
-    EXPECT_EQ(*hostAddr, Event::STATE_INITIAL);
-    EXPECT_EQ(1u, event->getPacketsInUse());
-
-    event->setAdditionalPacketsInUse(0u);
-    EXPECT_EQ(event->kernelEventCompletionData[0].getAdditionalPacketsUsed(), 0u);
-}
-
-TEST_F(EventTests, givenRegularEventUseOneAdditionalPacketsThenGetAdditionalPacketsRetursOne) {
-    eventDesc.index = 0;
-    eventDesc.signal = 0;
-    eventDesc.wait = 0;
-
-    auto event = std::unique_ptr<L0::EventImp<uint32_t>>(static_cast<L0::EventImp<uint32_t> *>(L0::Event::create<uint32_t>(eventPool.get(),
-                                                                                                                           &eventDesc,
-                                                                                                                           device)));
-    ASSERT_NE(event, nullptr);
-
-    uint32_t *hostAddr = static_cast<uint32_t *>(event->getCompletionFieldHostAddress());
-    EXPECT_EQ(*hostAddr, Event::STATE_INITIAL);
-    EXPECT_EQ(1u, event->getPacketsInUse());
-
-    event->setAdditionalPacketsInUse(1u);
-    EXPECT_EQ(event->kernelEventCompletionData[0].getAdditionalPacketsUsed(), 1u);
-}
-
 TEST_F(EventUsedPacketSignalTests, givenEventUseMultiplePacketsWhenHostSignalThenExpectAllPacketsAreSignaled) {
     eventDesc.index = 0;
     eventDesc.signal = 0;
@@ -3955,9 +3918,9 @@ HWTEST_F(EventTests, givenRegularEventWhenCallingResetAdditionalTimestampNodeMul
     auto event = zeUniquePtr(whiteboxCast(getHelper<L0GfxCoreHelper>().createEvent(eventPool.get(), &eventDesc, device)));
     ASSERT_NE(event, nullptr);
 
-    event->resetAdditionalTimestampNode(eventTagAllocator.getTag(), 1);
+    event->resetAdditionalTimestampNode(eventTagAllocator.getTag(), 1, false);
 
-    event->resetAdditionalTimestampNode(eventTagAllocator.getTag(), 1);
+    event->resetAdditionalTimestampNode(eventTagAllocator.getTag(), 1, false);
     EXPECT_EQ(1u, event->additionalTimestampNode.size());
 }
 
@@ -3967,10 +3930,10 @@ HWTEST_F(EventTests, givenRegularEventWhenCallingResetAdditionalTimestampNodeWit
     auto event = zeUniquePtr(whiteboxCast(getHelper<L0GfxCoreHelper>().createEvent(eventPool.get(), &eventDesc, device)));
     ASSERT_NE(event, nullptr);
 
-    event->resetAdditionalTimestampNode(eventTagAllocator.getTag(), 1);
+    event->resetAdditionalTimestampNode(eventTagAllocator.getTag(), 1, false);
     EXPECT_EQ(1u, event->additionalTimestampNode.size());
 
-    event->resetAdditionalTimestampNode(nullptr, 0);
+    event->resetAdditionalTimestampNode(nullptr, 0, false);
     EXPECT_EQ(0u, event->additionalTimestampNode.size());
 }
 
@@ -4836,11 +4799,11 @@ struct EventDynamicPacketUseFixture : public DeviceFixture {
 };
 
 using EventDynamicPacketUseTest = Test<EventDynamicPacketUseFixture<0, 0>>;
-HWTEST2_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromAllDevicesThenMaxPossibleSelected, MatchAny) {
+HWTEST_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromAllDevicesThenMaxPossibleSelected) {
     testAllDevices();
 }
 
-HWTEST2_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromSingleDeviceThenMaxFromThisDeviceSelected, MatchAny) {
+HWTEST_F(EventDynamicPacketUseTest, givenDynamicPacketEstimationWhenGettingMaxPacketFromSingleDeviceThenMaxFromThisDeviceSelected) {
     testSingleDevice();
 }
 

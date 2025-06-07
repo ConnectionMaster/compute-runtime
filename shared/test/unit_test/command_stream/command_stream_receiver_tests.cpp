@@ -938,7 +938,7 @@ HWTEST_F(CommandStreamReceiverTest, givenCsrWhenUllsDisabledAndStopDirectSubmiss
 
 HWTEST_F(CommandStreamReceiverTest, givenNoDirectSubmissionWhenCheckTaskCountFromWaitEnabledThenReturnsFalse) {
     DebugManagerStateRestore restorer;
-    NEO::debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    NEO::debugManager.flags.EnableL3FlushAfterPostSync.set(0);
 
     auto &csr = pDevice->getUltCommandStreamReceiver<FamilyType>();
     EXPECT_FALSE(csr.isUpdateTagFromWaitEnabled());
@@ -978,7 +978,7 @@ HWTEST_F(CommandStreamReceiverTest, givenUpdateTaskCountFromWaitWhenCheckTaskCou
 HWTEST_F(CommandStreamReceiverTest, givenUpdateTaskCountFromWaitWhenCheckIfEnabledThenCanBeEnabledOnlyWithDirectSubmission) {
 
     DebugManagerStateRestore restorer;
-    NEO::debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    NEO::debugManager.flags.EnableL3FlushAfterPostSync.set(0);
 
     auto &csr = pDevice->getUltCommandStreamReceiver<FamilyType>();
     auto &gfxCoreHelper = pDevice->getGfxCoreHelper();
@@ -998,7 +998,7 @@ HWTEST_F(CommandStreamReceiverTest, givenUpdateTaskCountFromWaitInMultiRootDevic
 
     DebugManagerStateRestore restorer;
     debugManager.flags.CreateMultipleRootDevices.set(2);
-    NEO::debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    NEO::debugManager.flags.EnableL3FlushAfterPostSync.set(0);
 
     TearDown();
     SetUp();
@@ -3080,10 +3080,14 @@ HWTEST2_F(CommandStreamReceiverHwTest, givenDeviceToHostCopyWhenFenceIsRequiredT
         }
 
         auto fences = findAll<typename FamilyType::MI_MEM_FENCE *>(cmdIterator, cmdList.end());
-        EXPECT_EQ(expectedFenceCount, fences.size());
 
-        if (fenceExpected) {
-            EXPECT_NE(miMemFence, nullptr);
+        if (pDevice->getProductHelper().isReleaseGlobalFenceInCommandStreamRequired(pDevice->getHardwareInfo())) {
+            EXPECT_EQ(expectedFenceCount, fences.size());
+            if (fenceExpected) {
+                EXPECT_NE(miMemFence, nullptr);
+            }
+        } else {
+            EXPECT_EQ(0u, fences.size());
         }
 
         return !::testing::Test::HasFailure();
@@ -4595,7 +4599,7 @@ HWTEST2_F(CommandStreamReceiverHwTest,
     auto heapless = commandStreamReceiver.heaplessModeEnabled;
     auto heaplessStateInit = commandStreamReceiver.heaplessStateInitialized;
 
-    bool additionalSyncCmd = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(commandStreamReceiver.peekRootDeviceEnvironment()) > 0;
+    bool additionalSyncCmd = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(NEO::FenceType::release, commandStreamReceiver.peekRootDeviceEnvironment()) > 0;
     commandStreamReceiver.storeMakeResidentAllocations = true;
 
     auto startOffset = commandStream.getUsed();
@@ -4690,7 +4694,7 @@ HWTEST2_F(CommandStreamReceiverHwTest,
     auto heapless = commandStreamReceiver.heaplessModeEnabled;
     auto heaplessStateInit = commandStreamReceiver.heaplessStateInitialized;
 
-    bool additionalSyncCmd = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(commandStreamReceiver.peekRootDeviceEnvironment()) > 0;
+    bool additionalSyncCmd = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(NEO::FenceType::release, commandStreamReceiver.peekRootDeviceEnvironment()) > 0;
     commandStreamReceiver.storeMakeResidentAllocations = true;
 
     auto startOffset = commandStream.getUsed();
@@ -5775,7 +5779,7 @@ HWTEST2_F(CommandStreamReceiverHwTest, givenImplicitScalingEnabledWhenProgrammin
     ultCsr.activePartitions = 2;
     ultCsr.staticWorkPartitioningEnabled = true;
 
-    size_t barrierWithPostSyncOperationSize = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(pDevice->getRootDeviceEnvironment(), false);
+    size_t barrierWithPostSyncOperationSize = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(pDevice->getRootDeviceEnvironment(), NEO::PostSyncMode::immediateData);
     size_t expectedSize = barrierWithPostSyncOperationSize +
                           sizeof(MI_ATOMIC) + NEO::EncodeSemaphore<FamilyType>::getSizeMiSemaphoreWait() +
                           sizeof(MI_BATCH_BUFFER_START) +
@@ -6034,11 +6038,11 @@ HWTEST_F(CommandStreamReceiverContextGroupTest, givenSecondaryCsrWhenGettingInte
     primaryCsr->createGlobalStatelessHeap();
 
     for (uint32_t secondaryIndex = 1; secondaryIndex < secondaryEnginesCount; secondaryIndex++) {
-        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, false);
+        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, 0, false);
     }
 
     for (uint32_t i = 0; i < secondaryEngines.highPriorityEnginesTotal; i++) {
-        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::highPriority}, false);
+        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::highPriority}, 0, false);
     }
 
     for (uint32_t secondaryIndex = 0; secondaryIndex < secondaryEnginesCount; secondaryIndex++) {
@@ -6087,11 +6091,11 @@ HWTEST_F(CommandStreamReceiverContextGroupTest, givenSecondaryRootCsrWhenGetting
     primaryCsr->createGlobalStatelessHeap();
 
     for (uint32_t secondaryIndex = 1; secondaryIndex < secondaryEnginesCount; secondaryIndex++) {
-        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, false);
+        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, 0, false);
     }
 
     for (uint32_t i = 0; i < secondaryEngines.highPriorityEnginesTotal; i++) {
-        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::highPriority}, false);
+        device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::highPriority}, 0, false);
     }
 
     for (uint32_t secondaryIndex = 0; secondaryIndex < secondaryEnginesCount; secondaryIndex++) {
@@ -6217,8 +6221,8 @@ HWTEST_F(CommandStreamReceiverContextGroupTest, givenSecondaryCsrsWhenSameResour
     auto device = std::unique_ptr<MockDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(&hwInfo));
 
     const auto ccsIndex = 0;
-    auto &commandStreamReceiver0 = *device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, false)->commandStreamReceiver;
-    auto &commandStreamReceiver1 = *device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, false)->commandStreamReceiver;
+    auto &commandStreamReceiver0 = *device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, 0, false)->commandStreamReceiver;
+    auto &commandStreamReceiver1 = *device->getSecondaryEngineCsr({EngineHelpers::mapCcsIndexToEngineType(ccsIndex), EngineUsage::regular}, 0, false)->commandStreamReceiver;
 
     auto csr0ContextId = commandStreamReceiver0.getOsContext().getContextId();
     auto csr1ContextId = commandStreamReceiver1.getOsContext().getContextId();

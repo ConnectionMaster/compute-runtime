@@ -25,6 +25,7 @@
 #include "shared/source/memory_manager/graphics_allocation.h"
 #include "shared/source/os_interface/os_interface.h"
 #include "shared/source/os_interface/product_helper.h"
+#include "shared/source/release_helper/release_helper.h"
 #include "shared/source/utilities/tag_allocator.h"
 
 #include "encode_surface_state_args.h"
@@ -197,9 +198,7 @@ AuxTranslationMode GfxCoreHelperHw<Family>::getAuxTranslationMode(const Hardware
 template <typename GfxFamily>
 void MemorySynchronizationCommands<GfxFamily>::addBarrierWithPostSyncOperation(LinearStream &commandStream, PostSyncMode postSyncMode, uint64_t gpuAddress, uint64_t immediateData,
                                                                                const RootDeviceEnvironment &rootDeviceEnvironment, PipeControlArgs &args) {
-
-    void *commandBuffer = commandStream.getSpace(MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWithPostSyncOperation(rootDeviceEnvironment, args.tlbInvalidation));
-
+    void *commandBuffer = commandStream.getSpace(MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWithPostSyncOperation(rootDeviceEnvironment, postSyncMode));
     MemorySynchronizationCommands<GfxFamily>::setBarrierWithPostSyncOperation(commandBuffer, postSyncMode, gpuAddress, immediateData, rootDeviceEnvironment, args);
 }
 
@@ -212,15 +211,17 @@ void MemorySynchronizationCommands<GfxFamily>::setBarrierWithPostSyncOperation(
     const RootDeviceEnvironment &rootDeviceEnvironment,
     PipeControlArgs &args) {
 
-    MemorySynchronizationCommands<GfxFamily>::setBarrierWa(commandsBuffer, gpuAddress, rootDeviceEnvironment);
+    MemorySynchronizationCommands<GfxFamily>::setBarrierWa(commandsBuffer, gpuAddress, rootDeviceEnvironment, postSyncMode);
 
     if (!args.blockSettingPostSyncProperties) {
         setPostSyncExtraProperties(args);
     }
     MemorySynchronizationCommands<GfxFamily>::setSingleBarrier(commandsBuffer, postSyncMode, gpuAddress, immediateData, args);
-    commandsBuffer = ptrOffset(commandsBuffer, getSizeForSingleBarrier(args.tlbInvalidation));
+    commandsBuffer = ptrOffset(commandsBuffer, getSizeForSingleBarrier());
 
-    MemorySynchronizationCommands<GfxFamily>::setAdditionalSynchronization(commandsBuffer, gpuAddress, false, rootDeviceEnvironment);
+    if (postSyncMode != PostSyncMode::noWrite) {
+        MemorySynchronizationCommands<GfxFamily>::setAdditionalSynchronization(commandsBuffer, gpuAddress, NEO::FenceType::release, rootDeviceEnvironment);
+    }
 }
 
 template <typename GfxFamily>
@@ -235,7 +236,7 @@ void MemorySynchronizationCommands<GfxFamily>::setSingleBarrier(void *commandsBu
 
 template <typename GfxFamily>
 void MemorySynchronizationCommands<GfxFamily>::addSingleBarrier(LinearStream &commandStream, PostSyncMode postSyncMode, uint64_t gpuAddress, uint64_t immediateData, PipeControlArgs &args) {
-    auto barrier = commandStream.getSpace(MemorySynchronizationCommands<GfxFamily>::getSizeForSingleBarrier(args.tlbInvalidation));
+    auto barrier = commandStream.getSpace(MemorySynchronizationCommands<GfxFamily>::getSizeForSingleBarrier());
 
     setSingleBarrier(barrier, postSyncMode, gpuAddress, immediateData, args);
 }
@@ -311,36 +312,43 @@ void MemorySynchronizationCommands<GfxFamily>::setSingleBarrier(void *commandsBu
 }
 
 template <typename GfxFamily>
-void MemorySynchronizationCommands<GfxFamily>::addBarrierWa(LinearStream &commandStream, uint64_t gpuAddress, const RootDeviceEnvironment &rootDeviceEnvironment) {
-    size_t requiredSize = MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWa(rootDeviceEnvironment);
+void MemorySynchronizationCommands<GfxFamily>::addBarrierWa(LinearStream &commandStream, uint64_t gpuAddress, const RootDeviceEnvironment &rootDeviceEnvironment, NEO::PostSyncMode postSyncMode) {
+    size_t requiredSize = MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWa(rootDeviceEnvironment, postSyncMode);
     void *commandBuffer = commandStream.getSpace(requiredSize);
-    setBarrierWa(commandBuffer, gpuAddress, rootDeviceEnvironment);
+    setBarrierWa(commandBuffer, gpuAddress, rootDeviceEnvironment, postSyncMode);
 }
 
 template <typename GfxFamily>
-void MemorySynchronizationCommands<GfxFamily>::setBarrierWa(void *&commandsBuffer, uint64_t gpuAddress, const RootDeviceEnvironment &rootDeviceEnvironment) {
+void MemorySynchronizationCommands<GfxFamily>::setBarrierWa(void *&commandsBuffer, uint64_t gpuAddress, const RootDeviceEnvironment &rootDeviceEnvironment, NEO::PostSyncMode postSyncMode) {
     using PIPE_CONTROL = typename GfxFamily::PIPE_CONTROL;
 
+    auto releaseHelper = rootDeviceEnvironment.getReleaseHelper();
     if (MemorySynchronizationCommands<GfxFamily>::isBarrierWaRequired(rootDeviceEnvironment)) {
         PIPE_CONTROL cmd = GfxFamily::cmdInitPipeControl;
         MemorySynchronizationCommands<GfxFamily>::setBarrierWaFlags(&cmd);
         *reinterpret_cast<PIPE_CONTROL *>(commandsBuffer) = cmd;
         commandsBuffer = ptrOffset(commandsBuffer, sizeof(PIPE_CONTROL));
 
-        MemorySynchronizationCommands<GfxFamily>::setAdditionalSynchronization(commandsBuffer, gpuAddress, false, rootDeviceEnvironment);
+        MemorySynchronizationCommands<GfxFamily>::setAdditionalSynchronization(commandsBuffer, gpuAddress, NEO::FenceType::release, rootDeviceEnvironment);
+    } else if (releaseHelper && postSyncMode == PostSyncMode::timestamp && releaseHelper->programmAdditionalStallPriorToBarrierWithTimestamp()) {
+        PipeControlArgs additionalArgs = {};
+        additionalArgs.csStallOnly = true;
+
+        MemorySynchronizationCommands<GfxFamily>::setSingleBarrier(commandsBuffer, additionalArgs);
+        commandsBuffer = ptrOffset(commandsBuffer, sizeof(PIPE_CONTROL));
     }
 }
 
 template <typename GfxFamily>
-void MemorySynchronizationCommands<GfxFamily>::addAdditionalSynchronization(LinearStream &commandStream, uint64_t gpuAddress, bool acquire, const RootDeviceEnvironment &rootDeviceEnvironment) {
-    size_t requiredSize = MemorySynchronizationCommands<GfxFamily>::getSizeForSingleAdditionalSynchronization(rootDeviceEnvironment);
+void MemorySynchronizationCommands<GfxFamily>::addAdditionalSynchronization(LinearStream &commandStream, uint64_t gpuAddress, NEO::FenceType fenceType, const RootDeviceEnvironment &rootDeviceEnvironment) {
+    size_t requiredSize = MemorySynchronizationCommands<GfxFamily>::getSizeForSingleAdditionalSynchronization(fenceType, rootDeviceEnvironment);
     void *commandBuffer = commandStream.getSpace(requiredSize);
-    setAdditionalSynchronization(commandBuffer, gpuAddress, acquire, rootDeviceEnvironment);
+    setAdditionalSynchronization(commandBuffer, gpuAddress, fenceType, rootDeviceEnvironment);
 }
 
 template <typename GfxFamily>
-void MemorySynchronizationCommands<GfxFamily>::addAdditionalSynchronizationForDirectSubmission(LinearStream &commandStream, uint64_t gpuAddress, bool acquire, const RootDeviceEnvironment &rootDeviceEnvironment) {
-    MemorySynchronizationCommands<GfxFamily>::addAdditionalSynchronization(commandStream, gpuAddress, acquire, rootDeviceEnvironment);
+void MemorySynchronizationCommands<GfxFamily>::addAdditionalSynchronizationForDirectSubmission(LinearStream &commandStream, uint64_t gpuAddress, NEO::FenceType fenceType, const RootDeviceEnvironment &rootDeviceEnvironment) {
+    MemorySynchronizationCommands<GfxFamily>::addAdditionalSynchronization(commandStream, gpuAddress, fenceType, rootDeviceEnvironment);
 }
 
 template <typename GfxFamily>
@@ -353,45 +361,50 @@ bool MemorySynchronizationCommands<GfxFamily>::getDcFlushEnable(bool isFlushPref
 }
 
 template <typename GfxFamily>
-size_t MemorySynchronizationCommands<GfxFamily>::getSizeForSingleBarrier(bool tlbInvalidationRequired) {
+size_t MemorySynchronizationCommands<GfxFamily>::getSizeForSingleBarrier() {
     return sizeof(typename GfxFamily::PIPE_CONTROL);
 }
 
 template <typename GfxFamily>
-size_t MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWithPostSyncOperation(const RootDeviceEnvironment &rootDeviceEnvironment, bool tlbInvalidationRequired) {
+size_t MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWithPostSyncOperation(const RootDeviceEnvironment &rootDeviceEnvironment, NEO::PostSyncMode postSyncMode) {
 
-    size_t size = getSizeForSingleBarrier(tlbInvalidationRequired);
-    size += getSizeForBarrierWa(rootDeviceEnvironment);
-    size += getSizeForSingleAdditionalSynchronization(rootDeviceEnvironment);
-    return size;
-}
-
-template <typename GfxFamily>
-size_t MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWa(const RootDeviceEnvironment &rootDeviceEnvironment) {
-    size_t size = 0;
-    if (MemorySynchronizationCommands<GfxFamily>::isBarrierWaRequired(rootDeviceEnvironment)) {
-        size = getSizeForSingleBarrier(false) +
-               getSizeForSingleAdditionalSynchronization(rootDeviceEnvironment);
+    size_t size = getSizeForSingleBarrier();
+    size += getSizeForBarrierWa(rootDeviceEnvironment, postSyncMode);
+    if (postSyncMode != PostSyncMode::noWrite) {
+        size += getSizeForSingleAdditionalSynchronization(NEO::FenceType::release, rootDeviceEnvironment);
     }
     return size;
 }
 
 template <typename GfxFamily>
-void MemorySynchronizationCommands<GfxFamily>::setAdditionalSynchronization(void *&commandsBuffer, uint64_t gpuAddress, bool acquire, const RootDeviceEnvironment &rootDeviceEnvironment) {
+size_t MemorySynchronizationCommands<GfxFamily>::getSizeForBarrierWa(const RootDeviceEnvironment &rootDeviceEnvironment, NEO::PostSyncMode postSyncMode) {
+    size_t size = 0;
+    auto releaseHelper = rootDeviceEnvironment.getReleaseHelper();
+    if (MemorySynchronizationCommands<GfxFamily>::isBarrierWaRequired(rootDeviceEnvironment)) {
+        size = getSizeForSingleBarrier() +
+               getSizeForSingleAdditionalSynchronization(NEO::FenceType::release, rootDeviceEnvironment);
+    } else if (releaseHelper && postSyncMode == PostSyncMode::timestamp && releaseHelper->programmAdditionalStallPriorToBarrierWithTimestamp()) {
+        size = getSizeForSingleBarrier();
+    }
+    return size;
 }
 
 template <typename GfxFamily>
-inline size_t MemorySynchronizationCommands<GfxFamily>::getSizeForSingleAdditionalSynchronization(const RootDeviceEnvironment &rootDeviceEnvironment) {
+void MemorySynchronizationCommands<GfxFamily>::setAdditionalSynchronization(void *&commandsBuffer, uint64_t gpuAddress, NEO::FenceType fenceType, const RootDeviceEnvironment &rootDeviceEnvironment) {
+}
+
+template <typename GfxFamily>
+inline size_t MemorySynchronizationCommands<GfxFamily>::getSizeForSingleAdditionalSynchronization(NEO::FenceType fenceType, const RootDeviceEnvironment &rootDeviceEnvironment) {
     return 0u;
 }
 
 template <typename GfxFamily>
 inline size_t MemorySynchronizationCommands<GfxFamily>::getSizeForSingleAdditionalSynchronizationForDirectSubmission(const RootDeviceEnvironment &rootDeviceEnvironment) {
-    return MemorySynchronizationCommands<GfxFamily>::getSizeForSingleAdditionalSynchronization(rootDeviceEnvironment);
+    return MemorySynchronizationCommands<GfxFamily>::getSizeForSingleAdditionalSynchronization(NEO::FenceType::acquire, rootDeviceEnvironment);
 }
 
 template <typename GfxFamily>
-inline size_t MemorySynchronizationCommands<GfxFamily>::getSizeForAdditonalSynchronization(const RootDeviceEnvironment &rootDeviceEnvironment) {
+inline size_t MemorySynchronizationCommands<GfxFamily>::getSizeForAdditionalSynchronization(NEO::FenceType fenceType, const RootDeviceEnvironment &rootDeviceEnvironment) {
     return 0u;
 }
 
@@ -490,11 +503,6 @@ size_t GfxCoreHelperHw<GfxFamily>::getSingleTimestampPacketSizeHw() {
 }
 
 template <typename GfxFamily>
-size_t MemorySynchronizationCommands<GfxFamily>::getSizeForFullCacheFlush() {
-    return MemorySynchronizationCommands<GfxFamily>::getSizeForSingleBarrier(true);
-}
-
-template <typename GfxFamily>
 void MemorySynchronizationCommands<GfxFamily>::addFullCacheFlush(LinearStream &commandStream, const RootDeviceEnvironment &rootDeviceEnvironment) {
     PipeControlArgs args;
     args.dcFlushEnable = MemorySynchronizationCommands<GfxFamily>::getDcFlushEnable(true, rootDeviceEnvironment);
@@ -525,7 +533,7 @@ void MemorySynchronizationCommands<GfxFamily>::addStateCacheFlush(LinearStream &
 
 template <typename GfxFamily>
 size_t MemorySynchronizationCommands<GfxFamily>::getSizeForInstructionCacheFlush() {
-    return MemorySynchronizationCommands<GfxFamily>::getSizeForSingleBarrier(false);
+    return MemorySynchronizationCommands<GfxFamily>::getSizeForSingleBarrier();
 }
 
 template <typename GfxFamily>
@@ -591,11 +599,6 @@ bool GfxCoreHelperHw<GfxFamily>::isSipKernelAsHexadecimalArrayPreferred() const 
 
 template <typename GfxFamily>
 void GfxCoreHelperHw<GfxFamily>::setSipKernelData(uint32_t *&sipKernelBinary, size_t &kernelBinarySize, const RootDeviceEnvironment &rootDeviceEnvironment) const {
-}
-
-template <typename GfxFamily>
-size_t GfxCoreHelperHw<GfxFamily>::getSipKernelMaxDbgSurfaceSize(const HardwareInfo &hwInfo) const {
-    return 24 * MemoryConstants::megaByte;
 }
 
 template <typename GfxFamily>
@@ -666,7 +669,7 @@ uint32_t GfxCoreHelperHw<GfxFamily>::overrideMaxWorkGroupSize(uint32_t maxWG) co
 }
 
 template <typename GfxFamily>
-uint32_t GfxCoreHelperHw<GfxFamily>::adjustMaxWorkGroupSize(const uint32_t grfCount, const uint32_t simd, bool isHwLocalGeneration, const uint32_t defaultMaxGroupSize, const RootDeviceEnvironment &rootDeviceEnvironment) const {
+uint32_t GfxCoreHelperHw<GfxFamily>::adjustMaxWorkGroupSize(const uint32_t grfCount, const uint32_t simd, const uint32_t defaultMaxGroupSize, const RootDeviceEnvironment &rootDeviceEnvironment) const {
     return defaultMaxGroupSize;
 }
 
@@ -676,7 +679,7 @@ uint32_t GfxCoreHelperHw<GfxFamily>::getMinimalGrfSize() const {
 }
 
 template <typename GfxFamily>
-uint32_t GfxCoreHelperHw<GfxFamily>::calculateNumThreadsPerThreadGroup(uint32_t simd, uint32_t totalWorkItems, uint32_t grfCount, bool isHwLocalIdGeneration, const RootDeviceEnvironment &rootDeviceEnvironment) const {
+uint32_t GfxCoreHelperHw<GfxFamily>::calculateNumThreadsPerThreadGroup(uint32_t simd, uint32_t totalWorkItems, uint32_t grfCount, const RootDeviceEnvironment &rootDeviceEnvironment) const {
     return getThreadsPerWG(simd, totalWorkItems);
 }
 
@@ -851,6 +854,11 @@ uint32_t GfxCoreHelperHw<Family>::getImplicitArgsVersion() const {
 template <typename Family>
 bool GfxCoreHelperHw<Family>::isCacheFlushPriorImageReadRequired() const {
     return false;
+}
+
+template <typename Family>
+uint32_t GfxCoreHelperHw<Family>::getQueuePriorityLevels() const {
+    return 2;
 }
 
 } // namespace NEO

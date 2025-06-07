@@ -7,6 +7,7 @@
 
 #include "shared/source/command_container/command_encoder.h"
 #include "shared/source/command_stream/stream_properties.h"
+#include "shared/source/gmm_helper/cache_settings_helper.h"
 #include "shared/source/gmm_helper/gmm_helper.h"
 #include "shared/source/gmm_helper/gmm_lib.h"
 #include "shared/source/helpers/definitions/command_encoder_args.h"
@@ -86,10 +87,13 @@ XE_HPC_CORETEST_F(CommandEncodeXeHpcCoreTest, givenDebugVariableSetwhenProgramin
     auto statePrefetchCmd = reinterpret_cast<STATE_PREFETCH *>(buffer);
 
     constexpr uint64_t gpuVa = 0x100000;
-    constexpr uint32_t mocsIndexForL3 = (2 << 1);
     constexpr size_t numCachelines = 3;
 
     const GraphicsAllocation allocation(0, 1u /*num gmms*/, AllocationType::buffer, nullptr, gpuVa, 0, 4096, MemoryPool::localMemory, MemoryManager::maxOsContextCount);
+
+    auto rootDeviceEnv = mockExecutionEnvironment.rootDeviceEnvironments[0].get();
+    auto usage = CacheSettingsHelper::getGmmUsageType(allocation.getAllocationType(), false, rootDeviceEnv->getProductHelper(), rootDeviceEnv->getHardwareInfo());
+    uint32_t mocs = rootDeviceEnv->getGmmHelper()->getMOCS(usage);
 
     static constexpr std::array<uint32_t, 7> expectedSizes = {{
         MemoryConstants::cacheLineSize - 1,
@@ -114,12 +118,12 @@ XE_HPC_CORETEST_F(CommandEncodeXeHpcCoreTest, givenDebugVariableSetwhenProgramin
         EXPECT_EQ(sizeof(STATE_PREFETCH) * expectedCmdsCount, linearStream.getUsed());
 
         for (uint32_t i = 0; i < expectedCmdsCount; i++) {
-            uint32_t programmedSize = (statePrefetchCmd[i].getPrefetchSize() + 1) * MemoryConstants::cacheLineSize;
+            uint32_t programmedSize = statePrefetchCmd[i].getPrefetchSize() * MemoryConstants::cacheLineSize;
 
             EXPECT_EQ(statePrefetchCmd[i].getAddress(), gpuVa + (i * MemoryConstants::pageSize64k));
             EXPECT_FALSE(statePrefetchCmd[i].getKernelInstructionPrefetch());
             EXPECT_FALSE(statePrefetchCmd[i].getParserStall());
-            EXPECT_EQ(mocsIndexForL3, statePrefetchCmd[i].getMemoryObjectControlState());
+            EXPECT_EQ(mocs, statePrefetchCmd[i].getMemoryObjectControlState());
 
             if (programmedSize > expectedSize) {
                 // cacheline alignemnt

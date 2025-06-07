@@ -561,7 +561,7 @@ HWTEST_F(DispatchFlagsTests, givenMockKernelWhenSettingAdditionalKernelExecInfoT
 
 HWTEST_F(EnqueueHandlerTest, GivenCommandStreamWithoutKernelAndZeroSurfacesWhenEnqueuedHandlerThenProgramPipeControl) {
     DebugManagerStateRestore restorer{};
-    debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    debugManager.flags.EnableL3FlushAfterPostSync.set(0);
 
     std::unique_ptr<MockCommandQueueWithCacheFlush<FamilyType>> mockCmdQ(new MockCommandQueueWithCacheFlush<FamilyType>(context, pClDevice, 0));
 
@@ -571,7 +571,7 @@ HWTEST_F(EnqueueHandlerTest, GivenCommandStreamWithoutKernelAndZeroSurfacesWhenE
     EXPECT_EQ(CL_SUCCESS, enqueueResult);
 
     auto requiredCmdStreamSize = alignUp(MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(
-                                             pDevice->getRootDeviceEnvironment(), false),
+                                             pDevice->getRootDeviceEnvironment(), NEO::PostSyncMode::immediateData),
                                          MemoryConstants::cacheLineSize);
 
     EXPECT_EQ(mockCmdQ->getCS(0).getUsed(), requiredCmdStreamSize);

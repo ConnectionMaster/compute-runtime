@@ -72,51 +72,6 @@ void EncodeComputeMode<Family>::programComputeModeCommand(LinearStream &csr, Sta
 }
 
 template <>
-void EncodeMemoryPrefetch<Family>::programMemoryPrefetch(LinearStream &commandStream, const GraphicsAllocation &graphicsAllocation, uint32_t size, size_t offset, const RootDeviceEnvironment &rootDeviceEnvironment) {
-    using STATE_PREFETCH = typename Family::STATE_PREFETCH;
-    constexpr uint32_t mocsIndexForL3 = (2 << 1);
-
-    auto &hwInfo = *rootDeviceEnvironment.getHardwareInfo();
-    auto &productHelper = rootDeviceEnvironment.getHelper<ProductHelper>();
-
-    bool prefetch = productHelper.allowMemoryPrefetch(hwInfo);
-
-    if (!prefetch) {
-        return;
-    }
-
-    uint64_t gpuVa = graphicsAllocation.getGpuAddress() + offset;
-
-    while (size > 0) {
-        uint32_t sizeInBytesToPrefetch = std::min(alignUp(size, MemoryConstants::cacheLineSize),
-                                                  static_cast<uint32_t>(MemoryConstants::pageSize64k));
-
-        uint32_t prefetchSize = sizeInBytesToPrefetch / MemoryConstants::cacheLineSize;
-
-        auto statePrefetch = commandStream.getSpaceForCmd<STATE_PREFETCH>();
-        STATE_PREFETCH cmd = Family::cmdInitStatePrefetch;
-
-        cmd.setAddress(gpuVa);
-        cmd.setPrefetchSize(prefetchSize);
-        cmd.setMemoryObjectControlState(mocsIndexForL3);
-        cmd.setKernelInstructionPrefetch(GraphicsAllocation::isIsaAllocationType(graphicsAllocation.getAllocationType()));
-
-        if (debugManager.flags.ForceCsStallForStatePrefetch.get() == 1) {
-            cmd.setParserStall(true);
-        }
-
-        *statePrefetch = cmd;
-
-        if (sizeInBytesToPrefetch > size) {
-            break;
-        }
-
-        gpuVa += sizeInBytesToPrefetch;
-        size -= sizeInBytesToPrefetch;
-    }
-}
-
-template <>
 void EncodeSurfaceState<Family>::setAuxParamsForMCSCCS(R_SURFACE_STATE *surfaceState, const ReleaseHelper *releaseHelper) {
     surfaceState->setAuxiliarySurfaceMode(AUXILIARY_SURFACE_MODE::AUXILIARY_SURFACE_MODE_AUX_MCS);
 }
@@ -153,7 +108,7 @@ void EncodeDispatchKernel<Family>::encodeEuSchedulingPolicy(InterfaceDescriptorT
             pInterfaceDescriptor->setEuThreadSchedulingModeOverride(INTERFACE_DESCRIPTOR_DATA::EU_THREAD_SCHEDULING_MODE_OVERRIDE::EU_THREAD_SCHEDULING_MODE_OVERRIDE_STALL_BASED_ROUND_ROBIN);
             break;
         default:
-            pInterfaceDescriptor->setEuThreadSchedulingModeOverride(INTERFACE_DESCRIPTOR_DATA::EU_THREAD_SCHEDULING_MODE_OVERRIDE::EU_THREAD_SCHEDULING_MODE_OVERRIDE_HW_DEFAULT);
+            pInterfaceDescriptor->setEuThreadSchedulingModeOverride(INTERFACE_DESCRIPTOR_DATA::EU_THREAD_SCHEDULING_MODE_OVERRIDE::EU_THREAD_SCHEDULING_MODE_OVERRIDE_STALL_BASED_ROUND_ROBIN);
         }
     }
 }
@@ -175,4 +130,6 @@ namespace NEO {
 template void InOrderPatchCommandHelpers::PatchCmd<Family>::patchComputeWalker(uint64_t appendCounterValue);
 template void InOrderPatchCommandHelpers::PatchCmd<Family>::patchBlitterCommand(uint64_t appendCounterValue, InOrderPatchCommandHelpers::PatchCmdType patchCmdType);
 template struct EncodeDispatchKernelWithHeap<Family>;
+template void NEO::EncodeDispatchKernelWithHeap<Family>::adjustBindingTablePrefetch<Family::DefaultWalkerType::InterfaceDescriptorType>(Family::DefaultWalkerType::InterfaceDescriptorType &, unsigned int, unsigned int);
+
 } // namespace NEO

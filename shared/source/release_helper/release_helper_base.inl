@@ -5,6 +5,7 @@
  *
  */
 
+#include "shared/source/debug_settings/debug_settings_manager.h"
 #include "shared/source/helpers/constants.h"
 #include "shared/source/helpers/string.h"
 #include "shared/source/release_helper/release_helper.h"
@@ -91,6 +92,9 @@ bool ReleaseHelperHw<releaseType>::isGlobalBindlessAllocatorEnabled() const {
 
 template <ReleaseType releaseType>
 uint32_t ReleaseHelperHw<releaseType>::getNumThreadsPerEu() const {
+    if (debugManager.flags.OverrideNumThreadsPerEu.get() != -1) {
+        return debugManager.flags.OverrideNumThreadsPerEu.get();
+    }
     return 8u;
 }
 
@@ -165,6 +169,11 @@ bool ReleaseHelperHw<releaseType>::isNumRtStacksPerDssFixedValue() const {
 template <ReleaseType releaseType>
 bool ReleaseHelperHw<releaseType>::getFtrXe2Compression() const {
     return true;
+}
+
+template <ReleaseType releaseType>
+bool ReleaseHelperHw<releaseType>::programmAdditionalStallPriorToBarrierWithTimestamp() const {
+    return false;
 }
 
 template <ReleaseType releaseType>

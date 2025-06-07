@@ -19,12 +19,10 @@ struct MockIoctlHelperXe : IoctlHelperXe {
     using IoctlHelperXe::getFdFromVmExport;
     using IoctlHelperXe::ioctl;
     using IoctlHelperXe::IoctlHelperXe;
-    using IoctlHelperXe::isLowLatencyHintAvailable;
     using IoctlHelperXe::maxContextSetProperties;
     using IoctlHelperXe::maxExecQueuePriority;
     using IoctlHelperXe::queryGtListData;
     using IoctlHelperXe::setContextProperties;
-    using IoctlHelperXe::supportedFeatures;
     using IoctlHelperXe::tileIdToGtId;
     using IoctlHelperXe::updateBindInfo;
     using IoctlHelperXe::UserFenceExtension;

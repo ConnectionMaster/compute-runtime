@@ -240,7 +240,7 @@ struct MultiTileCommandListAppendBarrierFixture : public MultiTileCommandListFix
                                       sizeof(MI_STORE_DATA_IMM) +
                                       sizeof(MI_ATOMIC) + NEO::EncodeSemaphore<FamilyType>::getSizeMiSemaphoreWait();
 
-        size_t postSyncSize = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(device->getNEODevice()->getRootDeviceEnvironment(), false);
+        size_t postSyncSize = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(device->getNEODevice()->getRootDeviceEnvironment(), NEO::PostSyncMode::immediateData);
 
         auto useSizeBefore = cmdListStream->getUsed();
         auto result = commandList->appendBarrier(eventHandle, 0, nullptr, false);
@@ -350,8 +350,8 @@ struct MultiTileCommandListAppendBarrierFixture : public MultiTileCommandListFix
             timestampRegisters += 2 * sizeof(MI_STORE_REGISTER_MEM);
         }
 
-        size_t postBarrierSynchronization = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier(false) +
-                                            NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(rootDeviceEnv);
+        size_t postBarrierSynchronization = NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier() +
+                                            NEO::MemorySynchronizationCommands<FamilyType>::getSizeForSingleAdditionalSynchronization(NEO::FenceType::release, rootDeviceEnv);
         size_t stopRegisters = timestampRegisters + postBarrierSynchronization;
 
         auto useSizeBefore = cmdListStream->getUsed();

@@ -29,7 +29,6 @@ class CommandStreamReceiverSimulatedCommonHw : public CommandStreamReceiverHw<Gf
     using MiContextDescriptorReg = typename AUB::MiContextDescriptorReg;
 
     bool getParametersForMemory(GraphicsAllocation &graphicsAllocation, uint64_t &gpuAddress, void *&cpuAddress, size_t &size) const;
-    void freeEngineInfo(AddressMapper &gttRemap);
     MOCKABLE_VIRTUAL uint32_t getDeviceIndex() const;
 
   public:
@@ -44,14 +43,10 @@ class CommandStreamReceiverSimulatedCommonHw : public CommandStreamReceiverHw<Gf
     uint64_t getGTTBits() const {
         return 0u;
     }
-    void initGlobalMMIO();
-    void initAdditionalMMIO();
     uint64_t getPPGTTAdditionalBits(GraphicsAllocation *gfxAllocation);
     void getGTTData(void *memory, AubGTTData &data);
     uint32_t getMemoryBankForGtt() const;
     static const AubMemDump::LrcaHelper &getCsTraits(aub_stream::EngineType engineType);
-    void initEngineMMIO();
-    void submitLRCA(const MiContextDescriptorReg &contextDescriptor);
     void setupContext(OsContext &osContext) override;
     virtual bool expectMemoryEqual(void *gfxAddress, const void *srcAddress, size_t length);
     virtual bool expectMemoryNotEqual(void *gfxAddress, const void *srcAddress, size_t length);
@@ -89,7 +84,5 @@ class CommandStreamReceiverSimulatedCommonHw : public CommandStreamReceiverHw<Gf
         size_t sizeRingBuffer;
         uint32_t tailRingBuffer;
     } engineInfo = {};
-
-    AubMemDump::AubStream *stream;
 };
 } // namespace NEO

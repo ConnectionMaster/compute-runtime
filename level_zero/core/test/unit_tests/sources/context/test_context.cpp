@@ -21,6 +21,7 @@
 #include "shared/test/common/mocks/mock_svm_manager.h"
 #include "shared/test/common/test_macros/hw_test.h"
 
+#include "level_zero/core/source/cmdlist/cmdlist_memory_copy_params.h"
 #include "level_zero/core/source/cmdqueue/cmdqueue.h"
 #include "level_zero/core/source/context/context_imp.h"
 #include "level_zero/core/source/driver/driver_handle_imp.h"
@@ -533,6 +534,11 @@ TEST_F(ContextPowerSavingHintTest, givenCallToContextCreateWithoutPowerHintDescT
     context->destroy();
 }
 
+TEST_F(ContextPowerSavingHintTest, givenOsContextPowerHintMaxAndZePowerSavingHintTypeMaxThenTheyAreEqualAndBothAre100) {
+    EXPECT_EQ(NEO::OsContext::getUmdPowerHintMax(), ZE_POWER_SAVING_HINT_TYPE_MAX);
+    EXPECT_EQ(NEO::OsContext::getUmdPowerHintMax(), 100u);
+}
+
 using ContextTest = Test<DeviceFixture>;
 
 TEST_F(ContextTest, whenCreatingAndDestroyingContextThenSuccessIsReturned) {
@@ -700,6 +706,76 @@ TEST_F(ContextMakeMemoryResidentTests,
     context->freeMem(ptr);
 }
 
+TEST_F(ContextMakeMemoryResidentTests, givenDeviceUnifiedMemoryAndLocalOnlyAllocationModeThenCallMakeMemoryResidentImmediately) {
+    const size_t size = 4096;
+    void *ptr = nullptr;
+    ze_device_mem_alloc_desc_t deviceDesc = {};
+
+    auto *driverHandleImp{static_cast<DriverHandleImp *>(hostDriverHandle.get())};
+    driverHandleImp->memoryManager->usmDeviceAllocationMode = NEO::LocalMemAllocationMode::localOnly;
+    static_cast<MockMemoryManager *>(driverHandleImp->memoryManager)->returnFakeAllocation = true;
+
+    EXPECT_EQ(0U, mockMemoryInterface->makeResidentCalled);
+    mockMemoryInterface->makeResidentResult = NEO::MemoryOperationsStatus::success;
+    ze_result_t res1 = context->allocDeviceMem(device->toHandle(),
+                                               &deviceDesc,
+                                               size,
+                                               0,
+                                               &ptr);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, res1);
+
+    auto allocData{driverHandleImp->svmAllocsManager->getSVMAlloc(ptr)};
+    EXPECT_NE(allocData, nullptr);
+    const bool lmemAllocationModeSupported{allocData->gpuAllocations.getDefaultGraphicsAllocation()->storageInfo.localOnlyRequired};
+    EXPECT_EQ(mockMemoryInterface->makeResidentCalled, (lmemAllocationModeSupported ? 1U : 0U));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, context->freeMem(ptr));
+
+    mockMemoryInterface->makeResidentResult = NEO::MemoryOperationsStatus::outOfMemory;
+    ze_result_t res2 = context->allocDeviceMem(device->toHandle(),
+                                               &deviceDesc,
+                                               size,
+                                               0,
+                                               &ptr);
+    EXPECT_EQ(res2, (lmemAllocationModeSupported ? ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY : ZE_RESULT_SUCCESS));
+    EXPECT_EQ(mockMemoryInterface->makeResidentCalled, (lmemAllocationModeSupported ? 2U : 0U));
+    EXPECT_EQ(ZE_RESULT_SUCCESS, context->freeMem(ptr));
+}
+
+TEST_F(ContextMakeMemoryResidentTests, givenNonDeviceUnifiedMemoryWhenAllocDeviceMemCalledThenMakeMemoryResidentIsNotImmediatelyCalled) {
+    const size_t size = 4096;
+    void *ptr = nullptr;
+    ze_device_mem_alloc_desc_t deviceDesc = {};
+
+    auto *driverHandleImp{static_cast<DriverHandleImp *>(hostDriverHandle.get())};
+    driverHandleImp->memoryManager->usmDeviceAllocationMode = NEO::LocalMemAllocationMode::localOnly;
+    static_cast<MockMemoryManager *>(driverHandleImp->memoryManager)->returnFakeAllocation = true;
+
+    auto *origSvmAllocsManager{driverHandleImp->svmAllocsManager};
+    auto fakeAllocationAddr{reinterpret_cast<void *>(0x1234)};
+
+    MockGraphicsAllocation mockUnifiedAllocation{};
+    SvmAllocationData allocData(0U);
+    allocData.gpuAllocations.addAllocation(&mockUnifiedAllocation);
+    allocData.memoryType = InternalMemoryType::notSpecified;
+
+    MockSVMAllocsManager mockSvmAllocsManager{driverHandleImp->memoryManager};
+    mockSvmAllocsManager.createUnifiedMemoryAllocationCallBase = false;
+    mockSvmAllocsManager.createUnifiedMemoryAllocationReturnValue = fakeAllocationAddr;
+    mockSvmAllocsManager.insertSVMAlloc(fakeAllocationAddr, allocData);
+    driverHandleImp->svmAllocsManager = &mockSvmAllocsManager;
+
+    EXPECT_EQ(0U, mockMemoryInterface->makeResidentCalled);
+    mockMemoryInterface->makeResidentResult = NEO::MemoryOperationsStatus::success;
+    ze_result_t res1 = context->allocDeviceMem(device->toHandle(),
+                                               &deviceDesc,
+                                               size,
+                                               0,
+                                               &ptr);
+    EXPECT_EQ(ZE_RESULT_SUCCESS, res1);
+    EXPECT_EQ(mockMemoryInterface->makeResidentCalled, 0U);
+    driverHandleImp->svmAllocsManager = origSvmAllocsManager;
+}
+
 struct ContextMakeMemoryResidentAndMigrationTests : public ContextMakeMemoryResidentTests {
     struct MockResidentTestsPageFaultManager : public MockPageFaultManager {
         void moveAllocationToGpuDomain(void *ptr) override {
@@ -800,8 +876,7 @@ HWTEST_F(ContextMakeMemoryResidentAndMigrationTests,
     commandQueue->destroy();
     context->freeMem(ptr);
 }
-HWTEST2_F(ContextMakeMemoryResidentAndMigrationTests,
-          whenExecutingKernelWithIndirectAccessThenSharedAllocationsAreMigrated, MatchAny) {
+HWTEST_F(ContextMakeMemoryResidentAndMigrationTests, whenExecutingKernelWithIndirectAccessThenSharedAllocationsAreMigrated) {
 
     DriverHandleImp *driverHandleImp = static_cast<DriverHandleImp *>(hostDriverHandle.get());
     size_t previousSize = driverHandleImp->sharedMakeResidentAllocations.size();
@@ -2445,7 +2520,7 @@ HWTEST2_F(ContextTest, WhenCreatingImageThenSuccessIsReturned, IsAtMostProductDG
     EXPECT_EQ(ZE_RESULT_SUCCESS, res);
 }
 
-HWTEST2_F(ContextTest, givenBindlessModeDisabledWhenMakeImageResidentAndEvictThenImageImplicitArgsAllocationIsNotMadeResidentAndEvicted, MatchAny) {
+HWTEST_F(ContextTest, givenBindlessModeDisabledWhenMakeImageResidentAndEvictThenImageImplicitArgsAllocationIsNotMadeResidentAndEvicted) {
     if (!device->getNEODevice()->getRootDeviceEnvironment().getReleaseHelper() ||
         !device->getNEODevice()->getDeviceInfo().imageSupport) {
         GTEST_SKIP();
@@ -2497,7 +2572,7 @@ HWTEST2_F(ContextTest, givenBindlessModeDisabledWhenMakeImageResidentAndEvictThe
     EXPECT_EQ(ZE_RESULT_SUCCESS, res);
 }
 
-HWTEST2_F(ContextTest, givenBindlessImageWhenMakeImageResidentAndEvictThenImageImplicitArgsAllocationIsMadeResidentAndEvicted, MatchAny) {
+HWTEST_F(ContextTest, givenBindlessImageWhenMakeImageResidentAndEvictThenImageImplicitArgsAllocationIsMadeResidentAndEvicted) {
     if (!device->getNEODevice()->getRootDeviceEnvironment().getReleaseHelper() ||
         !device->getNEODevice()->getDeviceInfo().imageSupport) {
         GTEST_SKIP();
@@ -2560,7 +2635,7 @@ HWTEST2_F(ContextTest, givenBindlessImageWhenMakeImageResidentAndEvictThenImageI
     EXPECT_EQ(ZE_RESULT_SUCCESS, res);
 }
 
-HWTEST2_F(ContextTest, givenMakeImageResidentThenMakeImageResidentIsCalledWithForcePagingFenceTrue, MatchAny) {
+HWTEST_F(ContextTest, givenMakeImageResidentThenMakeImageResidentIsCalledWithForcePagingFenceTrue) {
     if (!device->getNEODevice()->getRootDeviceEnvironment().getReleaseHelper() ||
         !device->getNEODevice()->getDeviceInfo().imageSupport) {
         GTEST_SKIP();

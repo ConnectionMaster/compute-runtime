@@ -6,6 +6,7 @@
  */
 
 #pragma once
+#include "shared/source/helpers/common_types.h"
 #include "shared/source/helpers/constants.h"
 #include "shared/source/helpers/engine_control.h"
 #include "shared/source/helpers/heap_assigner.h"
@@ -29,6 +30,7 @@ namespace NEO {
 
 using SubDeviceIdsVec = StackVec<uint32_t, 4>;
 
+class AllocationsList;
 class MultiGraphicsAllocation;
 class CpuPageFaultManager;
 class GfxPartition;
@@ -46,6 +48,7 @@ class HostPtrManager;
 class OsContext;
 class PrefetchManager;
 class HeapAllocator;
+class ReleaseHelper;
 
 enum AllocationUsage {
     TEMPORARY_ALLOCATION,
@@ -203,7 +206,7 @@ class MemoryManager {
 
     void waitForDeletions();
     MOCKABLE_VIRTUAL void waitForEnginesCompletion(GraphicsAllocation &graphicsAllocation);
-    MOCKABLE_VIRTUAL bool allocInUse(GraphicsAllocation &graphicsAllocation);
+    MOCKABLE_VIRTUAL bool allocInUse(GraphicsAllocation &graphicsAllocation) const;
     void cleanTemporaryAllocationListOnAllEngines(bool waitForCompletion);
 
     bool isAsyncDeleterEnabled() const;
@@ -342,6 +345,8 @@ class MemoryManager {
 
     void initUsmReuseLimits();
     UsmReuseInfo usmReuseInfo;
+    LocalMemAllocationMode usmDeviceAllocationMode = LocalMemAllocationMode::hwDefault;
+    bool isLocalOnlyAllocationMode() const { return usmDeviceAllocationMode == LocalMemAllocationMode::localOnly; }
 
     bool shouldLimitAllocationsReuse() const {
         return getUsedSystemMemorySize() >= usmReuseInfo.getLimitAllocationsReuseThreshold();
@@ -350,6 +355,12 @@ class MemoryManager {
     void addCustomHeapAllocatorConfig(AllocationType allocationType, bool isFrontWindowPool, const CustomHeapAllocatorConfig &config);
     std::optional<std::reference_wrapper<CustomHeapAllocatorConfig>> getCustomHeapAllocatorConfig(AllocationType allocationType, bool isFrontWindowPool);
     void removeCustomHeapAllocatorConfig(AllocationType allocationType, bool isFrontWindowPool);
+
+    void storeTemporaryAllocation(std::unique_ptr<GraphicsAllocation> &&gfxAllocation, uint32_t osContextId, TaskCountType taskCount);
+    void cleanTemporaryAllocations(const CommandStreamReceiver &csr, TaskCountType waitTaskCount);
+    std::unique_ptr<GraphicsAllocation> obtainTemporaryAllocationWithPtr(CommandStreamReceiver *csr, size_t requiredSize, const void *requiredPtr, AllocationType allocationType);
+    bool isSingleTemporaryAllocationsListEnabled() const { return singleTemporaryAllocationsList; }
+    AllocationsList &getTemporaryAllocationsList() const { return *temporaryAllocations; }
 
   protected:
     bool getAllocationData(AllocationData &allocationData, const AllocationProperties &properties, const void *hostPtr, const StorageInfo &storageInfo);
@@ -387,10 +398,12 @@ class MemoryManager {
     void zeroCpuMemoryIfRequested(const AllocationData &allocationData, void *cpuPtr, size_t size);
     void updateLatestContextIdForRootDevice(uint32_t rootDeviceIndex);
     virtual DeviceBitfield computeStorageInfoMemoryBanks(const AllocationProperties &properties, DeviceBitfield preferredBank, DeviceBitfield allBanks);
+    virtual bool getLocalOnlyRequired(AllocationType allocationType, const ProductHelper &productHelper, const ReleaseHelper *releaseHelper, bool preferCompressed) const;
 
     bool initialized = false;
     bool forceNonSvmForExternalHostPtr = false;
     bool force32bitAllocations = false;
+    bool singleTemporaryAllocationsList = false;
     std::unique_ptr<DeferredDeleter> deferredDeleter;
     bool asyncDeleterEnabled = false;
     std::vector<bool> enable64kbpages;
@@ -401,6 +414,7 @@ class MemoryManager {
     MultiDeviceEngineControlContainer allRegisteredEngines;
     MultiDeviceEngineControlContainer secondaryEngines;
     std::unique_ptr<HostPtrManager> hostPtrManager;
+    std::unique_ptr<AllocationsList> temporaryAllocations;
     uint32_t latestContextId = std::numeric_limits<uint32_t>::max();
     std::map<uint32_t, uint32_t> rootDeviceIndexToContextId; // This map will contain initial value of latestContextId for each rootDeviceIndex
     std::unique_ptr<DeferredDeleter> multiContextResourceDestructor;

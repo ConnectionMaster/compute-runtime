@@ -1588,6 +1588,35 @@ TEST(OsAgnosticMemoryManager, givenForcedSystemMemoryForIsaAndEnabledLocalMemory
     memoryManager.freeGraphicsMemory(allocation);
 }
 
+TEST(OsAgnosticMemoryManager, givenDifferentIsaPaddingIncludedFlagValuesWhenAllocatingGraphicsMemoryForIsaThenUnderlyingBufferSizeMatchesExpectation) {
+    DebugManagerStateRestore dbgRestore;
+    debugManager.flags.ForceSystemMemoryPlacement.set(1 << (static_cast<uint32_t>(AllocationType::kernelIsa) - 1));
+    MockExecutionEnvironment executionEnvironment(defaultHwInfo.get());
+    auto hwInfo = executionEnvironment.rootDeviceEnvironments[0]->getMutableHardwareInfo();
+    hwInfo->featureTable.flags.ftrLocalMemory = true;
+    auto &gfxCoreHelper = executionEnvironment.rootDeviceEnvironments[0]->getHelper<GfxCoreHelper>();
+    const auto isaPadding = gfxCoreHelper.getPaddingForISAAllocation();
+
+    MockMemoryManager memoryManager(false, true, executionEnvironment);
+
+    size_t kernelIsaSize = 4096;
+    AllocationProperties allocProperties = {0, kernelIsaSize, AllocationType::kernelIsa, 1};
+
+    for (auto isaPaddingIncluded : {false, true}) {
+        allocProperties.isaPaddingIncluded = isaPaddingIncluded;
+        auto allocation = memoryManager.allocateGraphicsMemoryWithProperties(allocProperties);
+        ASSERT_NE(nullptr, allocation);
+
+        if (isaPaddingIncluded) {
+            EXPECT_EQ(kernelIsaSize, allocation->getUnderlyingBufferSize());
+        } else {
+            EXPECT_EQ(kernelIsaSize + isaPadding, allocation->getUnderlyingBufferSize());
+        }
+
+        memoryManager.freeGraphicsMemory(allocation);
+    }
+}
+
 class MemoryManagerWithAsyncDeleterTest : public ::testing::Test {
   public:
     MemoryManagerWithAsyncDeleterTest() : memoryManager(false, false){};
@@ -3165,6 +3194,30 @@ HWTEST_F(MemoryAllocatorTest, givenUseLocalPreferredForCacheableBuffersAndCompre
         EXPECT_EQ(true, allocData.storageInfo.systemMemoryPlacement);
         EXPECT_EQ(false, allocData.storageInfo.systemMemoryForced);
     }
+}
+
+HWTEST_F(MemoryAllocatorTest, givenNonDefaultLocalMemoryAllocationModeAndLocalPreferredForCacheableBuffersWhenGettingAllocDataForDeviceUsmThenLocalOnlyRequiredIsNotOverriden) {
+    DebugManagerStateRestore restorer;
+    debugManager.flags.UseLocalPreferredForCacheableBuffers.set(1);
+
+    AllocationProperties properties(mockRootDeviceIndex, 1, AllocationType::buffer, mockDeviceBitfield);
+    properties.flags.uncacheable = false;
+
+    MockMemoryManager mockMemoryManager;
+    auto releaseHelper = std::make_unique<MockReleaseHelper>();
+    mockMemoryManager.executionEnvironment.rootDeviceEnvironments[properties.rootDeviceIndex]->releaseHelper.reset(releaseHelper.get());
+
+    for (const auto debugKeyValue : std::to_array({1, 2})) {
+        mockMemoryManager.usmDeviceAllocationMode = toLocalMemAllocationMode(debugKeyValue);
+        releaseHelper->isLocalOnlyAllowedResult = (debugKeyValue == 1);
+        auto storageInfo{mockMemoryManager.createStorageInfoFromProperties(properties)};
+        bool expectedValue{storageInfo.localOnlyRequired};
+
+        AllocationData allocData;
+        mockMemoryManager.getAllocationData(allocData, properties, nullptr, storageInfo);
+        EXPECT_EQ(expectedValue, allocData.storageInfo.localOnlyRequired);
+    }
+    releaseHelper.release();
 }
 
 TEST(MemoryTransferHelperTest, WhenBlitterIsSelectedButBlitCopyFailsThenFallbackToCopyOnCPU) {

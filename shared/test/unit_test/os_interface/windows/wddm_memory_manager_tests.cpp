@@ -86,6 +86,8 @@ class MockAllocateGraphicsMemoryWithAlignmentWddm : public MemoryManagerCreate<W
 
 class WddmMemoryManagerTests : public ::testing::Test {
   public:
+    static constexpr uint32_t rootDeviceIndex{0U};
+
     std::unique_ptr<VariableBackup<bool>> returnEmptyFilesVectorBackup;
 
     MockAllocateGraphicsMemoryWithAlignmentWddm *memoryManager = nullptr;
@@ -99,13 +101,26 @@ class WddmMemoryManagerTests : public ::testing::Test {
 
         memoryManager = new MockAllocateGraphicsMemoryWithAlignmentWddm(*executionEnvironment);
         executionEnvironment->memoryManager.reset(memoryManager);
-        wddm = static_cast<WddmMock *>(executionEnvironment->rootDeviceEnvironments[0]->osInterface->getDriverModel()->as<Wddm>());
+        wddm = static_cast<WddmMock *>(executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->osInterface->getDriverModel()->as<Wddm>());
     }
 
     void TearDown() override {
         delete executionEnvironment;
     }
 };
+
+TEST_F(WddmMemoryManagerTests, GivenLocalMemoryAllocationModeReleaseKeyWhenWddmMemoryManagerConstructedThenUsmDeviceAllocationModeProperlySet) {
+    DebugManagerStateRestore restorer;
+
+    for (const int32_t releaseKeyVal : std::array{0, 1, 2}) {
+        debugManager.flags.NEO_LOCAL_MEMORY_ALLOCATION_MODE.set(releaseKeyVal);
+        WddmMemoryManager memoryManager{*executionEnvironment};
+        EXPECT_EQ(memoryManager.usmDeviceAllocationMode, toLocalMemAllocationMode(releaseKeyVal));
+        EXPECT_EQ(memoryManager.isLocalOnlyAllocationMode(), memoryManager.getGmmHelper(rootDeviceIndex)->isLocalOnlyAllocationMode());
+
+        memoryManager.getGmmHelper(rootDeviceIndex)->setLocalOnlyAllocationMode(false);
+    }
+}
 
 TEST_F(WddmMemoryManagerTests, GivenAllocDataWithSVMCPUSetWhenAllocateGraphicsMemoryWithAlignmentThenProperFunctionIsUsed) {
     AllocationProperties allocationProperties{0u, 0u, NEO::AllocationType::svmCpu, {}};
@@ -1444,10 +1459,11 @@ TEST_F(WddmMemoryManagerSimpleTest, givenLocalMemoryKernelIsaWithMemoryCopiedWhe
     memoryManager->freeGraphicsMemory(allocation);
     if (makeResidentPriorToLockRequired) {
         EXPECT_EQ(1u, mockTemporaryResources->removeResourceResult.called);
+        EXPECT_EQ(1u, mockTemporaryResources->evictResourceResult.called);
     } else {
         EXPECT_EQ(0u, mockTemporaryResources->removeResourceResult.called);
+        EXPECT_EQ(0u, mockTemporaryResources->evictResourceResult.called);
     }
-    EXPECT_EQ(0u, mockTemporaryResources->evictResourceResult.called);
 }
 TEST_F(WddmMemoryManagerSimpleTest, whenDestroyingNotLockedAllocationThatDoesntNeedMakeResidentBeforeLockThenDontEvictAllocationFromWddmTemporaryResources) {
     DebugManagerStateRestore restorer;

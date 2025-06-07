@@ -56,6 +56,7 @@ class WddmMock : public Wddm {
     using Wddm::hwDeviceId;
     using Wddm::isReadOnlyFlagFallbackAvailable;
     using Wddm::isReadOnlyFlagFallbackSupported;
+    using Wddm::lmemBarSize;
     using Wddm::mapGpuVirtualAddress;
     using Wddm::minAddress;
     using Wddm::pagingFenceAddress;
@@ -66,6 +67,7 @@ class WddmMock : public Wddm {
     using Wddm::populateIpVersion;
     using Wddm::residencyLogger;
     using Wddm::rootDeviceEnvironment;
+    using Wddm::segmentId;
     using Wddm::setNewResourceBoundToPageTable;
     using Wddm::setPlatformSupportEvictIfNecessaryFlag;
     using Wddm::temporaryResources;
@@ -94,7 +96,7 @@ class WddmMock : public Wddm {
     bool submit(uint64_t commandBuffer, size_t size, void *commandHeader, WddmSubmitArguments &submitArguments) override;
     bool waitOnGPU(D3DKMT_HANDLE context) override;
     void *lockResource(const D3DKMT_HANDLE &handle, bool applyMakeResidentPriorToLock, size_t size) override;
-    void unlockResource(const D3DKMT_HANDLE &handle) override;
+    void unlockResource(const D3DKMT_HANDLE &handle, bool applyMakeResidentPriorToLock) override;
     void kmDafLock(D3DKMT_HANDLE handle) override;
     bool isKmDafEnabled() const override;
     void setKmDafEnabled(bool state);

@@ -94,6 +94,16 @@ unsigned int IoctlHelper::getIoctlRequestValueBase(DrmIoctl ioctlRequest) const 
         return DRM_IOCTL_PRIME_FD_TO_HANDLE;
     case DrmIoctl::primeHandleToFd:
         return DRM_IOCTL_PRIME_HANDLE_TO_FD;
+    case DrmIoctl::syncObjFdToHandle:
+        return DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE;
+    case DrmIoctl::syncObjWait:
+        return DRM_IOCTL_SYNCOBJ_WAIT;
+    case DrmIoctl::syncObjSignal:
+        return DRM_IOCTL_SYNCOBJ_SIGNAL;
+    case DrmIoctl::syncObjTimelineWait:
+        return DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT;
+    case DrmIoctl::syncObjTimelineSignal:
+        return DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL;
     default:
         UNRECOVERABLE_IF(true);
         return 0u;
@@ -108,6 +118,16 @@ std::string IoctlHelper::getIoctlStringBase(DrmIoctl ioctlRequest) const {
         return "DRM_IOCTL_PRIME_FD_TO_HANDLE";
     case DrmIoctl::primeHandleToFd:
         return "DRM_IOCTL_PRIME_HANDLE_TO_FD";
+    case DrmIoctl::syncObjFdToHandle:
+        return "DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE";
+    case DrmIoctl::syncObjWait:
+        return "DRM_IOCTL_SYNCOBJ_WAIT";
+    case DrmIoctl::syncObjSignal:
+        return "DRM_IOCTL_SYNCOBJ_SIGNAL";
+    case DrmIoctl::syncObjTimelineWait:
+        return "DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT";
+    case DrmIoctl::syncObjTimelineSignal:
+        return "DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL";
     default:
         UNRECOVERABLE_IF(true);
         return "";
@@ -126,14 +146,14 @@ uint64_t *IoctlHelper::getPagingFenceAddress(uint32_t vmHandleId, OsContextLinux
     }
 }
 
-uint64_t IoctlHelper::acquireGpuRange(DrmMemoryManager &memoryManager, size_t &size, uint32_t rootDeviceIndex, HeapIndex heapIndex) {
+uint64_t IoctlHelper::acquireGpuRange(DrmMemoryManager &memoryManager, size_t &size, uint32_t rootDeviceIndex, AllocationType allocType, HeapIndex heapIndex) {
     if (heapIndex >= HeapIndex::totalHeaps) {
         return 0;
     }
     return memoryManager.acquireGpuRange(size, rootDeviceIndex, heapIndex);
 }
 
-void IoctlHelper::releaseGpuRange(DrmMemoryManager &memoryManager, void *address, size_t size, uint32_t rootDeviceIndex) {
+void IoctlHelper::releaseGpuRange(DrmMemoryManager &memoryManager, void *address, size_t size, uint32_t rootDeviceIndex, AllocationType allocType) {
     memoryManager.releaseGpuRange(address, size, rootDeviceIndex);
 }
 

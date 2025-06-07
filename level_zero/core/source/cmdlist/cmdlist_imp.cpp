@@ -28,8 +28,8 @@
 #include "level_zero/core/source/helpers/properties_parser.h"
 #include "level_zero/tools/source/metrics/metric.h"
 
-#include "igfxfmid.h"
 #include "log_manager.h"
+#include "neo_igfxfmid.h"
 
 #include <algorithm>
 
@@ -188,7 +188,7 @@ CommandList *CommandList::createImmediate(uint32_t productFamily, Device *device
                 engineGroupType = deviceImp->getInternalEngineGroupType();
             }
         } else {
-            returnValue = device->getCsrForOrdinalAndIndex(&csr, cmdQdesc.ordinal, cmdQdesc.index, cmdQdesc.priority, queueProperties.interruptHint);
+            returnValue = device->getCsrForOrdinalAndIndex(&csr, cmdQdesc.ordinal, cmdQdesc.index, cmdQdesc.priority, queueProperties.priorityLevel, queueProperties.interruptHint);
             if (returnValue != ZE_RESULT_SUCCESS) {
                 return commandList;
             }
@@ -258,38 +258,52 @@ CommandList *CommandList::createImmediate(uint32_t productFamily, Device *device
 
         commandList->copyThroughLockedPtrEnabled = gfxCoreHelper.copyThroughLockedPtrEnabled(hwInfo, productHelper);
 
-        const bool cmdListSupportsCopyOffload = !commandList->isCopyOnly(false) && commandList->isInOrderExecutionEnabled() && !productHelper.isDcFlushAllowed() && deviceImp->tryGetCopyEngineOrdinal().has_value();
+        const bool cmdListSupportsCopyOffload = commandList->isInOrderExecutionEnabled() && !productHelper.isDcFlushAllowed();
 
         if ((NEO::debugManager.flags.ForceCopyOperationOffloadForComputeCmdList.get() == 1 || queueProperties.copyOffloadHint) && cmdListSupportsCopyOffload) {
-            commandList->enableCopyOperationOffload(productFamily, device, desc);
+            commandList->enableCopyOperationOffload();
         }
-
-        return commandList;
     }
 
     return commandList;
 }
 
-void CommandListImp::enableCopyOperationOffload(uint32_t productFamily, Device *device, const ze_command_queue_desc_t *desc) {
-    this->copyOffloadMode = device->getL0GfxCoreHelper().getDefaultCopyOffloadMode();
-
-    if (this->copyOffloadMode != CopyOffloadModes::dualStream) {
+void CommandListImp::enableCopyOperationOffload() {
+    if (isCopyOnly(false) || !static_cast<DeviceImp *>(device)->tryGetCopyEngineOrdinal().has_value()) {
         return;
     }
+
+    this->copyOffloadMode = device->getL0GfxCoreHelper().getDefaultCopyOffloadMode(device->getProductHelper().useAdditionalBlitProperties());
+
+    if (this->copyOffloadMode != CopyOffloadModes::dualStream || !isImmediateType()) {
+        // No need to create internal bcs queue
+        return;
+    }
+
+    auto &computeOsContext = getCsr(false)->getOsContext();
+
+    ze_command_queue_priority_t immediateQueuePriority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
+    if (computeOsContext.isHighPriority()) {
+        immediateQueuePriority = ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_HIGH;
+    } else if (computeOsContext.isLowPriority()) {
+        immediateQueuePriority = ZE_COMMAND_QUEUE_PRIORITY_PRIORITY_LOW;
+    }
+
+    ze_command_queue_mode_t immediateQueueMode = this->isSyncModeQueue ? ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS : ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS;
 
     NEO::CommandStreamReceiver *copyCsr = nullptr;
     uint32_t ordinal = static_cast<DeviceImp *>(device)->getCopyEngineOrdinal();
 
-    device->getCsrForOrdinalAndIndex(&copyCsr, ordinal, 0, desc->priority, false);
+    device->getCsrForOrdinalAndIndex(&copyCsr, ordinal, 0, immediateQueuePriority, 0, false);
     UNRECOVERABLE_IF(!copyCsr);
 
     ze_command_queue_desc_t copyQueueDesc = {ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC};
     copyQueueDesc.ordinal = ordinal;
-    copyQueueDesc.mode = desc->mode;
-    copyQueueDesc.priority = desc->priority;
+    copyQueueDesc.mode = immediateQueueMode;
+    copyQueueDesc.priority = immediateQueuePriority;
 
     ze_result_t returnValue = ZE_RESULT_SUCCESS;
-    auto offloadCommandQueue = CommandQueue::create(productFamily, device, copyCsr, &copyQueueDesc, true, false, true, returnValue);
+    auto offloadCommandQueue = CommandQueue::create(device->getHwInfo().platform.eProductFamily, device, copyCsr, &copyQueueDesc, true, false, true, returnValue);
     UNRECOVERABLE_IF(!offloadCommandQueue);
 
     this->cmdQImmediateCopyOffload = offloadCommandQueue;

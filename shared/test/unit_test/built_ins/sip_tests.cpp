@@ -424,31 +424,35 @@ TEST_F(HexadecimalHeaderSipTest, whenInitHexadecimalArraySipKernelIsCalledTwiceT
     EXPECT_EQ(sipAllocation, sipAllocation2);
 }
 
-using StateSaveAreaSipTest = Test<RawBinarySipFixture>;
+struct StateSaveAreaSipTest : Test<RawBinarySipFixture> {
+    void SetUp() override {
+        RawBinarySipFixture::setUp();
+        MockSipData::useMockSip = true;
+        stateSaveAreaHeaderBackup = MockSipData::mockSipKernel->mockStateSaveAreaHeader;
+    }
+    void TearDown() override {
+        MockSipData::mockSipKernel->mockStateSaveAreaHeader = std::move(stateSaveAreaHeaderBackup);
+        RawBinarySipFixture::tearDown();
+    }
+    VariableBackup<bool> backupSipInitType{&MockSipData::useMockSip};
+    std::vector<char> stateSaveAreaHeaderBackup;
+};
 
-TEST_F(StateSaveAreaSipTest, givenEmptyStateSaveAreaHeaderWhenGetStateSaveAreaSizeCalledThenMaxDbgSurfaceSizeIsReturned) {
-
-    MockSipData::useMockSip = true;
+TEST_F(StateSaveAreaSipTest, givenEmptyStateSaveAreaHeaderWhenGetStateSaveAreaSizeCalledThenZeroSizeIsReturned) {
     MockSipData::mockSipKernel->mockStateSaveAreaHeader.clear();
-    auto hwInfo = *NEO::defaultHwInfo.get();
-    auto &gfxCoreHelper = this->pDevice->getGfxCoreHelper();
-    EXPECT_EQ(gfxCoreHelper.getSipKernelMaxDbgSurfaceSize(hwInfo), SipKernel::getSipKernel(*pDevice, nullptr).getStateSaveAreaSize(pDevice));
+    EXPECT_EQ(0u, SipKernel::getSipKernel(*pDevice, nullptr).getStateSaveAreaSize(pDevice));
 }
 
-TEST_F(StateSaveAreaSipTest, givenCorruptedStateSaveAreaHeaderWhenGetStateSaveAreaSizeCalledThenMaxDbgSurfaceSizeIsReturned) {
-    MockSipData::useMockSip = true;
+TEST_F(StateSaveAreaSipTest, givenCorruptedStateSaveAreaHeaderWhenGetStateSaveAreaSizeCalledThenZeroSizeIsReturned) {
     MockSipData::mockSipKernel->mockStateSaveAreaHeader = {'g', 'a', 'r', 'b', 'a', 'g', 'e'};
-    auto hwInfo = *NEO::defaultHwInfo.get();
-    auto &gfxCoreHelper = this->pDevice->getGfxCoreHelper();
-    EXPECT_EQ(gfxCoreHelper.getSipKernelMaxDbgSurfaceSize(hwInfo), SipKernel::getSipKernel(*pDevice, nullptr).getStateSaveAreaSize(pDevice));
+    EXPECT_EQ(0u, SipKernel::getSipKernel(*pDevice, nullptr).getStateSaveAreaSize(pDevice));
 }
 
 TEST_F(StateSaveAreaSipTest, givenCorrectStateSaveAreaHeaderWhenGetStateSaveAreaSizeCalledThenCorrectDbgSurfaceSizeIsReturned) {
-    MockSipData::useMockSip = true;
     auto hwInfo = pDevice->getHardwareInfo();
     auto numSlices = NEO::GfxCoreHelper::getHighestEnabledSlice(hwInfo);
     MockSipData::mockSipKernel->mockStateSaveAreaHeader = MockSipData::createStateSaveAreaHeader(1);
-    EXPECT_EQ(0x1800u * numSlices * 6 * 16 * 7 + alignUp(sizeof(SIP::StateSaveAreaHeader), MemoryConstants::pageSize), SipKernel::getSipKernel(*pDevice, nullptr).getStateSaveAreaSize(pDevice));
+    EXPECT_EQ(0x1800u * numSlices * 2 * 16 * 7 + alignUp(sizeof(SIP::StateSaveAreaHeader), MemoryConstants::pageSize), SipKernel::getSipKernel(*pDevice, nullptr).getStateSaveAreaSize(pDevice));
 
     MockSipData::mockSipKernel->mockStateSaveAreaHeader = MockSipData::createStateSaveAreaHeader(2);
     EXPECT_EQ(0x1800u * numSlices * 8 * 7 + alignUp(sizeof(SIP::StateSaveAreaHeader), MemoryConstants::pageSize), SipKernel::getSipKernel(*pDevice, nullptr).getStateSaveAreaSize(pDevice));
@@ -460,7 +464,6 @@ TEST_F(StateSaveAreaSipTest, givenCorrectStateSaveAreaHeaderWhenGetStateSaveArea
 }
 
 TEST_F(StateSaveAreaSipTest, givenStateSaveAreaHeaderVersion4WhenGetStateSaveAreaSizeCalledThenTotalWmtpDataSizeIsReturned) {
-    VariableBackup<bool> backupSipInitType(&MockSipData::useMockSip, true);
     MockSipData::mockSipKernel->mockStateSaveAreaHeader = MockSipData::createStateSaveAreaHeader(4);
     auto header = reinterpret_cast<SIP::StateSaveAreaHeader *>(MockSipData::mockSipKernel->mockStateSaveAreaHeader.data());
     header->versionHeader.version.major = 4u;
@@ -863,10 +866,6 @@ TEST(DebugBindlessSip, givenOfflineDebuggingModeWhenDebugSipForContextIsCreatedT
 
     gEnvironment->igcPopDebugVars();
 }
-class SipKernelMock : public SipKernel {
-  public:
-    using SipKernel::selectSipClassType;
-};
 
 using DebugBuiltinSipTest = Test<DeviceFixture>;
 
@@ -879,23 +878,23 @@ TEST_F(DebugBuiltinSipTest, givenDebuggerWhenInitSipKernelThenDbgSipIsLoadedFrom
 
     auto sipAllocation = SipKernel::getSipKernel(*pDevice, nullptr).getSipAllocation();
     EXPECT_NE(nullptr, sipAllocation);
-    EXPECT_EQ(SipKernelMock::classType, SipClassType::builtins);
+    EXPECT_EQ(MockSipKernel::classType, SipClassType::builtins);
 
     SipKernel::freeSipKernels(&pDevice->getRootDeviceEnvironmentRef(), pDevice->getMemoryManager());
 }
 
 TEST_F(DebugBuiltinSipTest, givenDebugFlagForForceSipClassWhenInitSipKernelThenProperSipClassIsSet) {
     VariableBackup<bool> mockSipBackup(&MockSipData::useMockSip, false);
-    VariableBackup sipClassBackup(&SipKernelMock::classType);
+    VariableBackup sipClassBackup(&MockSipKernel::classType);
     DebugManagerStateRestore restorer;
 
     debugManager.flags.ForceSipClass.set(static_cast<int32_t>(SipClassType::builtins));
     EXPECT_TRUE(SipKernel::initSipKernel(SipKernelType::csr, *pDevice));
-    EXPECT_EQ(SipKernelMock::classType, SipClassType::builtins);
+    EXPECT_EQ(MockSipKernel::classType, SipClassType::builtins);
 
     debugManager.flags.ForceSipClass.set(static_cast<int32_t>(SipClassType::hexadecimalHeaderFile));
     EXPECT_TRUE(SipKernel::initSipKernel(SipKernelType::csr, *pDevice));
-    EXPECT_EQ(SipKernelMock::classType, SipClassType::hexadecimalHeaderFile);
+    EXPECT_EQ(MockSipKernel::classType, SipClassType::hexadecimalHeaderFile);
 
     SipKernel::freeSipKernels(&pDevice->getRootDeviceEnvironmentRef(), pDevice->getMemoryManager());
 }
@@ -942,8 +941,8 @@ HWTEST2_F(DebugExternalLibSipTest, givenDebuggerWhenInitSipKernelThenDbgSipIsLoa
     VariableBackup<bool> mockSipBackup(&MockSipData::useMockSip, false);
     pDevice->executionEnvironment->rootDeviceEnvironments[0]->initDebuggerL0(pDevice);
     std::string fileName = "unk";
-    SipKernelMock::selectSipClassType(fileName, *pDevice);
-    EXPECT_EQ(SipKernelMock::classType, SipClassType::builtins);
+    MockSipKernel::selectSipClassType(fileName, *pDevice);
+    EXPECT_EQ(MockSipKernel::classType, SipClassType::builtins);
 }
 
 TEST_F(DebugExternalLibSipTest, givenGetSipBinaryFromExternalLibRetunsTrueWhenGetSipExternalLibInterfaceIsCalledThenNullptrReturned) {

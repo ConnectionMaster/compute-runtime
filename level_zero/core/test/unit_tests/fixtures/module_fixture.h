@@ -83,7 +83,9 @@ struct ModuleImmutableDataFixture : public DeviceFixture {
         using KernelImp::dynamicStateHeapData;
         using KernelImp::dynamicStateHeapDataSize;
         using KernelImp::internalResidencyContainer;
+        using KernelImp::isArgUncached;
         using KernelImp::kernelArgHandlers;
+        using KernelImp::kernelArgInfos;
         using KernelImp::kernelHasIndirectAccess;
         using KernelImp::kernelImmData;
         using KernelImp::kernelRequiresGenerationOfLocalIdsByRuntime;
@@ -93,6 +95,8 @@ struct ModuleImmutableDataFixture : public DeviceFixture {
         using KernelImp::printfBuffer;
         using KernelImp::privateMemoryGraphicsAllocation;
         using KernelImp::requiredWorkgroupOrder;
+        using KernelImp::slmArgOffsetValues;
+        using KernelImp::slmArgSizes;
         using KernelImp::surfaceStateHeapData;
         using KernelImp::surfaceStateHeapDataSize;
         using KernelImp::unifiedMemoryControls;
@@ -105,6 +109,10 @@ struct ModuleImmutableDataFixture : public DeviceFixture {
         void evaluateIfRequiresGenerationOfLocalIdsByRuntime(const NEO::KernelDescriptor &kernelDescriptor) override {
         }
         void setCrossThreadData(uint32_t dataSize);
+
+        uint32_t getIndirectSize() const override {
+            return getCrossThreadDataSize() + getPerThreadDataSizeForWholeThreadGroup();
+        }
     };
 
     void setUp();

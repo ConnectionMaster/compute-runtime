@@ -65,9 +65,9 @@ HWCMDTEST_F(IGFX_GEN12LP_CORE, HardwareCommandsTest, WhenProgramInterfaceDescrip
     GPGPU_WALKER walkerCmd{};
     CommandQueueHw<FamilyType> cmdQ(pContext, pClDevice, 0, false);
 
-    std::unique_ptr<Image> srcImage(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> srcImage(Image2dHelperUlt<>::create(pContext));
     ASSERT_NE(nullptr, srcImage.get());
-    std::unique_ptr<Image> dstImage(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> dstImage(Image2dHelperUlt<>::create(pContext));
     ASSERT_NE(nullptr, dstImage.get());
 
     auto &builder = BuiltInDispatchBuilderOp::getBuiltinDispatchInfoBuilder(EBuiltInOps::copyImageToImage3d,
@@ -142,9 +142,9 @@ HWTEST_F(HardwareCommandsTest, WhenCrossThreadDataIsCreatedThenOnlyRequiredSpace
     using DefaultWalkerType = typename FamilyType::DefaultWalkerType;
     CommandQueueHw<FamilyType> cmdQ(pContext, pClDevice, 0, false);
 
-    std::unique_ptr<Image> srcImage(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> srcImage(Image2dHelperUlt<>::create(pContext));
     ASSERT_NE(nullptr, srcImage.get());
-    std::unique_ptr<Image> dstImage(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> dstImage(Image2dHelperUlt<>::create(pContext));
     ASSERT_NE(nullptr, dstImage.get());
 
     auto &builder = BuiltInDispatchBuilderOp::getBuiltinDispatchInfoBuilder(EBuiltInOps::copyImageToImage3d,
@@ -305,9 +305,9 @@ HWCMDTEST_F(IGFX_GEN12LP_CORE, HardwareCommandsTest, WhenAllocatingIndirectState
 
     CommandQueueHw<FamilyType> cmdQ(pContext, pClDevice, 0, false);
 
-    std::unique_ptr<Image> srcImage(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> srcImage(Image2dHelperUlt<>::create(pContext));
     ASSERT_NE(nullptr, srcImage.get());
-    std::unique_ptr<Image> dstImage(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> dstImage(Image2dHelperUlt<>::create(pContext));
     ASSERT_NE(nullptr, dstImage.get());
 
     auto &builder = BuiltInDispatchBuilderOp::getBuiltinDispatchInfoBuilder(EBuiltInOps::copyImageToImage3d,
@@ -496,7 +496,7 @@ HWCMDTEST_F(IGFX_GEN12LP_CORE, HardwareCommandsTest, whenSendingIndirectStateThe
 
     CommandQueueHw<FamilyType> cmdQ(pContext, pClDevice, 0, false);
 
-    std::unique_ptr<Image> img(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> img(Image2dHelperUlt<>::create(pContext));
 
     auto &builder = BuiltInDispatchBuilderOp::getBuiltinDispatchInfoBuilder(EBuiltInOps::copyImageToImage3d,
                                                                             cmdQ.getClDevice());
@@ -569,7 +569,7 @@ HWCMDTEST_F(IGFX_GEN12LP_CORE, HardwareCommandsTest, whenSendingIndirectStateThe
     auto numChannels = modifiedKernelInfo.kernelDescriptor.kernelAttributes.numLocalIdChannels;
     auto numGrf = GrfConfig::defaultGrfNumber;
     const auto &rootDeviceEnvironment = pDevice->getRootDeviceEnvironment();
-    size_t expectedIohSize = PerThreadDataHelper::getPerThreadDataSizeTotal(modifiedKernelInfo.getMaxSimdSize(), grfSize, numGrf, numChannels, localWorkSize, !kernelUsesLocalIds, rootDeviceEnvironment);
+    size_t expectedIohSize = PerThreadDataHelper::getPerThreadDataSizeTotal(modifiedKernelInfo.getMaxSimdSize(), grfSize, numGrf, numChannels, localWorkSize, rootDeviceEnvironment);
     ASSERT_LE(expectedIohSize, ioh.getUsed());
 
     auto expectedLocalIds = alignedMalloc(expectedIohSize, 64);
@@ -590,7 +590,7 @@ HWCMDTEST_F(IGFX_GEN12LP_CORE, HardwareCommandsTest, WhenSendingIndirectStateThe
     using INTERFACE_DESCRIPTOR_DATA = typename FamilyType::INTERFACE_DESCRIPTOR_DATA;
 
     CommandQueueHw<FamilyType> cmdQ(pContext, pClDevice, 0, false);
-    std::unique_ptr<Image> dstImage(Image2dHelper<>::create(pContext));
+    std::unique_ptr<Image> dstImage(Image2dHelperUlt<>::create(pContext));
     ASSERT_NE(nullptr, dstImage.get());
 
     auto &builder = BuiltInDispatchBuilderOp::getBuiltinDispatchInfoBuilder(EBuiltInOps::copyBufferToImage3d,
@@ -1078,15 +1078,15 @@ HWCMDTEST_F(IGFX_GEN12LP_CORE, HardwareCommandsTest, GivenKernelWithSamplersWhen
     delete[] mockDsh;
 }
 
-HWTEST2_F(HardwareCommandsTest, givenBindlessKernelWithBufferArgWhenSendIndirectStateThenSurfaceStateIsCopiedToHeapAndCrossThreadDataIsCorrectlyPatched, IsAtLeastXeHpCore) {
+HWTEST2_F(HardwareCommandsTest, givenBindlessKernelWithBufferArgWhenSendIndirectStateThenSurfaceStateIsCopiedToHeapAndCrossThreadDataIsCorrectlyPatched, IsHeapfulSupportedAndAtLeastXeHpCore) {
 
-    using DefaultWalkerType = typename FamilyType::DefaultWalkerType;
-    using InterfaceDescriptorType = typename DefaultWalkerType::InterfaceDescriptorType;
+    using WalkerType = typename FamilyType::COMPUTE_WALKER;
+    using InterfaceDescriptorType = typename WalkerType::InterfaceDescriptorType;
 
     CommandQueueHw<FamilyType> cmdQ(pContext, pClDevice, 0, false);
 
     auto &commandStream = cmdQ.getCS(1024);
-    auto pWalkerCmd = static_cast<DefaultWalkerType *>(commandStream.getSpace(sizeof(DefaultWalkerType)));
+    auto pWalkerCmd = static_cast<WalkerType *>(commandStream.getSpace(sizeof(WalkerType)));
 
     // define kernel info
     std::unique_ptr<MockKernelInfo> pKernelInfo = std::make_unique<MockKernelInfo>();
@@ -1123,7 +1123,7 @@ HWTEST2_F(HardwareCommandsTest, givenBindlessKernelWithBufferArgWhenSendIndirect
     auto kernelUsesLocalIds = HardwareCommandsHelper<FamilyType>::kernelUsesLocalIds(mockKernel);
 
     InterfaceDescriptorType interfaceDescriptorData;
-    HardwareCommandsHelper<FamilyType>::template sendIndirectState<DefaultWalkerType, InterfaceDescriptorType>(
+    HardwareCommandsHelper<FamilyType>::template sendIndirectState<WalkerType, InterfaceDescriptorType>(
         commandStream,
         dsh,
         ioh,
@@ -1295,7 +1295,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, HardwareCommandsImplicitArgsTests, givenKernelWithI
     generateLocalIDs(expectedLocalIds, expectedImplicitArgs.simdWidth, localSize, workgroupDimOrder, false, grfSize, numGrf, rootDeviceEnvironment);
 
     auto localIdsProgrammingSize = implicitArgsProgrammingSize - ImplicitArgsV0::getAlignedSize();
-    size_t sizeForLocalIds = PerThreadDataHelper::getPerThreadDataSizeTotal(expectedImplicitArgs.simdWidth, grfSize, numGrf, 3u, totalLocalSize, false, rootDeviceEnvironment);
+    size_t sizeForLocalIds = PerThreadDataHelper::getPerThreadDataSizeTotal(expectedImplicitArgs.simdWidth, grfSize, numGrf, 3u, totalLocalSize, rootDeviceEnvironment);
 
     EXPECT_EQ(0, memcmp(expectedLocalIds, indirectHeapAllocation->getUnderlyingBuffer(), sizeForLocalIds));
     alignedFree(expectedLocalIds);
@@ -1330,7 +1330,7 @@ HWCMDTEST_F(IGFX_XE_HP_CORE, HardwareCommandsImplicitArgsTests, givenKernelWithI
     generateLocalIDs(expectedLocalIds, expectedImplicitArgs.simdWidth, localSize, expectedDimOrder, false, grfSize, numGrf, rootDeviceEnvironment);
 
     auto localIdsProgrammingSize = implicitArgsProgrammingSize - ImplicitArgsV0::getAlignedSize();
-    size_t sizeForLocalIds = PerThreadDataHelper::getPerThreadDataSizeTotal(expectedImplicitArgs.simdWidth, grfSize, numGrf, 3u, totalLocalSize, false, rootDeviceEnvironment);
+    size_t sizeForLocalIds = PerThreadDataHelper::getPerThreadDataSizeTotal(expectedImplicitArgs.simdWidth, grfSize, numGrf, 3u, totalLocalSize, rootDeviceEnvironment);
 
     EXPECT_EQ(0, memcmp(expectedLocalIds, indirectHeapAllocation->getUnderlyingBuffer(), sizeForLocalIds));
     alignedFree(expectedLocalIds);
