@@ -12,6 +12,7 @@
 #include "shared/source/os_interface/product_helper.h"
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/default_hw_info.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/mocks/linux/mock_os_time_linux.h"
 #include "shared/test/common/mocks/mock_execution_environment.h"
 #include "shared/test/common/test_macros/test.h"
@@ -134,6 +135,13 @@ TEST(IoctlHelperUpstreamTest, whenGettingVmBindAvailabilityThenFalseIsReturned) 
     EXPECT_FALSE(ioctlHelper.isImmediateVmBindRequired());
 }
 
+TEST(IoctlHelperUpstreamTest, whenGettingIfSmallBarConfigIsAllowedThenTrueIsReturned) {
+    auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
+    auto drm = std::make_unique<DrmTipMock>(*executionEnvironment->rootDeviceEnvironments[0]);
+    IoctlHelperUpstream ioctlHelper{*drm};
+    EXPECT_TRUE(ioctlHelper.isSmallBarConfigAllowed());
+}
+
 TEST(IoctlHelperUpstreamTest, whenChangingBufferBindingThenWaitIsNeverNeeded) {
     MockExecutionEnvironment executionEnvironment{};
     std::unique_ptr<Drm> drm{Drm::create(std::make_unique<HwDeviceIdDrm>(0, ""), *executionEnvironment.rootDeviceEnvironments[0])};
@@ -178,6 +186,11 @@ TEST(IoctlHelperUpstreamTest, whenGettingIoctlRequestStringThenProperStringIsRet
     EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::query).c_str(), "DRM_IOCTL_I915_QUERY");
     EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::primeFdToHandle).c_str(), "DRM_IOCTL_PRIME_FD_TO_HANDLE");
     EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::primeHandleToFd).c_str(), "DRM_IOCTL_PRIME_HANDLE_TO_FD");
+    EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::syncObjFdToHandle).c_str(), "DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE");
+    EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::syncObjWait).c_str(), "DRM_IOCTL_SYNCOBJ_WAIT");
+    EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::syncObjSignal).c_str(), "DRM_IOCTL_SYNCOBJ_SIGNAL");
+    EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::syncObjTimelineWait).c_str(), "DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT");
+    EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::syncObjTimelineSignal).c_str(), "DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL");
     EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::gemCreateExt).c_str(), "DRM_IOCTL_I915_GEM_CREATE_EXT");
     EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::gemMmapOffset).c_str(), "DRM_IOCTL_I915_GEM_MMAP_OFFSET");
     EXPECT_STREQ(ioctlHelper.getIoctlString(DrmIoctl::gemVmCreate).c_str(), "DRM_IOCTL_I915_GEM_VM_CREATE");
@@ -211,6 +224,11 @@ TEST(IoctlHelperUpstreamTest, whenGettingIoctlRequestValueThenProperValueIsRetur
     EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::query), static_cast<unsigned int>(DRM_IOCTL_I915_QUERY));
     EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::primeFdToHandle), static_cast<unsigned int>(DRM_IOCTL_PRIME_FD_TO_HANDLE));
     EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::primeHandleToFd), static_cast<unsigned int>(DRM_IOCTL_PRIME_HANDLE_TO_FD));
+    EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::syncObjFdToHandle), static_cast<unsigned int>(DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE));
+    EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::syncObjWait), static_cast<unsigned int>(DRM_IOCTL_SYNCOBJ_WAIT));
+    EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::syncObjSignal), static_cast<unsigned int>(DRM_IOCTL_SYNCOBJ_SIGNAL));
+    EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::syncObjTimelineWait), static_cast<unsigned int>(DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT));
+    EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::syncObjTimelineSignal), static_cast<unsigned int>(DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL));
     EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::gemCreateExt), static_cast<unsigned int>(DRM_IOCTL_I915_GEM_CREATE_EXT));
     EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::gemMmapOffset), static_cast<unsigned int>(DRM_IOCTL_I915_GEM_MMAP_OFFSET));
     EXPECT_EQ(ioctlHelper.getIoctlRequestValue(DrmIoctl::gemVmCreate), static_cast<unsigned int>(DRM_IOCTL_I915_GEM_VM_CREATE));
@@ -359,14 +377,15 @@ TEST(IoctlHelperTestsUpstream, givenUpstreamWhenCreateGemExtWithDebugFlagThenPri
 
     auto ioctlHelper = drm->getIoctlHelper();
     debugManager.flags.PrintBOCreateDestroyResult.set(true);
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     uint32_t handle = 0;
     MemRegionsVec memClassInstance = {{drm_i915_gem_memory_class::I915_MEMORY_CLASS_DEVICE, 0}};
     uint32_t numOfChunks = 0;
     ioctlHelper->createGemExt(memClassInstance, 1024, handle, 0, {}, -1, false, numOfChunks, std::nullopt, std::nullopt, false);
 
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     std::string expectedOutput("Performing GEM_CREATE_EXT with { size: 1024, memory class: 1, memory instance: 0 }\nGEM_CREATE_EXT with EXT_MEMORY_REGIONS has returned: 0 BO-1 with size: 1024\n");
     EXPECT_EQ(expectedOutput, output);
 }
@@ -421,7 +440,8 @@ TEST(IoctlHelperTestsUpstream, givenSetPatSupportedWhenCreateGemExtWithDebugFlag
     MockIoctlHelperUpstream mockIoctlHelper{*drm};
 
     debugManager.flags.PrintBOCreateDestroyResult.set(true);
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     uint32_t handle = 0;
     mockIoctlHelper.isSetPatSupported = true;
@@ -430,7 +450,7 @@ TEST(IoctlHelperTestsUpstream, givenSetPatSupportedWhenCreateGemExtWithDebugFlag
     uint64_t patIndex = 5;
     mockIoctlHelper.createGemExt(memClassInstance, 1024, handle, patIndex, {}, -1, false, numOfChunks, std::nullopt, std::nullopt, false);
 
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     std::string expectedOutput("Performing GEM_CREATE_EXT with { size: 1024, memory class: 1, memory instance: 0, pat index: 5 }\nGEM_CREATE_EXT with EXT_MEMORY_REGIONS with EXT_SET_PAT has returned: 0 BO-1 with size: 1024\n");
     EXPECT_EQ(expectedOutput, output);
 }
@@ -444,17 +464,18 @@ TEST(IoctlHelperUpstreamTest, whenDetectExtSetPatSupportIsCalledWithDebugFlagThe
     MockIoctlHelperUpstream mockIoctlHelper{*drm};
 
     debugManager.flags.PrintBOCreateDestroyResult.set(true);
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     mockIoctlHelper.overrideGemCreateExtReturnValue = 0;
     mockIoctlHelper.detectExtSetPatSupport();
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     std::string expectedOutput("EXT_SET_PAT support is: enabled\n");
     EXPECT_EQ(expectedOutput, output);
 
-    testing::internal::CaptureStdout();
+    capture.captureStdout();
     mockIoctlHelper.overrideGemCreateExtReturnValue = -1;
     mockIoctlHelper.detectExtSetPatSupport();
-    output = testing::internal::GetCapturedStdout();
+    output = capture.getCapturedStdout();
     expectedOutput = "EXT_SET_PAT support is: disabled\n";
     EXPECT_EQ(expectedOutput, output);
 }
@@ -877,4 +898,12 @@ TEST(IoctlHelperTestsUpstream, givenUpstreamWhenQueryDeviceParamsIsCalledThenFal
     uint32_t moduleId = 0;
     uint16_t serverType = 0;
     EXPECT_FALSE(ioctlHelper.queryDeviceParams(&moduleId, &serverType));
+}
+
+TEST(IoctlHelperTestsUpstream, givenPrelimWhenQueryDeviceCapsIsCalledThenNullptrIsReturned) {
+    auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
+    auto drm = std::make_unique<DrmTipMock>(*executionEnvironment->rootDeviceEnvironments[0]);
+    IoctlHelperUpstream ioctlHelper{*drm};
+
+    EXPECT_EQ(ioctlHelper.queryDeviceCaps(), nullptr);
 }

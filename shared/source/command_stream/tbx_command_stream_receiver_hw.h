@@ -9,7 +9,6 @@
 #include "shared/source/command_stream/command_stream_receiver_simulated_hw.h"
 #include "shared/source/command_stream/tbx_command_stream_receiver.h"
 #include "shared/source/command_stream/wait_status.h"
-#include "shared/source/memory_manager/address_mapper.h"
 #include "shared/source/memory_manager/page_table.h"
 
 #include <array>
@@ -45,11 +44,9 @@ class TbxCommandStreamReceiverHw : public CommandStreamReceiverSimulatedHw<GfxFa
     void protectCPUMemoryFromWritesIfTbxFaultable(GraphicsAllocation *gfxAllocation, void *cpuAddress, size_t size);
 
   public:
-    using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::initAdditionalMMIO;
     using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::aubManager;
     using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::hardwareContextController;
     using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::engineInfo;
-    using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::stream;
     using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::peekExecutionEnvironment;
     using CommandStreamReceiverSimulatedCommonHw<GfxFamily>::writeMemory;
 
@@ -103,8 +100,6 @@ class TbxCommandStreamReceiverHw : public CommandStreamReceiverSimulatedHw<GfxFa
     std::unique_ptr<PhysicalAddressAllocator> physicalAddressAllocator;
     std::unique_ptr<std::conditional<is64bit, PML4, PDPE>::type> ppgtt;
     std::unique_ptr<PDPE> ggtt;
-    // remap CPU VA -> GGTT VA
-    AddressMapper gttRemap;
 
     std::set<GraphicsAllocation *> allocationsForDownload = {};
 

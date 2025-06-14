@@ -9,10 +9,12 @@
 #include "shared/source/helpers/preamble.h"
 #include "shared/source/helpers/register_offsets.h"
 #include "shared/test/common/cmd_parse/gen_cmd_parse.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/libult/ult_command_stream_receiver.h"
 #include "shared/test/common/test_macros/hw_test.h"
 
 #include "level_zero/core/source/cmdlist/cmdlist.h"
+#include "level_zero/core/source/cmdlist/cmdlist_memory_copy_params.h"
 #include "level_zero/core/source/device/device.h"
 #include "level_zero/core/source/image/image_hw.h"
 #include "level_zero/core/test/unit_tests/mocks/mock_cmdlist.h"
@@ -46,17 +48,27 @@ HWTEST_P(L0DebuggerWithBlitterTest, givenFlushTaskSubmissionEnabledWhenCommandLi
     NEO::debugManager.flags.EnableFlushTaskSubmission.set(true);
     debugManager.flags.EnableStateBaseAddressTracking.set(0);
 
-    size_t usedSpaceBefore = 0;
     ze_command_queue_desc_t queueDesc = {};
     ze_result_t returnValue = ZE_RESULT_SUCCESS;
     auto commandList = CommandList::createImmediate(productFamily, device, &queueDesc, true, NEO::EngineGroupType::renderCompute, returnValue);
 
-    auto usedSpaceAfter = commandList->getCmdContainer().getCommandStream()->getUsed();
+    Mock<Module> module(device, nullptr, ModuleType::user);
+    Mock<::L0::KernelImp> kernel;
+    kernel.module = &module;
+
+    auto &csrStream = commandList->getCsr(false)->getCS(0);
+    size_t usedSpaceBefore = csrStream.getUsed();
+
+    ze_group_count_t groupCount{1, 1, 1};
+    CmdListKernelLaunchParams launchParams = {};
+    commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
+
+    auto usedSpaceAfter = csrStream.getUsed();
+
     ASSERT_GE(usedSpaceAfter, usedSpaceBefore);
 
     GenCmdList cmdList;
-    ASSERT_TRUE(FamilyType::Parse::parseCommandBuffer(
-        cmdList, commandList->getCmdContainer().getCommandStream()->getCpuBase(), usedSpaceAfter));
+    ASSERT_TRUE(FamilyType::Parse::parseCommandBuffer(cmdList, csrStream.getCpuBase(), usedSpaceAfter));
 
     auto sbaItor = find<STATE_BASE_ADDRESS *>(cmdList.begin(), cmdList.end());
     ASSERT_NE(cmdList.end(), sbaItor);
@@ -110,7 +122,8 @@ HWTEST_P(L0DebuggerWithBlitterTest, givenDebuggerLogsDisabledWhenCommandListIsSy
     NEO::debugManager.flags.DebuggerLogBitmask.set(0);
 
     EXPECT_NE(nullptr, device->getL0Debugger());
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     ze_command_queue_desc_t queueDesc = {};
     ze_result_t returnValue = ZE_RESULT_SUCCESS;
@@ -118,7 +131,7 @@ HWTEST_P(L0DebuggerWithBlitterTest, givenDebuggerLogsDisabledWhenCommandListIsSy
 
     commandList->executeCommandListImmediate(false);
 
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     size_t pos = output.find("Debugger: SBA");
     EXPECT_EQ(std::string::npos, pos);
 
@@ -153,7 +166,7 @@ HWTEST2_F(singleAddressSpaceModeTest, givenImmediateCommandListWhenExecutingWith
 
     csr.lastFlushedCommandStream = nullptr;
     CmdListKernelLaunchParams launchParams = {};
-    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_NE(nullptr, csr.lastFlushedCommandStream);
@@ -200,7 +213,7 @@ HWTEST2_F(singleAddressSpaceModeTest, givenUseCsrImmediateSubmissionEnabledAndSh
 
     csr.lastFlushedCommandStream = nullptr;
     CmdListKernelLaunchParams launchParams = {};
-    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_NE(nullptr, csr.lastFlushedCommandStream);
@@ -219,7 +232,13 @@ HWTEST2_F(singleAddressSpaceModeTest, givenUseCsrImmediateSubmissionEnabledAndSh
             break;
         }
     }
-    EXPECT_TRUE(gpr15Found);
+
+    if (csr.getHeaplessStateInitEnabled()) {
+        EXPECT_FALSE(gpr15Found);
+    } else {
+        EXPECT_TRUE(gpr15Found);
+    }
+
     commandList->destroy();
 }
 
@@ -247,7 +266,7 @@ HWTEST2_P(L0DebuggerWithBlitterTest, givenImmediateCommandListWhenExecutingWithF
 
     csr.lastFlushedCommandStream = nullptr;
     CmdListKernelLaunchParams launchParams = {};
-    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_NE(nullptr, csr.lastFlushedCommandStream);
@@ -300,7 +319,7 @@ HWTEST2_P(L0DebuggerWithBlitterTest, givenImmediateFlushTaskWhenExecutingKernelT
 
     csr.lastFlushedCommandStream = nullptr;
     CmdListKernelLaunchParams launchParams = {};
-    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     EXPECT_NE(nullptr, csr.lastFlushedCommandStream);
@@ -319,55 +338,6 @@ HWTEST2_P(L0DebuggerWithBlitterTest, givenImmediateFlushTaskWhenExecutingKernelT
 
     auto sipItor = find<STATE_SIP *>(cmdList.begin(), cmdList.end());
     ASSERT_NE(cmdList.end(), sipItor);
-    commandList->destroy();
-}
-
-HWTEST_P(L0DebuggerWithBlitterTest, givenInternalUsageImmediateCommandListWhenExecutingThenDebuggerAllocationsAreNotResident) {
-    using STATE_SIP = typename FamilyType::STATE_SIP;
-
-    auto &compilerProductHelper = neoDevice->getCompilerProductHelper();
-    auto heaplessEnabled = compilerProductHelper.isHeaplessModeEnabled(*defaultHwInfo);
-    if (compilerProductHelper.isHeaplessStateInitEnabled(heaplessEnabled)) {
-        GTEST_SKIP();
-    }
-
-    Mock<Module> module(device, nullptr, ModuleType::user);
-    Mock<::L0::KernelImp> kernel;
-    kernel.module = &module;
-    DebugManagerStateRestore restorer;
-    NEO::debugManager.flags.EnableFlushTaskSubmission.set(true);
-
-    ze_command_queue_desc_t queueDesc = {};
-    ze_result_t returnValue = ZE_RESULT_SUCCESS;
-    ze_group_count_t groupCount{1, 1, 1};
-
-    auto commandList = CommandList::whiteboxCast(CommandList::createImmediate(productFamily, device, &queueDesc, true, NEO::EngineGroupType::renderCompute, returnValue));
-
-    // Internal command list must not have flush task enabled
-    EXPECT_FALSE(commandList->isFlushTaskSubmissionEnabled);
-
-    auto &csr = reinterpret_cast<NEO::UltCommandStreamReceiver<FamilyType> &>(*commandList->getCsr(false));
-    csr.storeMakeResidentAllocations = true;
-
-    CmdListKernelLaunchParams launchParams = {};
-    auto result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
-    ASSERT_EQ(ZE_RESULT_SUCCESS, result);
-
-    auto sbaBuffer = device->getL0Debugger()->getSbaTrackingBuffer(csr.getOsContext().getContextId());
-    auto sipIsa = NEO::SipKernel::getSipKernel(*neoDevice, nullptr).getSipAllocation();
-    auto debugSurface = device->getDebugSurface();
-
-    EXPECT_FALSE(csr.isMadeResident(sbaBuffer));
-    EXPECT_FALSE(csr.isMadeResident(sipIsa));
-    EXPECT_FALSE(csr.isMadeResident(debugSurface));
-
-    GenCmdList cmdList;
-    ASSERT_TRUE(FamilyType::Parse::parseCommandBuffer(
-        cmdList, csr.getCS().getCpuBase(), csr.getCS().getUsed()));
-
-    auto sipItor = find<STATE_SIP *>(cmdList.begin(), cmdList.end());
-    ASSERT_EQ(cmdList.end(), sipItor);
-
     commandList->destroy();
 }
 
@@ -551,7 +521,7 @@ HWTEST2_P(L0DebuggerWithBlitterTest, givenUseCsrImmediateSubmissionDisabledComma
     commandList->destroy();
 }
 
-HWTEST2_P(L0DebuggerWithBlitterTest, givenDebuggingEnabledWhenInternalCmdQIsUsedThenDebuggerPathsAreNotExecuted, MatchAny) {
+HWTEST_P(L0DebuggerWithBlitterTest, givenDebuggingEnabledWhenInternalCmdQIsUsedThenDebuggerPathsAreNotExecuted) {
     ze_command_queue_desc_t queueDesc = {};
 
     std::unique_ptr<MockCommandQueueHw<FamilyType::gfxCoreFamily>, Deleter> commandQueue(new MockCommandQueueHw<FamilyType::gfxCoreFamily>(device, neoDevice->getDefaultEngine().commandStreamReceiver, &queueDesc));

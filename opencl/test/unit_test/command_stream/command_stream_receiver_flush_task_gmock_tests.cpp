@@ -50,6 +50,25 @@ using namespace NEO;
 
 using CommandStreamReceiverFlushTaskGmockTests = UltCommandStreamReceiverTest;
 
+class CommandStreamReceiverFlushTaskGmockTestsWithMockCsrHw2
+    : public CommandStreamReceiverFlushTaskGmockTests {
+  public:
+    void SetUp() override {}
+    void TearDown() override {}
+
+    template <typename FamilyType>
+    void setUpT() {
+        EnvironmentWithCsrWrapper environment;
+        environment.setCsrType<MockCsrHw2<FamilyType>>();
+        CommandStreamReceiverFlushTaskGmockTests::SetUp();
+    }
+
+    template <typename FamilyType>
+    void tearDownT() {
+        CommandStreamReceiverFlushTaskGmockTests::TearDown();
+    }
+};
+
 HWTEST2_F(CommandStreamReceiverFlushTaskGmockTests,
           givenCsrInBatchingModeThreeRecordedCommandBufferEnabledBatchBufferFlatteningAndPatchInfoCollectionWhenFlushBatchedSubmissionsIsCalledThenBatchBuffersAndPatchInfoAreCollected, MatchAny) {
     DebugManagerStateRestore stateRestore;
@@ -57,7 +76,7 @@ HWTEST2_F(CommandStreamReceiverFlushTaskGmockTests,
     debugManager.flags.AddPatchInfoCommentsForAUBDump.set(true);
     debugManager.flags.FlattenBatchBufferForAUBDump.set(true);
 
-    typedef typename FamilyType::MI_BATCH_BUFFER_START MI_BATCH_BUFFER_START;
+    using MI_BATCH_BUFFER_START = typename FamilyType::MI_BATCH_BUFFER_START;
 
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
@@ -66,7 +85,7 @@ HWTEST2_F(CommandStreamReceiverFlushTaskGmockTests,
     auto mockHelper = new MockFlatBatchBufferHelper<FamilyType>(*pDevice->executionEnvironment);
     mockCsr->overwriteFlatBatchBufferHelper(mockHelper);
     pDevice->resetCommandStreamReceiver(mockCsr);
-
+    bool heaplessStateInitEnabled = mockCsr->getHeaplessStateInitEnabled();
     mockCsr->overrideDispatchPolicy(DispatchMode::batchedDispatch);
     mockCsr->useNewResourceImplicitFlush = false;
     mockCsr->useGpuIdleImplicitFlush = false;
@@ -80,6 +99,10 @@ HWTEST2_F(CommandStreamReceiverFlushTaskGmockTests,
     uint32_t expectedCallsCount = TestTraits<FamilyType::gfxCoreFamily>::iohInSbaSupported ? 10 : 9;
     if (!pDevice->getHardwareInfo().capabilityTable.supportsImages) {
         --expectedCallsCount;
+    }
+
+    if (mockCsr->getHeaplessStateInitEnabled()) {
+        expectedCallsCount = 6;
     }
 
     size_t removePatchInfoDataCount = 4 * UltMemorySynchronizationCommands<FamilyType>::getExpectedPipeControlCount(pDevice->getRootDeviceEnvironment());
@@ -123,22 +146,21 @@ HWTEST2_F(CommandStreamReceiverFlushTaskGmockTests,
     auto batchBufferStart = genCmdCast<MI_BATCH_BUFFER_START *>(bbEndLocation);
     ASSERT_NE(nullptr, batchBufferStart);
     EXPECT_EQ(lastBatchBufferAddress, batchBufferStart->getBatchBufferStartAddress());
-    EXPECT_EQ(1u, mockCsr->flushCalledCount);
+    EXPECT_EQ(heaplessStateInitEnabled ? 2u : 1u, mockCsr->flushCalledCount);
     EXPECT_EQ(expectedCallsCount, mockHelper->setPatchInfoDataCalled);
     EXPECT_EQ(static_cast<unsigned int>(removePatchInfoDataCount), mockHelper->removePatchInfoDataCalled);
-    EXPECT_EQ(4u, mockHelper->registerCommandChunkCalled);
-    EXPECT_EQ(3u, mockHelper->registerBatchBufferStartAddressCalled);
+    EXPECT_EQ(heaplessStateInitEnabled ? 3u : 4u, mockHelper->registerCommandChunkCalled);
+    EXPECT_EQ(heaplessStateInitEnabled ? 2u : 3u, mockHelper->registerBatchBufferStartAddressCalled);
 }
 
-HWTEST_F(CommandStreamReceiverFlushTaskGmockTests, givenMockCommandStreamerWhenAddPatchInfoCommentsForAUBDumpIsNotSetThenAddPatchInfoDataIsNotCollected) {
+HWTEST_TEMPLATED_F(CommandStreamReceiverFlushTaskGmockTestsWithMockCsrHw2, givenMockCommandStreamerWhenAddPatchInfoCommentsForAUBDumpIsNotSetThenAddPatchInfoDataIsNotCollected) {
 
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
 
-    auto mockCsr = new MockCsrHw2<FamilyType>(*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield());
+    auto mockCsr = static_cast<MockCsrHw2<FamilyType> *>(&pDevice->getGpgpuCommandStreamReceiver());
     auto mockHelper = new MockFlatBatchBufferHelper<FamilyType>(*pDevice->executionEnvironment);
     mockCsr->overwriteFlatBatchBufferHelper(mockHelper);
-    pDevice->resetCommandStreamReceiver(mockCsr);
 
     DispatchFlags dispatchFlags = DispatchFlagsHelper::createDefaultDispatchFlags();
     dispatchFlags.throttle = QueueThrottle::MEDIUM;
@@ -154,24 +176,26 @@ HWTEST_F(CommandStreamReceiverFlushTaskGmockTests, givenMockCommandStreamerWhenA
     EXPECT_EQ(0u, mockHelper->setPatchInfoDataCalled);
 }
 
-HWTEST2_F(CommandStreamReceiverFlushTaskGmockTests, givenMockCommandStreamerWhenAddPatchInfoCommentsForAUBDumpIsSetThenAddPatchInfoDataIsCollected, MatchAny) {
+HWTEST2_TEMPLATED_F(CommandStreamReceiverFlushTaskGmockTestsWithMockCsrHw2, givenMockCommandStreamerWhenAddPatchInfoCommentsForAUBDumpIsSetThenAddPatchInfoDataIsCollected, MatchAny) {
     DebugManagerStateRestore dbgRestore;
     debugManager.flags.AddPatchInfoCommentsForAUBDump.set(true);
 
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
 
-    auto mockCsr = new MockCsrHw2<FamilyType>(*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield());
+    auto mockCsr = static_cast<MockCsrHw2<FamilyType> *>(&pDevice->getGpgpuCommandStreamReceiver());
     auto mockHelper = new MockFlatBatchBufferHelper<FamilyType>(*pDevice->executionEnvironment);
     mockCsr->overwriteFlatBatchBufferHelper(mockHelper);
-
-    pDevice->resetCommandStreamReceiver(mockCsr);
 
     DispatchFlags dispatchFlags = DispatchFlagsHelper::createDefaultDispatchFlags();
 
     uint32_t expectedCallsCount = TestTraits<FamilyType::gfxCoreFamily>::iohInSbaSupported ? 4 : 3;
     if (!pDevice->getHardwareInfo().capabilityTable.supportsImages) {
         --expectedCallsCount;
+    }
+
+    if (mockCsr->getHeaplessStateInitEnabled()) {
+        expectedCallsCount = 0;
     }
 
     mockCsr->flushTask(commandStream,

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2024 Intel Corporation
+ * Copyright (C) 2018-2025 Intel Corporation
  *
  * SPDX-License-Identifier: MIT
  *
@@ -17,7 +17,7 @@
 #include "opencl/test/unit_test/mocks/mock_context.h"
 
 #include "gtest/gtest.h"
-#include "igfxfmid.h"
+#include "neo_igfxfmid.h"
 
 extern GFXCORE_FAMILY renderCoreFamily;
 
@@ -231,7 +231,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(ImageRedescribeTestSimple, givenImageWhenItIsRedescribedThenCreateFunctionIsSameAsInOriginalImage) {
     MockContext context;
-    std::unique_ptr<Image> image(ImageHelper<Image1dDefaults>::create(&context));
+    std::unique_ptr<Image> image(ImageHelperUlt<Image1dDefaults>::create(&context));
     std::unique_ptr<Image> imageNew(image->redescribe());
     ASSERT_NE(nullptr, imageNew);
     EXPECT_EQ(image->createFunction, imageNew->createFunction);
@@ -239,7 +239,7 @@ TEST(ImageRedescribeTestSimple, givenImageWhenItIsRedescribedThenCreateFunctionI
 
 TEST(ImageRedescribeTestSimple, givenImageWhenItIsRedescribedThenPlaneIsSameAsInOriginalImage) {
     MockContext context;
-    std::unique_ptr<Image> image(ImageHelper<Image1dDefaults>::create(&context));
+    std::unique_ptr<Image> image(ImageHelperUlt<Image1dDefaults>::create(&context));
     image->setPlane(GMM_PLANE_U);
     std::unique_ptr<Image> imageNew(image->redescribe());
     ASSERT_NE(nullptr, imageNew);

@@ -16,7 +16,7 @@
 
 #include "aubstream/product_family.h"
 #include "hw_cmds_xe3_core.h"
-#include "platforms.h"
+#include "neo_aot_platforms.h"
 
 using namespace NEO;
 
@@ -74,10 +74,6 @@ XE3_CORETEST_F(Xe3CoreProductHelper, givenProductHelperWhenAdditionalKernelExecI
 
 XE3_CORETEST_F(Xe3CoreProductHelper, givenProductHelperWhenisResolvingSubDeviceIDNeededCheckedThenCorrectValueIsReturned) {
     EXPECT_TRUE(productHelper->isResolvingSubDeviceIDNeeded(releaseHelper));
-}
-
-XE3_CORETEST_F(Xe3CoreProductHelper, givenProductHelperWhenCheckingIsBufferPoolAllocatorSupportedThenCorrectValueIsReturned) {
-    EXPECT_FALSE(productHelper->isBufferPoolAllocatorSupported());
 }
 
 XE3_CORETEST_F(Xe3CoreProductHelper, givenProductHelperWhenCheckIsCopyBufferRectSplitSupportedThenReturnsTrue) {

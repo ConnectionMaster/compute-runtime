@@ -16,7 +16,7 @@
 #include "shared/source/os_interface/os_interface.h"
 #include "shared/source/utilities/stackvec.h"
 
-#include "igfxfmid.h"
+#include "neo_igfxfmid.h"
 
 #include <array>
 #include <atomic>
@@ -153,6 +153,7 @@ class Drm : public DriverModel {
     bool isDirectSubmissionActive() const { return this->directSubmissionActive; }
     MOCKABLE_VIRTUAL void setSharedSystemAllocEnable(bool value) { this->sharedSystemAllocEnable = value; }
     MOCKABLE_VIRTUAL bool isSharedSystemAllocEnabled() const { return this->sharedSystemAllocEnable; }
+    void adjustSharedSystemMemCapabilities();
 
     MOCKABLE_VIRTUAL bool isSetPairAvailable();
     MOCKABLE_VIRTUAL bool getSetPairAvailable() { return setPairAvailable; }

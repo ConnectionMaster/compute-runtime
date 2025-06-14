@@ -228,11 +228,8 @@ ze_result_t EventImp<TagSizeT>::calculateProfilingData() {
 }
 
 template <typename TagSizeT>
-void EventImp<TagSizeT>::clearTimestampTagData(uint32_t partitionCount, bool latestInorderData, NEO::TagNodeBase *newNode) {
+void EventImp<TagSizeT>::clearTimestampTagData(uint32_t partitionCount, NEO::TagNodeBase *newNode) {
     auto node = newNode;
-    if (latestInorderData) {
-        node = inOrderTimestampNode.back();
-    }
     auto hostAddress = node->getCpuBase();
     auto deviceAddress = node->getGpuAddress();
 
@@ -269,7 +266,7 @@ void EventImp<TagSizeT>::assignKernelEventCompletionData(void *address) {
         // Account for additional timestamp nodes
         uint32_t remainingPackets = 0;
         if (!additionalTimestampNode.empty()) {
-            remainingPackets = kernelEventCompletionData[i].getAdditionalPacketsUsed();
+            remainingPackets = kernelEventCompletionData[i].getPacketsUsed();
             if (inOrderIncrementValue > 0) {
                 remainingPackets *= static_cast<uint32_t>(additionalTimestampNode.size());
             }
@@ -303,14 +300,20 @@ ze_result_t EventImp<TagSizeT>::queryCounterBasedEventStatus() {
 
     if (!inOrderExecInfo->isCounterAlreadyDone(waitValue)) {
         bool signaled = true;
-        const uint64_t *hostAddress = ptrOffset(inOrderExecInfo->getBaseHostAddress(), this->inOrderAllocationOffset);
-        for (uint32_t i = 0; i < inOrderExecInfo->getNumHostPartitionsToWait(); i++) {
-            if (!NEO::WaitUtils::waitFunctionWithPredicate<const uint64_t>(hostAddress, waitValue, std::greater_equal<uint64_t>(), 0)) {
-                signaled = false;
-                break;
-            }
 
-            hostAddress = ptrOffset(hostAddress, device->getL0GfxCoreHelper().getImmediateWritePostSyncOffset());
+        if (this->isCounterBased() && !this->inOrderTimestampNode.empty() && !this->device->getCompilerProductHelper().isHeaplessModeEnabled(this->device->getHwInfo())) {
+            this->synchronizeTimestampCompletionWithTimeout();
+            signaled = this->isTimestampPopulated();
+        } else {
+            const uint64_t *hostAddress = ptrOffset(inOrderExecInfo->getBaseHostAddress(), this->inOrderAllocationOffset);
+            for (uint32_t i = 0; i < inOrderExecInfo->getNumHostPartitionsToWait(); i++) {
+                if (!NEO::WaitUtils::waitFunctionWithPredicate<const uint64_t>(hostAddress, waitValue, std::greater_equal<uint64_t>(), 0)) {
+                    signaled = false;
+                    break;
+                }
+
+                hostAddress = ptrOffset(hostAddress, device->getL0GfxCoreHelper().getImmediateWritePostSyncOffset());
+            }
         }
 
         if (!signaled) {
@@ -836,7 +839,7 @@ ze_result_t EventImp<TagSizeT>::reset() {
     this->resetCompletionStatus();
     this->resetDeviceCompletionData(false);
     this->l3FlushAppliedOnKernel.reset();
-    this->resetAdditionalTimestampNode(nullptr, 0);
+    this->resetAdditionalTimestampNode(nullptr, 0, true);
     return ZE_RESULT_SUCCESS;
 }
 
@@ -1087,11 +1090,6 @@ uint32_t EventImp<TagSizeT>::getPacketsUsedInLastKernel() {
 template <typename TagSizeT>
 void EventImp<TagSizeT>::setPacketsInUse(uint32_t value) {
     kernelEventCompletionData[getCurrKernelDataIndex()].setPacketsUsed(value);
-}
-
-template <typename TagSizeT>
-void EventImp<TagSizeT>::setAdditionalPacketsInUse(uint32_t value) {
-    kernelEventCompletionData[getCurrKernelDataIndex()].setAdditionalPacketsUsed(value);
 }
 
 template <typename TagSizeT>

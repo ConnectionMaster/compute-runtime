@@ -25,7 +25,7 @@ class ISAPool : public AbstractBuffersPool<ISAPool, GraphicsAllocation> {
     using BaseType = AbstractBuffersPool<ISAPool, GraphicsAllocation>;
 
   public:
-    ISAPool(ISAPool &&pool);
+    ISAPool(ISAPool &&pool) noexcept;
     ISAPool &operator=(ISAPool &&other) = delete;
     ISAPool(Device *device, bool isBuiltin, size_t storageSize);
     ~ISAPool() override;
@@ -44,7 +44,7 @@ class ISAPool : public AbstractBuffersPool<ISAPool, GraphicsAllocation> {
 class ISAPoolAllocator : public AbstractBuffersAllocator<ISAPool, GraphicsAllocation> {
   public:
     ISAPoolAllocator(Device *device);
-    SharedIsaAllocation *requestGraphicsAllocationForIsa(bool isBuiltin, size_t size);
+    SharedIsaAllocation *requestGraphicsAllocationForIsa(bool isBuiltin, size_t sizeWithPadding);
     void freeSharedIsaAllocation(SharedIsaAllocation *sharedIsaAllocation);
 
   private:

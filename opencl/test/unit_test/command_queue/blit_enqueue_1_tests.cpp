@@ -508,7 +508,7 @@ HWTEST_TEMPLATED_F(BlitAuxTranslationTests, givenBlitAuxTranslationWithRequiredC
     size_t dependencySize = numBuffersToEstimate * TimestampPacketHelper::getRequiredCmdStreamSizeForNodeDependencyWithBlitEnqueue<FamilyType>();
 
     auto &rootDeviceEnvironment = device->getRootDeviceEnvironment();
-    size_t cacheFlushSize = MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(rootDeviceEnvironment, false);
+    size_t cacheFlushSize = MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(rootDeviceEnvironment, NEO::PostSyncMode::immediateData);
 
     setMockKernelArgs(std::array<Buffer *, 3>{{buffer0.get(), buffer1.get(), buffer2.get()}});
 
@@ -1233,16 +1233,6 @@ HWTEST_TEMPLATED_F(BlitEnqueueFlushTests, givenGpuHangOnFlushBcsTaskAndBlockedQu
     EXPECT_EQ(Event::executionAbortedDueToGpuHang, abortedEvent->peekExecutionStatus());
 
     abortedEvent->release();
-}
-
-HWTEST_TEMPLATED_F(BlitEnqueueFlushTests, givenDebugFlagSetWhenCheckingBcsCacheFlushRequirementThenReturnCorrectValue) {
-    auto mockCommandQueue = static_cast<MockCommandQueueHw<FamilyType> *>(commandQueue.get());
-
-    debugManager.flags.ForceCacheFlushForBcs.set(0);
-    EXPECT_FALSE(mockCommandQueue->isCacheFlushForBcsRequired());
-
-    debugManager.flags.ForceCacheFlushForBcs.set(1);
-    EXPECT_TRUE(mockCommandQueue->isCacheFlushForBcsRequired());
 }
 
 using BlitEnqueueTaskCountTests = BlitEnqueueTests<1>;

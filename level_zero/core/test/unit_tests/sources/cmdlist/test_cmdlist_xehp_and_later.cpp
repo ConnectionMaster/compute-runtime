@@ -392,7 +392,7 @@ struct CommandListAppendLaunchKernelCompactL3FlushEventFixture : public ModuleFi
 
         ze_group_count_t groupCount{1, 1, 1};
         CmdListKernelLaunchParams launchParams = {};
-        result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams, false);
+        result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams);
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
         EXPECT_EQ(arg.expectedPacketsInUse, event->getPacketsInUse());
         EXPECT_EQ(arg.expectedKernelCount, event->getKernelCount());
@@ -638,7 +638,7 @@ struct CommandListSignalAllEventPacketFixture : public ModuleFixture {
         ze_group_count_t groupCount{1, 1, 1};
         CmdListKernelLaunchParams launchParams = {};
         size_t sizeBefore = cmdStream->getUsed();
-        result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams, false);
+        result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams);
         size_t sizeAfter = cmdStream->getUsed();
         EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -1622,11 +1622,11 @@ HWTEST2_F(CommandListAppendLaunchRayTracingKernelTest, givenKernelUsingRayTracin
 
     rtMemoryBackedBuffer = nullptr;
     CmdListKernelLaunchParams launchParams = {};
-    result = pCommandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = pCommandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     EXPECT_NE(ZE_RESULT_SUCCESS, result);
 
     rtMemoryBackedBuffer = buffer1;
-    result = pCommandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = pCommandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 }
 
@@ -1714,7 +1714,7 @@ HWTEST2_F(RayTracingCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t regularSizeBefore = cmdStreamRegular.getUsed();
-    auto result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t regularSizeAfter = cmdStreamRegular.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -1765,7 +1765,7 @@ HWTEST2_F(RayTracingCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t regularSizeBefore = cmdStreamRegular.getUsed();
-    auto result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t regularSizeAfter = cmdStreamRegular.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -1794,7 +1794,7 @@ HWTEST2_F(RayTracingCmdListTest,
 
     size_t immediateSizeBefore = cmdStreamImmediate.getUsed();
     size_t csrBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t csrAfter = csrStream.getUsed();
     size_t immediateSizeAfter = cmdStreamImmediate.getUsed();
@@ -1826,7 +1826,7 @@ HWTEST2_F(RayTracingCmdListTest,
     size_t csrBefore = csrStream.getUsed();
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t csrAfter = csrStream.getUsed();
     size_t immediateSizeAfter = cmdStreamImmediate.getUsed();
@@ -1840,7 +1840,7 @@ HWTEST2_F(RayTracingCmdListTest,
 
     immediateSizeBefore = cmdStreamImmediate.getUsed();
     csrBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     csrAfter = csrStream.getUsed();
     immediateSizeAfter = cmdStreamImmediate.getUsed();
@@ -1872,7 +1872,7 @@ HWTEST2_F(RayTracingCmdListTest,
     size_t csrBefore = csrStream.getUsed();
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     size_t csrAfter = csrStream.getUsed();
     size_t immediateSizeAfter = cmdStreamImmediate.getUsed();
@@ -1888,7 +1888,7 @@ HWTEST2_F(RayTracingCmdListTest,
     auto &cmdStreamRegular = *containerRegular.getCommandStream();
 
     size_t regularSizeBefore = cmdStreamRegular.getUsed();
-    result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t regularSizeAfter = cmdStreamRegular.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -1928,7 +1928,7 @@ HWTEST2_F(ImmediateFlushTaskGlobalStatelessCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t csrUsedBefore = csrStream.getUsed();
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -1957,7 +1957,7 @@ HWTEST2_F(ImmediateFlushTaskGlobalStatelessCmdListTest,
     EXPECT_TRUE(csrImmediate.isMadeResident(globalSurfaceHeap->getGraphicsAllocation()));
 
     csrUsedBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -1985,7 +1985,7 @@ HWTEST2_F(ImmediateFlushTaskGlobalStatelessCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t csrUsedBefore = csrStream.getUsed();
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2011,7 +2011,7 @@ HWTEST2_F(ImmediateFlushTaskGlobalStatelessCmdListTest,
     kernel->kernelRequiresUncachedMocsCount++;
 
     csrUsedBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2046,7 +2046,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t csrUsedBefore = csrStream.getUsed();
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2092,7 +2092,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     }
 
     csrUsedBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2121,7 +2121,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t csrUsedBefore = csrStream.getUsed();
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2159,7 +2159,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     kernel->kernelRequiresUncachedMocsCount++;
 
     csrUsedBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2192,7 +2192,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t csrUsedBefore = csrStream.getUsed();
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2212,7 +2212,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     mockKernelImmData->kernelDescriptor->kernelAttributes.perThreadScratchSize[0] = 0x100;
 
     csrUsedBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2287,7 +2287,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t csrUsedBefore = csrStream.getUsed();
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2323,7 +2323,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     EXPECT_EQ(this->dshRequired, sbaCmd->getDynamicStateBaseAddressModifyEnable());
     EXPECT_EQ(dsShareBaseAddress, sbaCmd->getDynamicStateBaseAddress());
 
-    result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
     result = commandList->close();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
@@ -2347,7 +2347,7 @@ HWTEST2_F(ImmediateFlushTaskCsrSharedHeapCmdListTest,
     EXPECT_EQ(dsRegularBaseAddress, static_cast<uint64_t>(csrBaseAddressState.dynamicStateBaseAddress.value));
 
     csrUsedBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2389,7 +2389,7 @@ HWTEST2_F(ImmediateFlushTaskPrivateHeapCmdListTest,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     size_t csrUsedBefore = csrStream.getUsed();
-    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    auto result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     size_t csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2434,7 +2434,7 @@ HWTEST2_F(ImmediateFlushTaskPrivateHeapCmdListTest,
     }
 
     csrUsedBefore = csrStream.getUsed();
-    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandListImmediate->appendLaunchKernel(kernel->toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     csrUsedAfter = csrStream.getUsed();
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
 
@@ -2666,7 +2666,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     CommandToPatch signalCmd;
     launchParams.outSyncCommand = &signalCmd;
     auto commandStreamOffset = commandContainer.getCommandStream()->getUsed();
-    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     GenCmdList cmdList;
@@ -2728,7 +2728,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     CommandToPatchContainer outStoreRegMemCmdList;
     launchParams.outListCommands = &outStoreRegMemCmdList;
     auto commandStreamOffset = commandContainer.getCommandStream()->getUsed();
-    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     GenCmdList cmdList;
@@ -2741,12 +2741,14 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     ASSERT_NE(0u, storeRegMemList.size());
     ASSERT_NE(0u, outStoreRegMemCmdList.size());
 
-    ASSERT_EQ(storeRegMemList.size(), outStoreRegMemCmdList.size());
+    size_t additionalPatchCmdsSize = commandList->kernelMemoryPrefetchEnabled() ? 1 : 0;
+
+    ASSERT_EQ(storeRegMemList.size(), outStoreRegMemCmdList.size() - additionalPatchCmdsSize);
 
     for (size_t i = 0; i < storeRegMemList.size(); i++) {
         MI_STORE_REGISTER_MEM *storeRegMem = genCmdCast<MI_STORE_REGISTER_MEM *>(*storeRegMemList[i]);
 
-        auto &cmdToPatch = outStoreRegMemCmdList[i];
+        auto &cmdToPatch = outStoreRegMemCmdList[i + additionalPatchCmdsSize];
         EXPECT_EQ(CommandToPatch::TimestampEventPostSyncStoreRegMem, cmdToPatch.type);
         MI_STORE_REGISTER_MEM *outStoreRegMem = genCmdCast<MI_STORE_REGISTER_MEM *>(cmdToPatch.pDestination);
         ASSERT_NE(nullptr, outStoreRegMem);
@@ -2795,7 +2797,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     CommandToPatchContainer outCbEventCmds;
     launchParams.outListCommands = &outCbEventCmds;
     auto commandStreamOffset = cmdStream->getUsed();
-    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     GenCmdList cmdList;
@@ -2804,7 +2806,9 @@ HWTEST2_F(CommandListAppendLaunchKernel,
         ptrOffset(cmdStream->getCpuBase(), commandStreamOffset),
         cmdStream->getUsed() - commandStreamOffset));
 
-    ASSERT_EQ(0u, outCbEventCmds.size());
+    size_t additionalPatchCmdsSize = commandList->kernelMemoryPrefetchEnabled() ? 1 : 0;
+
+    ASSERT_EQ(additionalPatchCmdsSize, outCbEventCmds.size());
     auto eventBaseAddress = event->getGpuAddress(device);
 
     WalkerVariant walkerVariant = NEO::UnitTestHelper<FamilyType>::getWalkerVariant(launchParams.outWalker);
@@ -2865,7 +2869,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     launchParams.omitAddingWaitEventsResidency = true;
     auto commandStreamOffset = cmdStream->getUsed();
     auto waitEventHandle = event->toHandle();
-    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 1, &waitEventHandle, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 1, &waitEventHandle, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     GenCmdList cmdList;
@@ -2878,8 +2882,9 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     auto inOrderAllocation = event->getInOrderExecInfo()->getDeviceCounterAllocation();
 
     size_t expectedLoadRegImmCount = FamilyType::isQwordInOrderCounter ? 2 : 0;
+    size_t additionalPatchCmdsSize = commandList->kernelMemoryPrefetchEnabled() ? 1 : 0;
 
-    size_t expectedWaitCmds = 1 + expectedLoadRegImmCount;
+    size_t expectedWaitCmds = 1 + expectedLoadRegImmCount + additionalPatchCmdsSize;
     ASSERT_EQ(expectedWaitCmds, outCbWaitEventCmds.size());
 
     auto loadRegImmList = findAll<MI_LOAD_REGISTER_IMM *>(cmdList.begin(), cmdList.end());
@@ -2889,27 +2894,31 @@ HWTEST2_F(CommandListAppendLaunchKernel,
 
     size_t outCbWaitEventCmdsIndex = 0;
     for (; outCbWaitEventCmdsIndex < expectedLoadRegImmCount; outCbWaitEventCmdsIndex++) {
-        EXPECT_EQ(CommandToPatch::CbWaitEventLoadRegisterImm, outCbWaitEventCmds[outCbWaitEventCmdsIndex].type);
-        ASSERT_NE(nullptr, outCbWaitEventCmds[outCbWaitEventCmdsIndex].pDestination);
-        ASSERT_EQ(*loadRegImmList[outCbWaitEventCmdsIndex], outCbWaitEventCmds[outCbWaitEventCmdsIndex].pDestination);
-        auto loadRegImmCmd = genCmdCast<MI_LOAD_REGISTER_IMM *>(outCbWaitEventCmds[outCbWaitEventCmdsIndex].pDestination);
+        auto &cmd = outCbWaitEventCmds[outCbWaitEventCmdsIndex + additionalPatchCmdsSize];
+
+        EXPECT_EQ(CommandToPatch::CbWaitEventLoadRegisterImm, cmd.type);
+        ASSERT_NE(nullptr, cmd.pDestination);
+        ASSERT_EQ(*loadRegImmList[outCbWaitEventCmdsIndex], cmd.pDestination);
+        auto loadRegImmCmd = genCmdCast<MI_LOAD_REGISTER_IMM *>(cmd.pDestination);
         ASSERT_NE(nullptr, loadRegImmCmd);
-        EXPECT_EQ(0u, outCbWaitEventCmds[outCbWaitEventCmdsIndex].inOrderPatchListIndex);
+        EXPECT_EQ(0u, cmd.inOrderPatchListIndex);
         auto registerNumber = 0x2600 + (4 * outCbWaitEventCmdsIndex);
-        EXPECT_EQ(registerNumber, outCbWaitEventCmds[outCbWaitEventCmdsIndex].offset);
+        EXPECT_EQ(registerNumber, cmd.offset);
     }
 
-    EXPECT_EQ(CommandToPatch::CbWaitEventSemaphoreWait, outCbWaitEventCmds[outCbWaitEventCmdsIndex].type);
-    ASSERT_NE(nullptr, outCbWaitEventCmds[outCbWaitEventCmdsIndex].pDestination);
-    ASSERT_EQ(*semaphoreWaitList[0], outCbWaitEventCmds[outCbWaitEventCmdsIndex].pDestination);
-    auto semaphoreWaitCmd = genCmdCast<MI_SEMAPHORE_WAIT *>(outCbWaitEventCmds[outCbWaitEventCmdsIndex].pDestination);
+    auto &cmd = outCbWaitEventCmds[outCbWaitEventCmdsIndex + additionalPatchCmdsSize];
+
+    EXPECT_EQ(CommandToPatch::CbWaitEventSemaphoreWait, cmd.type);
+    ASSERT_NE(nullptr, cmd.pDestination);
+    ASSERT_EQ(*semaphoreWaitList[0], cmd.pDestination);
+    auto semaphoreWaitCmd = genCmdCast<MI_SEMAPHORE_WAIT *>(cmd.pDestination);
     ASSERT_NE(nullptr, semaphoreWaitCmd);
-    EXPECT_EQ(eventCompletionAddress + outCbWaitEventCmds[outCbWaitEventCmdsIndex].offset, semaphoreWaitCmd->getSemaphoreGraphicsAddress());
+    EXPECT_EQ(eventCompletionAddress + cmd.offset, semaphoreWaitCmd->getSemaphoreGraphicsAddress());
 
     if (FamilyType::isQwordInOrderCounter) {
-        EXPECT_EQ(std::numeric_limits<size_t>::max(), outCbWaitEventCmds[outCbWaitEventCmdsIndex].inOrderPatchListIndex);
+        EXPECT_EQ(std::numeric_limits<size_t>::max(), cmd.inOrderPatchListIndex);
     } else {
-        EXPECT_EQ(0u, outCbWaitEventCmds[outCbWaitEventCmdsIndex].inOrderPatchListIndex);
+        EXPECT_EQ(0u, cmd.inOrderPatchListIndex);
     }
 
     auto &residencyContainer = commandContainer.getResidencyContainer();
@@ -2946,7 +2955,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     CmdListKernelLaunchParams launchParams = {};
     launchParams.cmdWalkerBuffer = walkerBuffer;
     auto commandStreamOffset = cmdStream->getUsed();
-    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     GenCmdList cmdList;
@@ -2987,7 +2996,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     ze_group_count_t groupCount{1, 1, 1};
     CmdListKernelLaunchParams launchParams = {};
     launchParams.reserveExtraPayloadSpace = 1024;
-    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     auto ioh = commandContainer.getIndirectHeap(NEO::IndirectHeapType::indirectObject);
@@ -2995,6 +3004,51 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     size_t totalSize = 1024 + 64;
     size_t expectedSize = alignUp(totalSize, NEO::EncodeDispatchKernel<FamilyType>::getDefaultIOHAlignment());
     EXPECT_EQ(expectedSize, ioh->getUsed());
+}
+
+HWTEST2_F(CommandListAppendLaunchKernel, givenNotEnoughIohSpaceWhenLaunchingKernelThenReallocateBeforePrefetch, IsAtLeastXeHpcCore) {
+    using STATE_PREFETCH = typename FamilyType::STATE_PREFETCH;
+
+    DebugManagerStateRestore restorer;
+    debugManager.flags.EnableMemoryPrefetch.set(1);
+    Mock<::L0::KernelImp> kernel;
+    auto mockModule = std::unique_ptr<Module>(new Mock<Module>(device, nullptr));
+    kernel.module = mockModule.get();
+    kernel.descriptor.kernelAttributes.flags.passInlineData = false;
+    kernel.perThreadDataSizeForWholeThreadGroup = 0;
+    kernel.crossThreadDataSize = 64;
+    kernel.crossThreadData = std::make_unique<uint8_t[]>(kernel.crossThreadDataSize);
+
+    auto commandList = std::make_unique<WhiteBox<::L0::CommandListCoreFamily<FamilyType::gfxCoreFamily>>>();
+    auto result = commandList->initialize(device, NEO::EngineGroupType::compute, 0);
+    ASSERT_EQ(ZE_RESULT_SUCCESS, result);
+
+    auto &commandContainer = commandList->getCmdContainer();
+    auto cmdStream = commandContainer.getCommandStream();
+    auto offset = cmdStream->getUsed();
+
+    ze_group_count_t groupCount{1, 1, 1};
+    CmdListKernelLaunchParams launchParams = {};
+    launchParams.reserveExtraPayloadSpace = 1024;
+
+    auto ioh = commandContainer.getIndirectHeap(NEO::IndirectHeapType::indirectObject);
+    ioh->getSpace(ioh->getMaxAvailableSpace() - (launchParams.reserveExtraPayloadSpace + kernel.getIndirectSize() + 1));
+
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, nullptr, 0, nullptr, launchParams);
+    ASSERT_EQ(ZE_RESULT_SUCCESS, result);
+
+    ioh = commandContainer.getIndirectHeap(NEO::IndirectHeapType::indirectObject);
+
+    GenCmdList cmdList;
+    ASSERT_TRUE(FamilyType::Parse::parseCommandBuffer(cmdList, ptrOffset(cmdStream->getCpuBase(), offset), cmdStream->getUsed() - offset));
+
+    auto prefetchList = find<STATE_PREFETCH *>(cmdList.begin(), cmdList.end());
+    ASSERT_NE(prefetchList, cmdList.end());
+
+    auto statePrefetch = genCmdCast<STATE_PREFETCH *>(*prefetchList);
+    ASSERT_NE(nullptr, statePrefetch);
+
+    EXPECT_EQ(ioh->getGraphicsAllocation()->getGpuAddress(), statePrefetch->getAddress());
 }
 
 HWTEST2_F(CommandListAppendLaunchKernel,
@@ -3033,7 +3087,7 @@ HWTEST2_F(CommandListAppendLaunchKernel,
     launchParams.cmdWalkerBuffer = computeWalkerHostBuffer;
     launchParams.hostPayloadBuffer = payloadHostBuffer;
 
-    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams, false);
+    result = commandList->appendLaunchKernel(kernel.toHandle(), groupCount, event->toHandle(), 0, nullptr, launchParams);
     ASSERT_EQ(ZE_RESULT_SUCCESS, result);
 
     WalkerVariant walkerVariant = NEO::UnitTestHelper<FamilyType>::getWalkerVariant(launchParams.cmdWalkerBuffer);

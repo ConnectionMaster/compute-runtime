@@ -31,7 +31,7 @@ using ChunkTransferBufferFunc = std::function<int32_t(void *, size_t, size_t)>;
 class StagingBuffer : NEO::NonCopyableClass {
   public:
     StagingBuffer(void *baseAddress, size_t size);
-    StagingBuffer(StagingBuffer &&other);
+    StagingBuffer(StagingBuffer &&other) noexcept;
     StagingBuffer &operator=(StagingBuffer &&other) noexcept = delete;
 
     void *getBaseAddress() const {
@@ -119,7 +119,7 @@ class StagingBufferManager : NEO::NonCopyableAndNonMovableClass {
 
     bool isValidForStaging(const Device &device, const void *ptr, size_t size, bool hasDependencies);
 
-    size_t chunkSize = MemoryConstants::pageSize2M;
+    size_t chunkSize = 0;
     std::mutex mtx;
     std::vector<StagingBuffer> stagingBuffers;
     std::vector<StagingBufferTracker> trackers;
@@ -133,5 +133,7 @@ class StagingBufferManager : NEO::NonCopyableAndNonMovableClass {
 };
 
 static_assert(NEO::NonCopyableAndNonMovable<StagingBufferManager>);
+
+size_t getDefaultStagingBufferSize();
 
 } // namespace NEO

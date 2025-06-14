@@ -60,10 +60,15 @@ WddmMemoryManager::WddmMemoryManager(ExecutionEnvironment &executionEnvironment)
         deferredDeleter = createDeferredDeleter();
     mallocRestrictions.minAddress = 0u;
 
+    usmDeviceAllocationMode = toLocalMemAllocationMode(debugManager.flags.NEO_LOCAL_MEMORY_ALLOCATION_MODE.get());
+
     for (uint32_t rootDeviceIndex = 0; rootDeviceIndex < gfxPartitions.size(); ++rootDeviceIndex) {
         mallocRestrictions.minAddress = std::max(mallocRestrictions.minAddress, getWddm(rootDeviceIndex).getWddmMinAddress());
         getWddm(rootDeviceIndex).initGfxPartition(*getGfxPartition(rootDeviceIndex), rootDeviceIndex, gfxPartitions.size(), heapAssigners[rootDeviceIndex]->apiAllowExternalHeapForSshAndDsh);
         isLocalMemoryUsedForIsa(rootDeviceIndex);
+        if (isLocalOnlyAllocationMode()) {
+            getGmmHelper(rootDeviceIndex)->setLocalOnlyAllocationMode(true);
+        }
     }
 
     alignmentSelector.addCandidateAlignment(MemoryConstants::pageSize64k, true, AlignmentSelector::anyWastage);
@@ -688,11 +693,7 @@ void *WddmMemoryManager::lockResourceImpl(GraphicsAllocation &graphicsAllocation
 }
 void WddmMemoryManager::unlockResourceImpl(GraphicsAllocation &graphicsAllocation) {
     auto &wddmAllocation = static_cast<WddmAllocation &>(graphicsAllocation);
-    getWddm(graphicsAllocation.getRootDeviceIndex()).unlockResource(wddmAllocation.getDefaultHandle());
-    if (wddmAllocation.needsMakeResidentBeforeLock()) {
-        [[maybe_unused]] auto evictionStatus = getWddm(graphicsAllocation.getRootDeviceIndex()).getTemporaryResourcesContainer()->evictResource(wddmAllocation.getDefaultHandle());
-        DEBUG_BREAK_IF(evictionStatus == MemoryOperationsStatus::failed);
-    }
+    getWddm(graphicsAllocation.getRootDeviceIndex()).unlockResource(wddmAllocation.getDefaultHandle(), wddmAllocation.needsMakeResidentBeforeLock());
 }
 void WddmMemoryManager::freeAssociatedResourceImpl(GraphicsAllocation &graphicsAllocation) {
     auto &wddmAllocation = static_cast<WddmAllocation &>(graphicsAllocation);
@@ -1242,7 +1243,7 @@ bool WddmMemoryManager::copyMemoryToAllocationBanks(GraphicsAllocation *graphics
             return false;
         }
         memcpy_s(ptrOffset(ptr, destinationOffset), graphicsAllocation->getUnderlyingBufferSize() - destinationOffset, memoryToCopy, sizeToCopy);
-        wddm.unlockResource(wddmAllocation->getHandles()[handleId]);
+        wddm.unlockResource(wddmAllocation->getHandles()[handleId], wddmAllocation->needsMakeResidentBeforeLock());
     }
     wddmAllocation->setExplicitlyMadeResident(wddmAllocation->needsMakeResidentBeforeLock());
     return true;

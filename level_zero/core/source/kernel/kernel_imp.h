@@ -99,7 +99,7 @@ struct KernelImp : Kernel {
 
     ze_result_t setArgUnknown(uint32_t argIndex, size_t argSize, const void *argVal);
 
-    ze_result_t setArgRedescribedImage(uint32_t argIndex, ze_image_handle_t argVal) override;
+    ze_result_t setArgRedescribedImage(uint32_t argIndex, ze_image_handle_t argVal, bool isPacked) override;
 
     ze_result_t setArgBufferWithAlloc(uint32_t argIndex, uintptr_t argVal, NEO::GraphicsAllocation *allocation, NEO::SvmAllocationData *peerAllocData) override;
 
@@ -251,6 +251,7 @@ struct KernelImp : Kernel {
     virtual void evaluateIfRequiresGenerationOfLocalIdsByRuntime(const NEO::KernelDescriptor &kernelDescriptor) = 0;
     void *patchBindlessSurfaceState(NEO::GraphicsAllocation *alloc, uint32_t bindless);
     uint32_t getSurfaceStateIndexForBindlessOffset(NEO::CrossThreadDataOffset bindlessOffset) const;
+    ze_result_t validateWorkgroupSize() const;
 
     const KernelImmutableData *kernelImmData = nullptr;
     Module *module = nullptr;

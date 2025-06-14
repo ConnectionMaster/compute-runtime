@@ -52,6 +52,7 @@ enum class GfxMemoryAllocationMethod : uint32_t;
 enum class AllocationType;
 enum class CacheRegion : uint16_t;
 enum class CachePolicy : uint32_t;
+enum class LocalMemAllocationMode : uint32_t;
 
 using ProductHelperCreateFunctionType = std::unique_ptr<ProductHelper> (*)();
 extern ProductHelperCreateFunctionType productHelperFactory[IGFX_MAX_PRODUCT];
@@ -95,6 +96,7 @@ class ProductHelper {
     virtual bool isMaxThreadsForWorkgroupWARequired(const HardwareInfo &hwInfo) const = 0;
     virtual uint32_t getMaxThreadsForWorkgroupInDSSOrSS(const HardwareInfo &hwInfo, uint32_t maxNumEUsPerSubSlice, uint32_t maxNumEUsPerDualSubSlice) const = 0;
     virtual uint32_t getMaxThreadsForWorkgroup(const HardwareInfo &hwInfo, uint32_t maxNumEUsPerSubSlice) const = 0;
+    virtual uint32_t getPreferredWorkgroupCountPerSubslice() const = 0;
     virtual void setForceNonCoherent(void *const commandPtr, const StateComputeModeProperties &properties) const = 0;
     virtual void updateScmCommand(void *const commandPtr, const StateComputeModeProperties &properties) const = 0;
     virtual bool obtainBlitterPreference(const HardwareInfo &hwInfo) const = 0;
@@ -137,9 +139,9 @@ class ProductHelper {
     virtual bool isFlushTaskAllowed() const = 0;
     virtual bool isSystolicModeConfigurable(const HardwareInfo &hwInfo) const = 0;
     virtual bool isInitBuiltinAsyncSupported(const HardwareInfo &hwInfo) const = 0;
-    virtual bool isGlobalFenceInCommandStreamRequired(const HardwareInfo &hwInfo) const = 0;
+    virtual bool isReleaseGlobalFenceInCommandStreamRequired(const HardwareInfo &hwInfo) const = 0;
     virtual bool isGlobalFenceInPostSyncRequired(const HardwareInfo &hwInfo) const = 0;
-    virtual bool isGlobalFenceInDirectSubmissionRequired(const HardwareInfo &hwInfo) const = 0;
+    virtual bool isAcquireGlobalFenceInDirectSubmissionRequired(const HardwareInfo &hwInfo) const = 0;
     virtual bool isCopyEngineSelectorEnabled(const HardwareInfo &hwInfo) const = 0;
     virtual uint32_t getThreadEuRatioForScratch(const HardwareInfo &hwInfo) const = 0;
     virtual void adjustScratchSize(size_t &requiredScratchSize) const = 0;
@@ -240,7 +242,7 @@ class ProductHelper {
     virtual bool isCachingOnCpuAvailable() const = 0;
     virtual bool isNewCoherencyModelSupported() const = 0;
     virtual bool isResourceUncachedForCS(AllocationType allocationType) const = 0;
-    virtual bool deferMOCSToPatIndex() const = 0;
+    virtual bool deferMOCSToPatIndex(bool isWddmOnLinux) const = 0;
     virtual const std::vector<uint32_t> getSupportedLocalDispatchSizes(const HardwareInfo &hwInfo) const = 0;
     virtual uint32_t getMaxLocalRegionSize(const HardwareInfo &hwInfo) const = 0;
     virtual uint32_t getMaxLocalSubRegionSize(const HardwareInfo &hwInfo) const = 0;
@@ -255,8 +257,9 @@ class ProductHelper {
     virtual bool supports2DBlockStore() const = 0;
     virtual bool supports2DBlockLoad() const = 0;
     virtual uint32_t getNumCacheRegions() const = 0;
-    virtual uint32_t adjustMaxThreadsPerThreadGroup(uint32_t maxThreadsPerThreadGroup, uint32_t simt, uint32_t totalWorkItems, uint32_t grfCount, bool isHwLocalIdGeneration, bool isHeaplessModeEnabled) const = 0;
+    virtual uint32_t adjustMaxThreadsPerThreadGroup(uint32_t maxThreadsPerThreadGroup, uint32_t simt, uint32_t grfCount, bool isHeaplessModeEnabled) const = 0;
     virtual uint64_t getPatIndex(CacheRegion cacheRegion, CachePolicy cachePolicy) const = 0;
+    virtual uint32_t getGmmResourceUsageOverride(uint32_t usageType) const = 0;
     virtual bool isSharingWith3dOrMediaAllowed() const = 0;
     virtual bool isL3FlushAfterPostSyncRequired(bool heaplessEnabled) const = 0;
     virtual void overrideDirectSubmissionTimeouts(std::chrono::microseconds &timeout, std::chrono::microseconds &maxTimeout) const = 0;
@@ -266,7 +269,11 @@ class ProductHelper {
     virtual bool isCompressionForbidden(const HardwareInfo &hwInfo) const = 0;
     virtual bool isExposingSubdevicesAllowed() const = 0;
     virtual bool useAdditionalBlitProperties() const = 0;
+    virtual bool isNonCoherentTimestampsModeEnabled() const = 0;
+    virtual bool isPackedCopyFormatSupported() const = 0;
+    virtual bool isPidFdOrSocketForIpcSupported() const = 0;
 
+    virtual bool getStorageInfoLocalOnlyFlag(LocalMemAllocationMode usmDeviceAllocationMode, bool defaultValue) const = 0;
     virtual ~ProductHelper() = default;
 
   protected:

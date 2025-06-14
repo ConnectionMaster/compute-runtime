@@ -90,6 +90,22 @@ HWTEST2_F(MetricIpSamplingEnumerationTest, GivenDependenciesAvailableWhenMetricG
     }
 }
 
+HWTEST2_F(MetricIpSamplingEnumerationTest, GivenDependenciesNotAvailableWhenMetricGroupGetIsCalledThenValidMetricGroupIsReturned, EustallSupportedPlatforms) {
+
+    EXPECT_EQ(ZE_RESULT_SUCCESS, testDevices[0]->getMetricDeviceContext().enableMetricApi());
+
+    for (auto &osInterface : osInterfaceVector) {
+        osInterface->startMeasurementReturn = ZE_RESULT_ERROR_UNSUPPORTED_FEATURE;
+    }
+
+    for (auto device : testDevices) {
+
+        uint32_t metricGroupCount = 0;
+        EXPECT_EQ(zetMetricGroupGet(device->toHandle(), &metricGroupCount, nullptr), ZE_RESULT_SUCCESS);
+        EXPECT_EQ(metricGroupCount, 0u);
+    }
+}
+
 HWTEST2_F(MetricIpSamplingEnumerationTest, GivenDependenciesAvailableWhenMetricGroupGetIsCalledMultipleTimesThenValidMetricGroupIsReturned, EustallSupportedPlatforms) {
 
     EXPECT_EQ(ZE_RESULT_SUCCESS, testDevices[0]->getMetricDeviceContext().enableMetricApi());
@@ -159,23 +175,11 @@ HWTEST2_F(MetricIpSamplingEnumerationTest, GivenDependenciesAvailableWhenMetricG
     }
 }
 
-using DriverVersionTest = Test<DeviceFixture>;
+using DriverExtensionsTest = Test<ExtensionFixture>;
 
-TEST_F(DriverVersionTest, givenSupportedExtensionsWhenCheckIfAppendMarkerIsSupportedThenCorrectResultsAreReturned) {
-    uint32_t count = 0;
-    ze_result_t res = driverHandle->getExtensionProperties(&count, nullptr);
-    EXPECT_NE(0u, count);
-    EXPECT_EQ(ZE_RESULT_SUCCESS, res);
-
-    std::vector<ze_driver_extension_properties_t> extensionProperties;
-    extensionProperties.resize(count);
-
-    res = driverHandle->getExtensionProperties(&count, extensionProperties.data());
-    EXPECT_EQ(ZE_RESULT_SUCCESS, res);
-
-    auto it = std::find_if(extensionProperties.begin(), extensionProperties.end(), [](const auto &extension) { return (strcmp(extension.name, ZET_INTEL_METRIC_SOURCE_ID_EXP_NAME) == 0); });
-    EXPECT_NE(it, extensionProperties.end());
-    EXPECT_EQ((*it).version, ZET_INTEL_METRIC_SOURCE_ID_EXP_VERSION_CURRENT);
+TEST_F(DriverExtensionsTest, givenDriverHandleWhenAskingForExtensionsThenReturnCorrectVersions) {
+    verifyExtensionDefinition(ZET_INTEL_METRIC_SOURCE_ID_EXP_NAME, ZET_INTEL_METRIC_SOURCE_ID_EXP_VERSION_CURRENT);
+    verifyExtensionDefinition(ZET_INTEL_METRIC_CALCULATE_EXP_NAME, ZET_INTEL_METRIC_CALCULATE_EXP_VERSION_CURRENT);
 }
 
 struct TestMetricProperties {
@@ -280,6 +284,35 @@ HWTEST2_F(MetricIpSamplingEnumerationTest, GivenEnumerationIsSuccessfulThenDummy
         EXPECT_EQ(zetContextActivateMetricGroups(context->toHandle(), device->toHandle(), 1, &metricGroups[0]), ZE_RESULT_SUCCESS);
         static_cast<DeviceImp *>(device)->activateMetricGroups();
         EXPECT_EQ(zetContextActivateMetricGroups(context->toHandle(), device->toHandle(), 0, nullptr), ZE_RESULT_SUCCESS);
+    }
+}
+
+HWTEST2_F(MetricIpSamplingEnumerationTest, GivenEnumerationIsSuccessfulWhenMetricsDisableIsCalledActivationReturnsFailure, EustallSupportedPlatforms) {
+    EXPECT_EQ(ZE_RESULT_SUCCESS, testDevices[0]->getMetricDeviceContext().enableMetricApi());
+
+    for (auto device : testDevices) {
+        uint32_t metricGroupCount = 0;
+        zetMetricGroupGet(device->toHandle(), &metricGroupCount, nullptr);
+        std::vector<zet_metric_group_handle_t> metricGroups;
+        metricGroups.resize(metricGroupCount);
+        ASSERT_EQ(zetMetricGroupGet(device->toHandle(), &metricGroupCount, metricGroups.data()), ZE_RESULT_SUCCESS);
+        ASSERT_NE(metricGroups[0], nullptr);
+        zet_metric_group_properties_t metricGroupProperties = {ZET_STRUCTURE_TYPE_METRIC_GROUP_PROPERTIES, nullptr};
+        EXPECT_EQ(zetMetricGroupGetProperties(metricGroups[0], &metricGroupProperties), ZE_RESULT_SUCCESS);
+        EXPECT_EQ(strcmp(metricGroupProperties.name, "EuStallSampling"), 0);
+
+        EXPECT_EQ(zetContextActivateMetricGroups(context->toHandle(), device->toHandle(), 1, &metricGroups[0]), ZE_RESULT_SUCCESS);
+        static_cast<DeviceImp *>(device)->activateMetricGroups();
+
+        // Disable Metrics
+        EXPECT_EQ(zetIntelDeviceDisableMetricsExp(device->toHandle()), ZE_RESULT_ERROR_HANDLE_OBJECT_IN_USE);
+        // De-Activate all metric groups.
+        EXPECT_EQ(zetContextActivateMetricGroups(context->toHandle(), device->toHandle(), 0, nullptr), ZE_RESULT_SUCCESS);
+        // Disable Metrics with all groups deactivated should return success
+        EXPECT_EQ(zetIntelDeviceDisableMetricsExp(device->toHandle()), ZE_RESULT_SUCCESS);
+        // Activate metric group on a disabled device should be failure.
+        EXPECT_EQ(zetContextActivateMetricGroups(context->toHandle(), device->toHandle(), 1, &metricGroups[0]), ZE_RESULT_ERROR_UNINITIALIZED);
+        EXPECT_EQ(zetIntelDeviceEnableMetricsExp(device->toHandle()), ZE_RESULT_SUCCESS);
     }
 }
 

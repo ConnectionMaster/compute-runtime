@@ -48,8 +48,8 @@ TEST_F(ReleaseHelper3000Tests, whenGettingSupportedNumGrfsThenCorrectValuesAreRe
     whenGettingSupportedNumGrfsThenValuesUpTo256Returned();
 }
 
-TEST_F(ReleaseHelper3000Tests, whenGettingNumThreadsPerEuThenCorrectValueIsReturnedBasedOnDebugKey) {
-    whenGettingNumThreadsPerEuThenCorrectValueIsReturnedBasedOnDebugKey();
+TEST_F(ReleaseHelper3000Tests, whenGettingNumThreadsPerEuThenCorrectValueIsReturnedBasedOnOverrideNumThreadsPerEuDebugKey) {
+    whenGettingNumThreadsPerEuThenCorrectValueIsReturnedBasedOnOverrideNumThreadsPerEuDebugKey();
 }
 
 TEST_F(ReleaseHelper3000Tests, whenGettingThreadsPerEuConfigsThenCorrectValueIsReturnedBasedOnNumThreadPerEu) {
@@ -78,6 +78,10 @@ TEST_F(ReleaseHelper3000Tests, whenIsDummyBlitWaRequiredCalledThenFalseReturned)
 
 TEST_F(ReleaseHelper3000Tests, whenIsBlitImageAllowedForDepthFormatCalledThenTrueReturned) {
     whenIsBlitImageAllowedForDepthFormatCalledThenTrueReturned();
+}
+
+TEST_F(ReleaseHelper3000Tests, whenProgrammAdditionalStallPriorToBarrierWithTimestampCalledThenFalseReturned) {
+    whenProgrammAdditionalStallPriorToBarrierWithTimestampCalledThenFalseReturned();
 }
 
 TEST_F(ReleaseHelper3000Tests, whenGettingPreferredSlmSizeThenAllEntriesHaveCorrectValues) {

@@ -443,7 +443,7 @@ HWTEST_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsAr
     }
 }
 
-HWTEST2_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsAreExecutedTwoTimesThenStateSipIsAddedOnlyTheFirstTime, MatchAny) {
+HWTEST_F(CommandQueueExecuteCommandLists, givenMidThreadPreemptionWhenCommandsAreExecutedTwoTimesThenStateSipIsAddedOnlyTheFirstTime) {
     using STATE_SIP = typename FamilyType::STATE_SIP;
     using Parse = typename FamilyType::Parse;
 
@@ -549,7 +549,7 @@ HWTEST2_F(CommandQueueExecuteCommandListsImplicitScalingDisabled, givenCommandLi
     MockCsr *pMockCsr = new MockCsr{*pNeoDevice->getExecutionEnvironment(), pNeoDevice->getRootDeviceIndex(), pNeoDevice->getDeviceBitfield()};
     pNeoDevice->resetCommandStreamReceiver(pMockCsr);
 
-    MockDeviceImp device{pNeoDevice, pNeoDevice->getExecutionEnvironment()};
+    MockDeviceImp device{pNeoDevice};
     auto pCommandQueue = new MockCommandQueueHw<FamilyType::gfxCoreFamily>{&device, pMockCsr, &desc};
     pCommandQueue->initialize(false, false, false);
 
@@ -864,14 +864,14 @@ void CommandQueueExecuteCommandListsFixture::twoCommandListCommandPreemptionTest
     commandQueue->destroy();
 }
 
-HWTEST2_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenExecutingThenQueuePreemptionIsSwitchedAndStateSipProgrammedOnce, MatchAny) {
+HWTEST_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenExecutingThenQueuePreemptionIsSwitchedAndStateSipProgrammedOnce) {
     if (heaplessStateInit) {
         GTEST_SKIP();
     }
     twoCommandListCommandPreemptionTest<FamilyType>(false);
 }
 
-HWTEST2_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenNoCmdStreamPreemptionRequiredThenNoCmdStreamProgrammingAndStateSipProgrammedOnce, MatchAny) {
+HWTEST_F(CommandQueueExecuteCommandLists, GivenCmdListsWithDifferentPreemptionModesWhenNoCmdStreamPreemptionRequiredThenNoCmdStreamProgrammingAndStateSipProgrammedOnce) {
     if (heaplessStateInit) {
         GTEST_SKIP();
     }

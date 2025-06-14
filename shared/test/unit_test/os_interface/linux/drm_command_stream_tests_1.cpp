@@ -27,6 +27,7 @@
 #include "shared/test/common/helpers/dispatch_flags_helper.h"
 #include "shared/test/common/helpers/engine_descriptor_helper.h"
 #include "shared/test/common/helpers/gtest_helpers.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/libult/linux/drm_mock.h"
 #include "shared/test/common/mocks/linux/mock_drm_allocation.h"
 #include "shared/test/common/mocks/linux/mock_drm_command_stream_receiver.h"
@@ -101,7 +102,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamTest, givenDebugFlagSetWhenSubmittingThenCall
             for (uint32_t i = 0; i <= expectedExitCounter + 3; i++) {
                 SysCalls::exitCalled = false;
 
-                csr->flushTask(cs, 0u, &ih, &ih, &ih, 0u, dispatchFlags, *device);
+                csr->flushTask(cs, 16u, &ih, &ih, &ih, 0u, dispatchFlags, *device);
 
                 bool enabled = (i >= expectedExitCounter);
 
@@ -219,7 +220,8 @@ HWTEST_TEMPLATED_F(DrmCommandStreamTest, givenPrintIndicesEnabledWhenFlushThenPr
     EncodeNoop<FamilyType>::alignToCacheLine(cs);
     BatchBuffer batchBuffer = BatchBufferHelper::createDefaultBatchBuffer(cs.getGraphicsAllocation(), &cs, cs.getUsed());
 
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     csr->flush(batchBuffer, csr->getResidencyAllocations());
     const std::string engineType = EngineHelpers::engineTypeToString(csr->getOsContext().getEngineType());
     const std::string engineUsage = EngineHelpers::engineUsageToString(csr->getOsContext().getEngineUsage());
@@ -228,7 +230,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamTest, givenPrintIndicesEnabledWhenFlushThenPr
                   << ", Sub-Devices Mask: " << csr->getOsContext().getDeviceBitfield().to_ulong()
                   << ", EngineId: " << csr->getOsContext().getEngineType()
                   << " (" << engineType << ", " << engineUsage << ")\n";
-    EXPECT_TRUE(hasSubstr(::testing::internal::GetCapturedStdout(), expectedValue.str()));
+    EXPECT_TRUE(hasSubstr(capture.getCapturedStdout(), expectedValue.str()));
 }
 
 HWTEST_TEMPLATED_F(DrmCommandStreamTest, givenDrmContextIdWhenFlushingThenSetIdToAllExecBuffersAndObjects) {
@@ -409,7 +411,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamTest, GivenCheckFlagsWhenFlushingThenSucceeds
 
 HWTEST_TEMPLATED_F(DrmCommandStreamTest, GivenCheckDrmFreeWhenFlushingThenSucceeds) {
     DebugManagerStateRestore restorer;
-    debugManager.flags.ForceL3FlushAfterPostSync.set(0);
+    debugManager.flags.EnableL3FlushAfterPostSync.set(0);
     mock->returnHandle = 17;
 
     auto &cs = csr->getCS();
@@ -541,12 +543,14 @@ HWTEST_TEMPLATED_F(DrmCommandStreamBatchingTests, givenCsrWhenDispatchPolicyIsSe
     testedCsr->overrideSubmissionAggregator(mockedSubmissionsAggregator);
     testedCsr->useNewResourceImplicitFlush = false;
     testedCsr->useGpuIdleImplicitFlush = false;
+    testedCsr->heaplessStateInitialized = true;
 
     auto commandBuffer = mm->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
     auto dummyAllocation = mm->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
     ASSERT_NE(nullptr, commandBuffer);
     ASSERT_EQ(0u, reinterpret_cast<uintptr_t>(commandBuffer->getUnderlyingBuffer()) & 0xFFF);
     IndirectHeap cs(commandBuffer);
+    cs.getSpace(4u); // use some bytes
 
     csr->makeResident(*dummyAllocation);
 
@@ -583,7 +587,11 @@ HWTEST_TEMPLATED_F(DrmCommandStreamBatchingTests, givenCsrWhenDispatchPolicyIsSe
     elementInVector = std::find(recordedCmdBuffer->surfaces.begin(), recordedCmdBuffer->surfaces.end(), allocations->getGraphicsAllocation(0u));
     EXPECT_NE(elementInVector, recordedCmdBuffer->surfaces.end());
 
-    EXPECT_EQ(testedCsr->commandStream.getGraphicsAllocation(), recordedCmdBuffer->batchBuffer.commandBufferAllocation);
+    if (testedCsr->getHeaplessStateInitEnabled()) {
+        EXPECT_EQ(cs.getGraphicsAllocation(), recordedCmdBuffer->batchBuffer.commandBufferAllocation);
+    } else {
+        EXPECT_EQ(testedCsr->commandStream.getGraphicsAllocation(), recordedCmdBuffer->batchBuffer.commandBufferAllocation);
+    }
 
     int ioctlUserPtrCnt = 3;
     ioctlUserPtrCnt += testedCsr->clearColorAllocation ? 1 : 0;
@@ -608,10 +616,12 @@ HWTEST_TEMPLATED_F(DrmCommandStreamBatchingTests, givenRecordedCommandBufferWhen
     testedCsr->overrideSubmissionAggregator(mockedSubmissionsAggregator);
     testedCsr->useNewResourceImplicitFlush = false;
     testedCsr->useGpuIdleImplicitFlush = false;
+    testedCsr->heaplessStateInitialized = true;
 
     auto commandBuffer = mm->allocateGraphicsMemoryWithProperties(MockAllocationProperties{csr->getRootDeviceIndex(), MemoryConstants::pageSize});
     IndirectHeap cs(commandBuffer);
-
+    // use some bytes
+    cs.getSpace(4u);
     auto allocations = device->getDefaultEngine().commandStreamReceiver->getTagsMultiAllocation();
 
     csr->setTagAllocation(static_cast<DrmAllocation *>(allocations->getGraphicsAllocation(csr->getRootDeviceIndex())));
@@ -636,8 +646,10 @@ HWTEST_TEMPLATED_F(DrmCommandStreamBatchingTests, givenRecordedCommandBufferWhen
 
     EXPECT_TRUE(cmdBuffers.peekIsEmpty());
 
-    auto commandBufferGraphicsAllocation = submittedCommandBuffer.getGraphicsAllocation();
-    EXPECT_TRUE(commandBufferGraphicsAllocation->isResident(csr->getOsContext().getContextId()));
+    if (!csr->getHeaplessStateInitEnabled()) {
+        auto commandBufferGraphicsAllocation = submittedCommandBuffer.getGraphicsAllocation();
+        EXPECT_TRUE(commandBufferGraphicsAllocation->isResident(csr->getOsContext().getContextId()));
+    }
 
     // preemption allocation
     size_t csrSurfaceCount = (device->getPreemptionMode() == PreemptionMode::MidThread) ? 2 : 0;
@@ -647,8 +659,9 @@ HWTEST_TEMPLATED_F(DrmCommandStreamBatchingTests, givenRecordedCommandBufferWhen
 
     // validate that submited command buffer has what we want
     EXPECT_EQ(3u + csrSurfaceCount, this->mock->execBuffer.getBufferCount());
-    EXPECT_EQ(4u, this->mock->execBuffer.getBatchStartOffset());
-    EXPECT_EQ(submittedCommandBuffer.getUsed(), this->mock->execBuffer.getBatchLen());
+
+    EXPECT_EQ(csr->getHeaplessStateInitEnabled() ? 0u : 4u, this->mock->execBuffer.getBatchStartOffset());
+    EXPECT_EQ(csr->getHeaplessStateInitEnabled() ? cs.getUsed() : submittedCommandBuffer.getUsed(), this->mock->execBuffer.getBatchLen());
 
     auto *execObjects = reinterpret_cast<MockExecObject *>(this->mock->execBuffer.getBuffersPtr());
 
@@ -688,11 +701,13 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenProcessResidencyFailingOnO
     auto testedCsr = static_cast<TestedDrmCommandStreamReceiver<FamilyType> *>(csr);
     testedCsr->processResidencyCallBase = false;
     testedCsr->processResidencyResult = SubmissionStatus::outOfMemory;
+    auto flushInternalCalledBeforeFlush = testedCsr->flushInternalCalled;
+    auto processResidencyCalledBeforeFlush = testedCsr->processResidencyCalled;
 
     SubmissionStatus ret = csr->flush(batchBuffer, csr->getResidencyAllocations());
     EXPECT_EQ(SubmissionStatus::outOfMemory, ret);
-    EXPECT_EQ(testedCsr->flushInternalCalled, 1u);
-    EXPECT_EQ(testedCsr->processResidencyCalled, 1u);
+    EXPECT_EQ(testedCsr->flushInternalCalled, flushInternalCalledBeforeFlush + 1);
+    EXPECT_EQ(testedCsr->processResidencyCalled, processResidencyCalledBeforeFlush + 1);
     mm->freeGraphicsMemory(allocation);
     mm->freeGraphicsMemory(commandBuffer);
 }
@@ -710,11 +725,13 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenProcessResidencyFailingOnO
     auto testedCsr = static_cast<TestedDrmCommandStreamReceiver<FamilyType> *>(csr);
     testedCsr->processResidencyCallBase = false;
     testedCsr->processResidencyResult = SubmissionStatus::outOfHostMemory;
+    auto flushInternalCalledBeforeFlush = testedCsr->flushInternalCalled;
+    auto processResidencyCalledBeforeFlush = testedCsr->processResidencyCalled;
 
     SubmissionStatus ret = csr->flush(batchBuffer, csr->getResidencyAllocations());
     EXPECT_EQ(SubmissionStatus::outOfHostMemory, ret);
-    EXPECT_EQ(testedCsr->flushInternalCalled, 1u);
-    EXPECT_EQ(testedCsr->processResidencyCalled, 1u);
+    EXPECT_EQ(testedCsr->flushInternalCalled, flushInternalCalledBeforeFlush + 1);
+    EXPECT_EQ(testedCsr->processResidencyCalled, processResidencyCalledBeforeFlush + 1);
     mm->freeGraphicsMemory(allocation);
     mm->freeGraphicsMemory(commandBuffer);
 }
@@ -734,12 +751,15 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenFailingExecWhenFlushingThe
     testedCsr->processResidencyResult = SubmissionStatus::success;
     testedCsr->execCallBase = false;
     testedCsr->execResult = -1;
+    auto flushInternalCalledBeforeFlush = testedCsr->flushInternalCalled;
+    auto processResidencyCalledBeforeFlush = testedCsr->processResidencyCalled;
+    auto execCalledBeforeFlush = testedCsr->execCalled;
 
     SubmissionStatus ret = csr->flush(batchBuffer, csr->getResidencyAllocations());
     EXPECT_EQ(SubmissionStatus::failed, ret);
-    EXPECT_EQ(testedCsr->flushInternalCalled, 1u);
-    EXPECT_EQ(testedCsr->processResidencyCalled, 1u);
-    EXPECT_EQ(testedCsr->execCalled, 1u);
+    EXPECT_EQ(testedCsr->flushInternalCalled, flushInternalCalledBeforeFlush + 1);
+    EXPECT_EQ(testedCsr->processResidencyCalled, processResidencyCalledBeforeFlush + 1);
+    EXPECT_EQ(testedCsr->execCalled, execCalledBeforeFlush + 1);
     mm->freeGraphicsMemory(allocation);
     mm->freeGraphicsMemory(commandBuffer);
 }
@@ -920,6 +940,7 @@ HWTEST_TEMPLATED_F(DrmCommandStreamDirectSubmissionTest, givenDirectSubmissionLi
     auto testedCsr = static_cast<TestedDrmCommandStreamReceiver<FamilyType> *>(csr);
     testedCsr->completionFenceValuePointer = nullptr;
     testedCsr->directSubmission = std::make_unique<MockDrmDirectSubmissionDispatchCommandBuffer<FamilyType>>(*device->getDefaultEngine().commandStreamReceiver);
+    testedCsr->heaplessStateInitialized = true;
     auto oldMemoryOperationsInterface = executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->memoryOperationsInterface.release();
     executionEnvironment->rootDeviceEnvironments[rootDeviceIndex]->memoryOperationsInterface = std::make_unique<DrmMemoryOperationsHandlerDefault>(device->getRootDeviceIndex());
 
@@ -1128,11 +1149,12 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenPrintBOsForSubmitWhenPrint
     residency.push_back(&allocation1);
     residency.push_back(&allocation2);
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     EXPECT_EQ(SubmissionStatus::success, static_cast<TestedDrmCommandStreamReceiver<FamilyType> *>(csr)->printBOsForSubmit(residency, cmdBuffer));
 
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
 
     std::vector<BufferObject *> bos;
     allocation1.makeBOsResident(&csr->getOsContext(), 0, &bos, true, false);
@@ -1166,11 +1188,12 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenPrintBOsForSubmitAndFailur
     residency.push_back(&allocation1);
     residency.push_back(&allocation2);
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     EXPECT_EQ(SubmissionStatus::outOfHostMemory, static_cast<TestedDrmCommandStreamReceiver<FamilyType> *>(csr)->printBOsForSubmit(residency, cmdBuffer));
 
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_TRUE(output.empty());
 }
 
@@ -1191,10 +1214,11 @@ HWTEST_TEMPLATED_F(DrmCommandStreamEnhancedTest, givenPrintBOsForSubmitAndFailur
     residency.push_back(&allocation1);
     residency.push_back(&allocation2);
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     EXPECT_EQ(SubmissionStatus::outOfHostMemory, static_cast<TestedDrmCommandStreamReceiver<FamilyType> *>(csr)->printBOsForSubmit(residency, cmdBuffer));
 
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_TRUE(output.empty());
 }

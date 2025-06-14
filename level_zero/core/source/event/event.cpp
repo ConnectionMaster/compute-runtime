@@ -227,9 +227,7 @@ void EventPool::initializeSizeParameters(uint32_t numDevices, ze_device_handle_t
         maxKernelCount = driver.getEventMaxKernelCount(numDevices, deviceHandles);
     }
 
-    const uint32_t minimalPacketCount = isEventPoolTimestampFlagSet() ? 2 : 1;
-
-    auto eventSize = std::max(eventPackets, minimalPacketCount) * gfxCoreHelper.getSingleTimestampPacketSize();
+    auto eventSize = eventPackets * gfxCoreHelper.getSingleTimestampPacketSize();
     if (eventPoolFlags & ZE_EVENT_POOL_FLAG_KERNEL_MAPPED_TIMESTAMP) {
         eventSize += sizeof(NEO::TimeStampData);
     }
@@ -534,8 +532,8 @@ void Event::releaseTempInOrderTimestampNodes() {
 
 ze_result_t Event::destroy() {
     resetInOrderTimestampNode(nullptr, 0);
+    resetAdditionalTimestampNode(nullptr, 0, true);
     releaseTempInOrderTimestampNodes();
-    resetAdditionalTimestampNode(nullptr, 0);
 
     if (isCounterBasedExplicitlyEnabled() && isFromIpcPool) {
         auto memoryManager = device->getNEODevice()->getMemoryManager();
@@ -697,34 +695,45 @@ void Event::resetInOrderTimestampNode(NEO::TagNodeBase *newNode, uint32_t partit
         inOrderTimestampNode.push_back(newNode);
 
         if (NEO::debugManager.flags.ClearStandaloneInOrderTimestampAllocation.get() != 0) {
-            clearTimestampTagData(partitionCount, true, nullptr);
+            clearTimestampTagData(partitionCount, inOrderTimestampNode.back());
         }
     }
 }
 
-void Event::resetAdditionalTimestampNode(NEO::TagNodeBase *newNode, uint32_t partitionCount) {
-    if (!newNode) {
-        for (auto &node : additionalTimestampNode) {
+void Event::resetAdditionalTimestampNode(NEO::TagNodeBase *newNode, uint32_t partitionCount, bool resetAggregatedEvent) {
+    if (inOrderIncrementValue > 0) {
+        if (newNode) {
+            additionalTimestampNode.push_back(newNode);
+            if (NEO::debugManager.flags.ClearStandaloneInOrderTimestampAllocation.get() != 0) {
+                clearTimestampTagData(partitionCount, newNode);
+            }
+        } else if (resetAggregatedEvent) {
+            // If we are resetting aggregated event, we need to clear all additional timestamp nodes
+            for (auto &node : additionalTimestampNode) {
+                inOrderExecInfo->pushTempTimestampNode(node, inOrderExecSignalValue);
+            }
+            additionalTimestampNode.clear();
+        }
+
+        return;
+    }
+
+    for (auto &node : additionalTimestampNode) {
+        if (inOrderExecInfo) {
+            // Push to temp node vector and releaseNotUsedTempTimestampNodes will clear when needed
+            inOrderExecInfo->pushTempTimestampNode(node, inOrderExecSignalValue);
+        } else {
             node->returnTag();
         }
-        additionalTimestampNode.clear();
-        return;
     }
+    additionalTimestampNode.clear();
 
-    if (inOrderIncrementValue > 0) {
-        // Aggregated events do not reset
+    if (newNode) {
         additionalTimestampNode.push_back(newNode);
-        return;
+        if (NEO::debugManager.flags.ClearStandaloneInOrderTimestampAllocation.get() != 0) {
+            clearTimestampTagData(partitionCount, newNode);
+        }
     }
-
-    if (additionalTimestampNode.size() > 0) {
-        auto existingNode = additionalTimestampNode.back();
-        existingNode->returnTag();
-        additionalTimestampNode.clear();
-    }
-    additionalTimestampNode.push_back(newNode);
-
-    clearTimestampTagData(partitionCount, false, newNode);
 }
 
 NEO::GraphicsAllocation *Event::getExternalCounterAllocationFromAddress(uint64_t *address) const {

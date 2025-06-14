@@ -71,18 +71,26 @@ HWTEST_F(ProductHelperTest, givenDebugFlagSetWhenAskingForHostMemCapabilitesThen
 HWTEST_F(ProductHelperTest, givenProductHelperWhenGettingSharedSystemMemCapabilitiesThenCorrectValueIsReturned) {
     DebugManagerStateRestore restore;
 
-    EXPECT_EQ(0u, productHelper->getSharedSystemMemCapabilities(&pInHwInfo));
+    uint64_t caps = (UnifiedSharedMemoryFlags::access | UnifiedSharedMemoryFlags::atomicAccess | UnifiedSharedMemoryFlags::concurrentAccess | UnifiedSharedMemoryFlags::concurrentAtomicAccess);
+    pInHwInfo.capabilityTable.sharedSystemMemCapabilities = caps;
 
     for (auto enable : {-1, 0, 1}) {
         debugManager.flags.EnableSharedSystemUsmSupport.set(enable);
-
-        if (enable > 0) {
-            auto caps = UnifiedSharedMemoryFlags::access | UnifiedSharedMemoryFlags::atomicAccess | UnifiedSharedMemoryFlags::concurrentAccess | UnifiedSharedMemoryFlags::concurrentAtomicAccess;
-            EXPECT_EQ(caps, productHelper->getSharedSystemMemCapabilities(&pInHwInfo));
-        } else {
+        if (enable != 1) {
             EXPECT_EQ(0u, productHelper->getSharedSystemMemCapabilities(&pInHwInfo));
+        } else {
+            for (auto pfEnable : {-1, 0, 1}) {
+                debugManager.flags.EnableRecoverablePageFaults.set(pfEnable);
+                if (pfEnable != 0) {
+                    EXPECT_EQ(caps, productHelper->getSharedSystemMemCapabilities(&pInHwInfo));
+                } else {
+                    EXPECT_EQ(0u, productHelper->getSharedSystemMemCapabilities(&pInHwInfo));
+                }
+            }
         }
     }
+
+    pInHwInfo.capabilityTable.sharedSystemMemCapabilities = caps;
 }
 
 HWTEST_F(ProductHelperTest, givenProductHelperWhenAskedIfIsBlitSplitEnqueueWARequiredThenReturnFalse) {
@@ -609,9 +617,9 @@ HWTEST_F(ProductHelperTest, WhenFillingStateBaseAddressPropertiesSupportThenExpe
     EXPECT_EQ(productHelper->getStateBaseAddressPropertyBindingTablePoolBaseAddressSupport(), stateBaseAddressPropertiesSupport.bindingTablePoolBaseAddress);
 }
 
-HWTEST_F(ProductHelperTest, givenProductHelperWhenIsGlobalFenceInCommandStreamRequiredThenFalseIsReturned) {
+HWTEST_F(ProductHelperTest, givenProductHelperWhenisReleaseGlobalFenceInCommandStreamRequiredThenFalseIsReturned) {
 
-    EXPECT_FALSE(productHelper->isGlobalFenceInCommandStreamRequired(*defaultHwInfo));
+    EXPECT_FALSE(productHelper->isReleaseGlobalFenceInCommandStreamRequired(*defaultHwInfo));
 }
 
 HWTEST_F(ProductHelperTest, givenProductHelperWhenIsSystolicModeConfigurabledThenFalseIsReturned) {
@@ -985,6 +993,12 @@ HWTEST_F(ProductHelperTest, givenBooleanUncachedWhenCallOverridePatIndexThenProp
     EXPECT_EQ(patIndex, productHelper->overridePatIndex(isUncached, patIndex, AllocationType::buffer));
 }
 
+HWTEST_F(ProductHelperTest, givenGmmUsageTypeWhenCallingGetGmmResourceUsageOverrideThenReturnNoOverride) {
+    constexpr uint32_t noOverride = GMM_RESOURCE_USAGE_UNKNOWN;
+    EXPECT_EQ(noOverride, productHelper->getGmmResourceUsageOverride(GMM_RESOURCE_USAGE_OCL_BUFFER));
+    EXPECT_EQ(noOverride, productHelper->getGmmResourceUsageOverride(GMM_RESOURCE_USAGE_XADAPTER_SHARED_RESOURCE));
+}
+
 HWTEST_F(ProductHelperTest, givenProductHelperWhenGettingSupportedNumGrfsThenCorrectValueIsReturned) {
     if (releaseHelper) {
         EXPECT_EQ(releaseHelper->getSupportedNumGrfs(), productHelper->getSupportedNumGrfs(releaseHelper));
@@ -1165,4 +1179,30 @@ HWTEST2_F(ProductHelperTest, givenProductHelperWhenCallingIsResourceUncachedForC
             EXPECT_FALSE(productHelper->isResourceUncachedForCS(allocationType));
         }
     }
+}
+
+HWTEST2_F(ProductHelperTest, givenProductHelperWhenisPackedCopyFormatSupportedThenCorrectValueIsReturned, IsAtMostXe3Core) {
+    EXPECT_FALSE(productHelper->isPackedCopyFormatSupported());
+}
+
+HWTEST_F(ProductHelperTest, givenProductHelperWhenGettingPreferredWorkgroupCountPerSubsliceThenZeroReturned) {
+    EXPECT_EQ(0u, productHelper->getPreferredWorkgroupCountPerSubslice());
+}
+
+HWTEST_F(ProductHelperTest, givenProductHelperWithDebugKeyWhenPidFdOrSocketForIpcIsSupportedThenExpectedValueReturned) {
+    DebugManagerStateRestore restore;
+
+    debugManager.flags.EnablePidFdOrSocketsForIpc.set(1);
+    EXPECT_TRUE(productHelper->isPidFdOrSocketForIpcSupported());
+
+    debugManager.flags.EnablePidFdOrSocketsForIpc.set(0);
+    EXPECT_FALSE(productHelper->isPidFdOrSocketForIpcSupported());
+}
+
+HWTEST2_F(ProductHelperTest, givenProductHelperWhenPidFdOrSocketForIpcIsNotSupportedThenFalseReturned, IsAtLeastXe2HpgCore) {
+    EXPECT_FALSE(productHelper->isPidFdOrSocketForIpcSupported());
+}
+
+HWTEST2_F(ProductHelperTest, givenProductHelperWhenPidFdOrSocketForIpcIsNotSupportedThenFalseReturned, IsBeforeXe2HpgCore) {
+    EXPECT_FALSE(productHelper->isPidFdOrSocketForIpcSupported());
 }

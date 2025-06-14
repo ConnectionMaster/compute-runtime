@@ -38,6 +38,14 @@ static std::map<unsigned long, std::map<std::string, uint32_t>> guidToKeyOffsetM
       {"XTAL_COUNT", 128},
       {"VCCGT_ENERGY_ACCUMULATOR", 407},
       {"VCCDDR_ENERGY_ACCUMULATOR", 410}}},
+    {0x1e2f8202, // BMG PUNIT rev 3
+     {{"XTAL_CLK_FREQUENCY", 1},
+      {"ACCUM_PACKAGE_ENERGY", 12},
+      {"ACCUM_PSYS_ENERGY", 13},
+      {"VRAM_BANDWIDTH", 14},
+      {"XTAL_COUNT", 128},
+      {"VCCGT_ENERGY_ACCUMULATOR", 407},
+      {"VCCDDR_ENERGY_ACCUMULATOR", 410}}},
     {0x5e2f8210, // BMG OOBMSM rev 15
      {{"PACKAGE_ENERGY_STATUS_SKU", 34},
       {"PLATFORM_ENERGY_STATUS", 35},
@@ -51,8 +59,8 @@ static std::map<unsigned long, std::map<std::string, uint32_t>> guidToKeyOffsetM
       {"rx_pkt_count_msb", 73},
       {"tx_pkt_count_lsb", 76},
       {"tx_pkt_count_msb", 75},
-      {"GDDR_TELEM_CAPTURE_TIMESTAMP_UPPER", 92},
-      {"GDDR_TELEM_CAPTURE_TIMESTAMP_LOWER", 93},
+      {"GDDR_TELEM_CAPTURE_TIMESTAMP_UPPER", 93},
+      {"GDDR_TELEM_CAPTURE_TIMESTAMP_LOWER", 92},
       {"GDDR0_CH0_GT_32B_RD_REQ_UPPER", 94},
       {"GDDR0_CH0_GT_32B_RD_REQ_LOWER", 95},
       {"GDDR1_CH0_GT_32B_RD_REQ_UPPER", 134},
@@ -971,6 +979,11 @@ std::map<unsigned long, std::map<std::string, uint32_t>> *SysmanProductHelperHw<
 
 template <>
 bool SysmanProductHelperHw<gfxProduct>::isZesInitSupported() {
+    return true;
+}
+
+template <>
+bool SysmanProductHelperHw<gfxProduct>::isLateBindingSupported() {
     return true;
 }
 

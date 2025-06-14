@@ -11,7 +11,7 @@
 #include "shared/source/helpers/debug_helpers.h"
 #include "shared/source/xe_hpg_core/hw_info.h"
 
-#include "igfxfmid.h"
+#include "neo_igfxfmid.h"
 
 #include <cstring>
 #include <type_traits>
@@ -104,6 +104,7 @@ struct XeHpgCoreFamily : public XeHpgCore {
     using Parse = CmdParse<XeHpgCoreFamily>;
     using GfxFamily = XeHpgCoreFamily;
     using DefaultWalkerType = COMPUTE_WALKER;
+    using PorWalkerType = COMPUTE_WALKER;
     using FrontEndStateCommand = CFE_STATE;
     using XY_BLOCK_COPY_BLT = typename GfxFamily::XY_BLOCK_COPY_BLT;
     using XY_COPY_BLT = typename GfxFamily::XY_BLOCK_COPY_BLT;

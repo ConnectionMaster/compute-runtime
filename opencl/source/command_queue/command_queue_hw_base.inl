@@ -137,7 +137,9 @@ bool CommandQueueHw<Family>::isCacheFlushForBcsRequired() const {
     if (debugManager.flags.ForceCacheFlushForBcs.get() != -1) {
         return !!debugManager.flags.ForceCacheFlushForBcs.get();
     }
-    return true;
+
+    const auto &productHelper = this->device->getProductHelper();
+    return productHelper.isDcFlushAllowed();
 }
 
 template <typename TSPacketType>
@@ -219,7 +221,7 @@ void CommandQueueHw<Family>::setupBlitAuxTranslation(MultiDispatchInfo &multiDis
 }
 
 template <typename Family>
-bool CommandQueueHw<Family>::isGpgpuSubmissionForBcsRequired(bool queueBlocked, TimestampPacketDependencies &timestampPacketDependencies, bool containsCrossEngineDependency) const {
+bool CommandQueueHw<Family>::isGpgpuSubmissionForBcsRequired(bool queueBlocked, TimestampPacketDependencies &timestampPacketDependencies, bool containsCrossEngineDependency, bool textureCacheFlushRequired) const {
     if (queueBlocked || timestampPacketDependencies.barrierNodes.peekNodes().size() > 0u) {
         return true;
     }
@@ -243,7 +245,7 @@ bool CommandQueueHw<Family>::isGpgpuSubmissionForBcsRequired(bool queueBlocked, 
     default:
         break;
     }
-
+    required |= textureCacheFlushRequired;
     if (debugManager.flags.ForceGpgpuSubmissionForBcsEnqueue.get() == 1) {
         required = true;
     }

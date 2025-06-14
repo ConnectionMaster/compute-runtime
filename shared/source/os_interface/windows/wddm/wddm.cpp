@@ -306,11 +306,13 @@ bool Wddm::queryAdapterInfo() {
 
         memcpy_s(&gfxPartition, sizeof(gfxPartition), &adapterInfo.GfxPartition, sizeof(GMM_GFX_PARTITIONING));
         memcpy_s(&adapterBDF, sizeof(adapterBDF), &adapterInfo.stAdapterBDF, sizeof(ADAPTER_BDF));
+        memcpy_s(segmentId, sizeof(segmentId), adapterInfo.SegmentId, sizeof(adapterInfo.SegmentId));
 
         deviceRegistryPath = std::string(adapterInfo.DeviceRegistryPath, sizeof(adapterInfo.DeviceRegistryPath)).c_str();
 
         systemSharedMemory = adapterInfo.SystemSharedMemory;
         dedicatedVideoMemory = adapterInfo.DedicatedVideoMemory;
+        lmemBarSize = adapterInfo.LMemBarSize;
         maxRenderFrequency = adapterInfo.MaxRenderFreq;
         timestampFrequency = adapterInfo.GfxTimeStampFreq;
         instrumentationEnabled = adapterInfo.Caps.InstrumentationIsEnabled != 0;
@@ -979,13 +981,18 @@ void *Wddm::lockResource(const D3DKMT_HANDLE &handle, bool applyMakeResidentPrio
     return lock2.pData;
 }
 
-void Wddm::unlockResource(const D3DKMT_HANDLE &handle) {
+void Wddm::unlockResource(const D3DKMT_HANDLE &handle, bool applyMakeResidentPriorToLock) {
     D3DKMT_UNLOCK2 unlock2 = {};
 
     unlock2.hAllocation = handle;
     unlock2.hDevice = this->device;
 
     NTSTATUS status = getGdi()->unlock2(&unlock2);
+
+    if (applyMakeResidentPriorToLock) {
+        this->temporaryResources->evictResource(handle);
+    }
+
     if (status != STATUS_SUCCESS) {
         return;
     }

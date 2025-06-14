@@ -14,13 +14,13 @@ bool ProductHelperHw<gfxProduct>::useGemCreateExtInAllocateMemoryByKMD() const {
 }
 
 template <PRODUCT_FAMILY gfxProduct>
-bool ProductHelperHw<gfxProduct>::deferMOCSToPatIndex() const {
+bool ProductHelperHw<gfxProduct>::deferMOCSToPatIndex(bool isWddmOnLinux) const {
     return true;
 }
 
 template <PRODUCT_FAMILY gfxProduct>
 bool ProductHelperHw<gfxProduct>::isInitBuiltinAsyncSupported(const HardwareInfo &hwInfo) const {
-    return false;
+    return true;
 }
 
 template <PRODUCT_FAMILY gfxProduct>
@@ -51,6 +51,22 @@ bool ProductHelperHw<gfxProduct>::isCompressionForbidden(const HardwareInfo &hwI
 template <PRODUCT_FAMILY gfxProduct>
 bool ProductHelperHw<gfxProduct>::isResourceUncachedForCS(AllocationType allocationType) const {
     return GraphicsAllocation::isAccessedFromCommandStreamer(allocationType);
+}
+
+template <PRODUCT_FAMILY gfxProduct>
+bool ProductHelperHw<gfxProduct>::isNonCoherentTimestampsModeEnabled() const {
+    if (debugManager.flags.ForceNonCoherentModeForTimestamps.get() != -1) {
+        return debugManager.flags.ForceNonCoherentModeForTimestamps.get();
+    }
+    return true;
+}
+
+template <PRODUCT_FAMILY gfxProduct>
+bool ProductHelperHw<gfxProduct>::isPidFdOrSocketForIpcSupported() const {
+    if (debugManager.flags.EnablePidFdOrSocketsForIpc.get() != -1) {
+        return debugManager.flags.EnablePidFdOrSocketsForIpc.get();
+    }
+    return false;
 }
 
 } // namespace NEO

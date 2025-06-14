@@ -2229,7 +2229,7 @@ TEST_F(DebugApiLinuxTestXe, WhenCallingThreadControlForResumeThenProperIoctlsIsC
     EXPECT_EQ(nullptr, bitmaskOut.get());
 }
 
-HWTEST2_F(DebugApiLinuxTestXe, GivenNoAttentionBitsWhenMultipleThreadsPassedToCheckStoppedThreadsAndGenerateEventsThenThreadsStateNotCheckedAndEventsNotGenerated, MatchAny) {
+HWTEST_F(DebugApiLinuxTestXe, GivenNoAttentionBitsWhenMultipleThreadsPassedToCheckStoppedThreadsAndGenerateEventsThenThreadsStateNotCheckedAndEventsNotGenerated) {
     MockL0GfxCoreHelperSupportsThreadControlStopped<FamilyType> mockL0GfxCoreHelper;
     std::unique_ptr<ApiGfxCoreHelper> l0GfxCoreHelperBackup(static_cast<ApiGfxCoreHelper *>(&mockL0GfxCoreHelper));
     device->getNEODevice()->getExecutionEnvironment()->rootDeviceEnvironments[0]->apiGfxCoreHelper.swap(l0GfxCoreHelperBackup);
@@ -2820,7 +2820,7 @@ TEST(DebugSessionLinuxXeTest, GivenRootDebugSessionWhenCreateTileSessionCalledTh
     auto mockDrm = new DrmMock(*neoDevice->executionEnvironment->rootDeviceEnvironments[0]);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
     struct DebugSession : public DebugSessionLinuxXe {
         using DebugSessionLinuxXe::createTileSession;
         using DebugSessionLinuxXe::DebugSessionLinuxXe;

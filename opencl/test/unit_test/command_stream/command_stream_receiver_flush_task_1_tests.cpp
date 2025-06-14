@@ -122,7 +122,7 @@ HWCMDTEST_F(IGFX_GEN12LP_CORE, CommandStreamReceiverFlushTaskTests, givenCsrInBa
 
     // we do level change that will emit PPC, fill all the space so only BB end fits.
     taskLevel++;
-    auto ppcSize = MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier(false);
+    auto ppcSize = MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier();
     auto fillSize = MemoryConstants::cacheLineSize - ppcSize - sizeof(typename FamilyType::MI_BATCH_BUFFER_END);
     csrCommandStream.getSpace(fillSize);
     auto expectedUsedSize = 2 * MemoryConstants::cacheLineSize;
@@ -186,6 +186,11 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeAndMidThread
     debugManager.flags.ForcePreemptionMode.set(static_cast<int32_t>(NEO::PreemptionMode::MidThread));
     auto mockDevice = std::unique_ptr<MockDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(nullptr));
     auto &mockCsr = mockDevice->getUltCommandStreamReceiver<FamilyType>();
+
+    if (mockCsr.getHeaplessStateInitEnabled()) {
+        GTEST_SKIP();
+    }
+
     mockCsr.overrideDispatchPolicy(DispatchMode::batchedDispatch);
     mockCsr.useNewResourceImplicitFlush = false;
     mockCsr.useGpuIdleImplicitFlush = false;
@@ -222,12 +227,13 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInBatchingModeAndMidThread
     SipKernel::freeSipKernels(&mockDevice->getRootDeviceEnvironmentRef(), mockDevice->getMemoryManager());
 }
 
-HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInDefaultModeAndMidThreadPreemptionWhenFlushTaskIsCalledThenSipKernelIsMadeResident) {
+HWTEST2_F(CommandStreamReceiverFlushTaskTests, givenCsrInDefaultModeAndMidThreadPreemptionWhenFlushTaskIsCalledThenSipKernelIsMadeResident, IsAtMostXe3Core) {
+    EnvironmentWithCsrWrapper environment;
+    environment.setCsrType<MockCsrHw2<FamilyType>>();
     DebugManagerStateRestore dbgRestorer;
     debugManager.flags.ForcePreemptionMode.set(static_cast<int32_t>(NEO::PreemptionMode::MidThread));
     auto mockDevice = std::unique_ptr<MockDevice>(MockDevice::createWithNewExecutionEnvironment<MockDevice>(nullptr));
-    auto mockCsr = new MockCsrHw2<FamilyType>(*mockDevice->executionEnvironment, mockDevice->getRootDeviceIndex(), mockDevice->getDeviceBitfield());
-    mockDevice->resetCommandStreamReceiver(mockCsr);
+    auto mockCsr = static_cast<MockCsrHw2<FamilyType> *>(&mockDevice->getGpgpuCommandStreamReceiver());
 
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
@@ -259,19 +265,20 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, givenCsrInDefaultModeAndMidThreadP
     SipKernel::freeSipKernels(&mockDevice->getRootDeviceEnvironmentRef(), mockDevice->getMemoryManager());
 }
 
-HWTEST_F(CommandStreamReceiverFlushTaskTests, whenFlushThenCommandBufferAlreadyHasProperTaskCountsAndIsNotIncludedInResidencyVector) {
-    struct MockCsrFlushCmdBuffer : public MockCommandStreamReceiver {
-        using MockCommandStreamReceiver::MockCommandStreamReceiver;
-        NEO::SubmissionStatus flush(BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
-            EXPECT_EQ(batchBuffer.commandBufferAllocation->getResidencyTaskCount(this->osContext->getContextId()), this->taskCount + 1);
-            EXPECT_EQ(batchBuffer.commandBufferAllocation->getTaskCount(this->osContext->getContextId()), this->taskCount + 1);
-            EXPECT_EQ(std::find(allocationsForResidency.begin(), allocationsForResidency.end(), batchBuffer.commandBufferAllocation), allocationsForResidency.end());
-            return NEO::SubmissionStatus::success;
-        }
-    };
+struct MockCsrFlushCmdBuffer : public MockCommandStreamReceiver {
+    using MockCommandStreamReceiver::MockCommandStreamReceiver;
+    NEO::SubmissionStatus flush(BatchBuffer &batchBuffer, ResidencyContainer &allocationsForResidency) override {
+        EXPECT_EQ(batchBuffer.commandBufferAllocation->getResidencyTaskCount(this->osContext->getContextId()), this->taskCount + 1);
+        EXPECT_EQ(batchBuffer.commandBufferAllocation->getTaskCount(this->osContext->getContextId()), this->taskCount + 1);
+        EXPECT_EQ(std::find(allocationsForResidency.begin(), allocationsForResidency.end(), batchBuffer.commandBufferAllocation), allocationsForResidency.end());
+        return NEO::SubmissionStatus::success;
+    }
+};
 
-    auto mockCsr = new MockCsrFlushCmdBuffer(*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield());
-    pDevice->resetCommandStreamReceiver(mockCsr);
+using CommandStreamReceiverFlushTaskTestsWithMockCsrFlushCmdBuffer = UltCommandStreamReceiverTestWithCsr<MockCsrFlushCmdBuffer>;
+
+HWTEST_F(CommandStreamReceiverFlushTaskTestsWithMockCsrFlushCmdBuffer, whenFlushThenCommandBufferAlreadyHasProperTaskCountsAndIsNotIncludedInResidencyVector) {
+    auto mockCsr = static_cast<MockCsrFlushCmdBuffer *>(&pDevice->getGpgpuCommandStreamReceiver());
 
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
@@ -1053,7 +1060,7 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenBothCsWhenFlushingTaskThenFlu
     commandStream.getSpace(sizeof(typename FamilyType::MI_NOOP));
 
     flushTask(commandStreamReceiver);
-    EXPECT_EQ(1, commandStreamReceiver.flushCount);
+    EXPECT_EQ(commandStreamReceiver.getHeaplessStateInitEnabled() + 1, commandStreamReceiver.flushCount);
 }
 
 HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenBothCsWhenFlushingTaskThenChainWithBatchBufferStart) {
@@ -1286,12 +1293,22 @@ HWTEST_F(CommandStreamReceiverFlushTaskTests, GivenBlockedKernelRequiringDCFlush
     buffer->release();
 }
 
-HWTEST_F(CommandStreamReceiverFlushTaskTests, givenDispatchFlagsWhenCallFlushTaskThenThreadArbitrationPolicyIsSetProperly) {
-    DebugManagerStateRestore restorer;
-    debugManager.flags.ForceThreadArbitrationPolicyProgrammingWithScm.set(1);
+struct CommandStreamReceiverFlushTaskTestsWithMockCsrHw2DebugFlag : public UltCommandStreamReceiverTestWithCsrT<MockCsrHw2> {
 
-    auto mockCsr = new MockCsrHw2<FamilyType>(*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield());
-    pDevice->resetCommandStreamReceiver(mockCsr);
+    template <typename FamilyType>
+    void setUpT() {
+        debugManager.flags.ForceThreadArbitrationPolicyProgrammingWithScm.set(1);
+        UltCommandStreamReceiverTestWithCsrT<MockCsrHw2>::setUpT<FamilyType>();
+    }
+
+    DebugManagerStateRestore restorer;
+};
+
+HWTEST_TEMPLATED_F(CommandStreamReceiverFlushTaskTestsWithMockCsrHw2DebugFlag, givenDispatchFlagsWhenCallFlushTaskThenThreadArbitrationPolicyIsSetProperly) {
+    auto mockCsr = static_cast<MockCsrHw2<FamilyType> *>(&pDevice->getGpgpuCommandStreamReceiver());
+    if (mockCsr->getHeaplessStateInitEnabled()) {
+        GTEST_SKIP();
+    }
 
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);
@@ -1340,6 +1357,9 @@ HWTEST_P(CommandStreamReceiverFlushTaskMemoryCompressionTests, givenCsrWithMemor
 
 HWTEST_P(CommandStreamReceiverFlushTaskMemoryCompressionTests, givenCsrWithMemoryCompressionStateApplicableWhenFlushTaskIsCalledThenUpdateLastMemoryCompressionState) {
     auto &mockCsr = pDevice->getUltCommandStreamReceiver<FamilyType>();
+    if (mockCsr.getHeaplessStateInitEnabled()) {
+        GTEST_SKIP();
+    }
 
     CommandQueueHw<FamilyType> commandQueue(nullptr, pClDevice, 0, false);
     auto &commandStream = commandQueue.getCS(4096u);

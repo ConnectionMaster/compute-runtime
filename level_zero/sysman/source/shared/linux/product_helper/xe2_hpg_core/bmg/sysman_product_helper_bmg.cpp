@@ -36,6 +36,14 @@ static std::map<std::string, std::map<std::string, uint64_t>> guidToKeyOffsetMap
       {"XTAL_COUNT", 1024},
       {"VCCGT_ENERGY_ACCUMULATOR", 1628},
       {"VCCDDR_ENERGY_ACCUMULATOR", 1640}}},
+    {"0x1e2f8202", // BMG PUNIT rev 3
+     {{"XTAL_CLK_FREQUENCY", 4},
+      {"ACCUM_PACKAGE_ENERGY", 48},
+      {"ACCUM_PSYS_ENERGY", 52},
+      {"VRAM_BANDWIDTH", 56},
+      {"XTAL_COUNT", 1024},
+      {"VCCGT_ENERGY_ACCUMULATOR", 1628},
+      {"VCCDDR_ENERGY_ACCUMULATOR", 1640}}},
     {"0x5e2f8210", // BMG OOBMSM Rev 15
      {{"PACKAGE_ENERGY_STATUS_SKU_0_0_0_PCU", 136},
       {"PLATFORM_ENERGY_STATUS", 140},
@@ -50,8 +58,8 @@ static std::map<std::string, std::map<std::string, uint64_t>> guidToKeyOffsetMap
       {"reg_PCIESS_tx_pktcount_lsb", 304},
       {"reg_PCIESS_tx_pktcount_msb", 300},
       {"MSU_BITMASK", 3688},
-      {"GDDR_TELEM_CAPTURE_TIMESTAMP_UPPER", 368},
-      {"GDDR_TELEM_CAPTURE_TIMESTAMP_LOWER", 372},
+      {"GDDR_TELEM_CAPTURE_TIMESTAMP_UPPER", 372},
+      {"GDDR_TELEM_CAPTURE_TIMESTAMP_LOWER", 368},
       {"GDDR0_CH0_GT_32B_RD_REQ_UPPER", 376},
       {"GDDR0_CH0_GT_32B_RD_REQ_LOWER", 380},
       {"GDDR1_CH0_GT_32B_RD_REQ_UPPER", 536},
@@ -1071,6 +1079,16 @@ ze_result_t SysmanProductHelperHw<gfxProduct>::getPowerEnergyCounter(zes_power_e
     pEnergy->timestamp = static_cast<uint64_t>(timestamp);
 
     return ZE_RESULT_SUCCESS;
+}
+
+template <>
+bool SysmanProductHelperHw<gfxProduct>::isEccConfigurationSupported() {
+    return true;
+}
+
+template <>
+bool SysmanProductHelperHw<gfxProduct>::isLateBindingSupported() {
+    return true;
 }
 
 template class SysmanProductHelperHw<gfxProduct>;

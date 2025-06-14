@@ -20,7 +20,7 @@
 #include "shared/test/common/test_macros/hw_test.h"
 
 #include "aubstream/product_family.h"
-#include "platforms.h"
+#include "neo_aot_platforms.h"
 
 using namespace NEO;
 
@@ -360,7 +360,12 @@ HWTEST2_F(XeLpgProductHelperTests, givenProductHelperWhenCallIsNewCoherencyModel
 
 HWTEST2_F(XeLpgProductHelperTests, givenProductHelperWhenCallDeferMOCSToPatThenFalseIsReturned, IsXeLpg) {
     const auto &productHelper = getHelper<ProductHelper>();
-    EXPECT_FALSE(productHelper.deferMOCSToPatIndex());
+    EXPECT_FALSE(productHelper.deferMOCSToPatIndex(false));
+}
+
+HWTEST2_F(XeLpgProductHelperTests, givenProductHelperWhenCallDeferMOCSToPatOnWSLThenFalseIsReturned, IsXeLpg) {
+    const auto &productHelper = getHelper<ProductHelper>();
+    EXPECT_FALSE(productHelper.deferMOCSToPatIndex(true));
 }
 
 HWTEST2_F(XeLpgProductHelperTests, givenPatIndexWhenCheckIsCoherentAllocationThenReturnProperValue, IsXeLpg) {

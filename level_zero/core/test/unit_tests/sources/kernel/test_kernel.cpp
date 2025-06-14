@@ -26,6 +26,7 @@
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/engine_descriptor_helper.h"
 #include "shared/test/common/helpers/gtest_helpers.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/libult/ult_command_stream_receiver.h"
 #include "shared/test/common/mocks/mock_bindless_heaps_helper.h"
 #include "shared/test/common/mocks/mock_device.h"
@@ -405,7 +406,6 @@ TEST_F(KernelImpSetGroupSizeTest, givenLocalIdGenerationByRuntimeEnabledWhenSett
         mockKernel.descriptor.kernelAttributes.simdSize,
         groupSize[0] * groupSize[1] * groupSize[2],
         numGrf,
-        mockKernel.kernelRequiresGenerationOfLocalIdsByRuntime,
         rootDeviceEnvironment);
     auto perThreadDataSizeForWholeTGNeeded =
         static_cast<uint32_t>(NEO::PerThreadDataHelper::getPerThreadDataSizeTotal(
@@ -414,7 +414,6 @@ TEST_F(KernelImpSetGroupSizeTest, givenLocalIdGenerationByRuntimeEnabledWhenSett
             numGrf,
             mockKernel.descriptor.kernelAttributes.numLocalIdChannels,
             groupSize[0] * groupSize[1] * groupSize[2],
-            !mockKernel.kernelRequiresGenerationOfLocalIdsByRuntime,
             rootDeviceEnvironment));
 
     EXPECT_EQ(numThreadsPerTG, mockKernel.getNumThreadsPerThreadGroup());
@@ -1968,7 +1967,7 @@ TEST_F(KernelPropertiesTests, whenPassingKernelMaxGroupSizePropertiesStructToGet
     EXPECT_EQ(ZE_RESULT_SUCCESS, res);
     auto &device = *module->getDevice();
     auto &gfxCoreHelper = device.getGfxCoreHelper();
-    uint32_t maxKernelWorkGroupSize = gfxCoreHelper.adjustMaxWorkGroupSize(kernelDescriptor.kernelAttributes.numGrfRequired, kernelDescriptor.kernelAttributes.simdSize, false, static_cast<uint32_t>(this->module->getMaxGroupSize(kernelDescriptor)), device.getNEODevice()->getRootDeviceEnvironment());
+    uint32_t maxKernelWorkGroupSize = gfxCoreHelper.adjustMaxWorkGroupSize(kernelDescriptor.kernelAttributes.numGrfRequired, kernelDescriptor.kernelAttributes.simdSize, static_cast<uint32_t>(this->module->getMaxGroupSize(kernelDescriptor)), device.getNEODevice()->getRootDeviceEnvironment());
     EXPECT_EQ(maxKernelWorkGroupSize, maxGroupSizeProperties.maxGroupSize);
 }
 
@@ -2100,7 +2099,7 @@ TEST_F(KernelPropertiesTests, givenValidKernelWithIndirectAccessFlagsAndDisableI
     EXPECT_TRUE(unifiedMemoryControls.indirectSharedAllocationsAllowed);
 }
 
-HWTEST2_F(KernelPropertiesTests, whenHasRTCallsIsTrueThenUsesRayTracingIsTrue, MatchAny) {
+HWTEST_F(KernelPropertiesTests, whenHasRTCallsIsTrueThenUsesRayTracingIsTrue) {
     WhiteBoxKernelHw<FamilyType::gfxCoreFamily> mockKernel;
     KernelDescriptor mockDescriptor = {};
     mockDescriptor.kernelAttributes.flags.hasRTCalls = true;
@@ -2112,7 +2111,7 @@ HWTEST2_F(KernelPropertiesTests, whenHasRTCallsIsTrueThenUsesRayTracingIsTrue, M
     EXPECT_TRUE(mockKernel.usesRayTracing());
 }
 
-HWTEST2_F(KernelPropertiesTests, whenHasRTCallsIsFalseThenUsesRayTracingIsFalse, MatchAny) {
+HWTEST_F(KernelPropertiesTests, whenHasRTCallsIsFalseThenUsesRayTracingIsFalse) {
     WhiteBoxKernelHw<FamilyType::gfxCoreFamily> mockKernel;
     KernelDescriptor mockDescriptor = {};
     mockDescriptor.kernelAttributes.flags.hasRTCalls = false;
@@ -2435,7 +2434,7 @@ TEST_F(KernelImpPatchBindlessTest, GivenKernelImpWhenPatchBindlessOffsetCalledTh
     neoDevice->decRefInternal();
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenBindlessKernelAndNoGlobalBindlessAllocatorWhenInitializedThenBindlessOffsetSetAndUsingSurfaceStateAreFalse, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenBindlessKernelAndNoGlobalBindlessAllocatorWhenInitializedThenBindlessOffsetSetAndUsingSurfaceStateAreFalse) {
     ModuleBuildLog *moduleBuildLog = nullptr;
     this->module.reset(new WhiteBox<::L0::Module>{this->device, moduleBuildLog, ModuleType::user});
     this->createModuleFromMockBinary(ModuleType::user);
@@ -2459,7 +2458,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenBindlessKernelAndNoGlobalBindlessAllo
     EXPECT_FALSE(mockKernel.usingSurfaceStateHeap[0]);
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindlessThenSurfaceStateUpdated, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindlessThenSurfaceStateUpdated) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     ze_kernel_desc_t desc = {};
@@ -2497,7 +2496,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindlessT
     EXPECT_FALSE(mockKernel.usingSurfaceStateHeap[0]);
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedBufferAddressWhenSettingSurfaceStateThenSurfaceStateInKernelHeapIsUsed, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenMisalignedBufferAddressWhenSettingSurfaceStateThenSurfaceStateInKernelHeapIsUsed) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     ze_kernel_desc_t desc = {};
@@ -2546,7 +2545,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedBufferAddressWhenSettingSur
     EXPECT_EQ(mockKernel.surfaceStateHeapDataSize, mockKernel.getSurfaceStateHeapDataSize());
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedAndAlignedBufferAddressWhenSettingSurfaceStateThenKernelReportsNonZeroSurfaceStateHeapDataSize, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenMisalignedAndAlignedBufferAddressWhenSettingSurfaceStateThenKernelReportsNonZeroSurfaceStateHeapDataSize) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
 
     ze_kernel_desc_t desc = {};
@@ -2596,7 +2595,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenMisalignedAndAlignedBufferAddressWhen
     EXPECT_EQ(mockKernel.surfaceStateHeapDataSize, mockKernel.getSurfaceStateHeapDataSize());
 }
 
-HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindfulThenSurfaceStateNotUpdated, MatchAny) {
+HWTEST_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindfulThenSurfaceStateNotUpdated) {
     using RENDER_SURFACE_STATE = typename FamilyType::RENDER_SURFACE_STATE;
     ze_kernel_desc_t desc = {};
     desc.pKernelName = kernelName.c_str();
@@ -2632,7 +2631,7 @@ HWTEST2_F(KernelImpPatchBindlessTest, GivenKernelImpWhenSetSurfaceStateBindfulTh
 
 using KernelImpL3CachingTests = Test<ModuleFixture>;
 
-HWTEST2_F(KernelImpL3CachingTests, GivenKernelImpWhenSetSurfaceStateWithUnalignedMemoryThenL3CachingIsDisabled, MatchAny) {
+HWTEST_F(KernelImpL3CachingTests, GivenKernelImpWhenSetSurfaceStateWithUnalignedMemoryThenL3CachingIsDisabled) {
     ze_kernel_desc_t desc = {};
     desc.pKernelName = kernelName.c_str();
 
@@ -2951,19 +2950,27 @@ TEST_F(KernelBindlessUncachedMemoryTests,
 
 template <GFXCORE_FAMILY gfxCoreFamily>
 struct MyMockImage : public WhiteBox<::L0::ImageCoreFamily<gfxCoreFamily>> {
-    void copySurfaceStateToSSH(void *surfaceStateHeap, const uint32_t surfaceStateOffset, bool isMediaBlockArg) override {
-        passedSurfaceStateHeap = surfaceStateHeap;
-        passedSurfaceStateOffset = surfaceStateOffset;
-    }
+    void copySurfaceStateToSSH(void *surfaceStateHeap,
+                               uint32_t surfaceStateOffset,
+                               uint32_t bindlessSlot,
+                               bool isMediaBlockArg) override {
 
-    void copyImplicitArgsSurfaceStateToSSH(void *surfaceStateHeap, const uint32_t surfaceStateOffset) override {
-        passedImplicitArgsSurfaceStateHeap = surfaceStateHeap;
-        passedImplicitArgsSurfaceStateOffset = surfaceStateOffset;
-    }
-
-    void copyRedescribedSurfaceStateToSSH(void *surfaceStateHeap, const uint32_t surfaceStateOffset) override {
-        passedRedescribedSurfaceStateHeap = surfaceStateHeap;
-        passedRedescribedSurfaceStateOffset = surfaceStateOffset;
+        switch (bindlessSlot) {
+        case NEO::BindlessImageSlot::implicitArgs:
+            passedImplicitArgsSurfaceStateHeap = surfaceStateHeap;
+            passedImplicitArgsSurfaceStateOffset = surfaceStateOffset;
+            break;
+        case BindlessImageSlot::redescribedImage:
+            passedRedescribedSurfaceStateHeap = surfaceStateHeap;
+            passedRedescribedSurfaceStateOffset = surfaceStateOffset;
+            break;
+        case BindlessImageSlot::packedImage:
+        case BindlessImageSlot::image:
+        default:
+            passedSurfaceStateHeap = surfaceStateHeap;
+            passedSurfaceStateOffset = surfaceStateOffset;
+            break;
+        }
     }
 
     void *passedSurfaceStateHeap = nullptr;
@@ -2974,6 +2981,9 @@ struct MyMockImage : public WhiteBox<::L0::ImageCoreFamily<gfxCoreFamily>> {
 
     void *passedRedescribedSurfaceStateHeap = nullptr;
     uint32_t passedRedescribedSurfaceStateOffset = 0;
+
+    void *passedPackedSurfaceStateHeap = nullptr;
+    uint32_t passedPackedSurfaceStateOffset = 0;
 };
 
 HWTEST2_F(SetKernelArg, givenImageAndBindlessKernelWhenSetArgImageThenCopySurfaceStateToSSHCalledWithCorrectArgs, ImageSupport) {
@@ -3113,7 +3123,7 @@ HWTEST2_F(SetKernelArg, givenImageBindlessKernelAndGlobalBindlessHelperWhenSetAr
     auto handle = imageHW->toHandle();
     ASSERT_EQ(ZE_RESULT_SUCCESS, ret);
 
-    ret = kernel->setArgRedescribedImage(3, handle);
+    ret = kernel->setArgRedescribedImage(3, handle, false);
     EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
 
     auto &gfxCoreHelper = neoDevice->getGfxCoreHelper();
@@ -3152,7 +3162,7 @@ HWTEST2_F(SetKernelArg, givenHeaplessWhenPatchingImageWithBindlessEnabledCorrect
         auto handle = imageHW->toHandle();
         ASSERT_EQ(ZE_RESULT_SUCCESS, ret);
 
-        ret = kernel->setArgRedescribedImage(3, handle);
+        ret = kernel->setArgRedescribedImage(3, handle, false);
         EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
 
         auto &gfxCoreHelper = neoDevice->getGfxCoreHelper();
@@ -3326,7 +3336,7 @@ HWTEST2_F(SetKernelArg, givenImageAndBindlessKernelWhenSetArgRedescribedImageCal
     auto handle = imageHW->toHandle();
     ASSERT_EQ(ZE_RESULT_SUCCESS, ret);
 
-    ret = mockKernel.setArgRedescribedImage(0, handle);
+    ret = mockKernel.setArgRedescribedImage(0, handle, false);
     EXPECT_EQ(ZE_RESULT_SUCCESS, ret);
 
     void *expectedSsInHeap = nullptr;
@@ -3372,7 +3382,7 @@ HWTEST2_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgRed
     mockMemManager->failAllocate32Bit = true;
     bindlessHelper->globalSsh->getSpace(bindlessHelper->globalSsh->getAvailableSpace());
 
-    ret = kernel->setArgRedescribedImage(3, handle);
+    ret = kernel->setArgRedescribedImage(3, handle, false);
     EXPECT_EQ(ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY, ret);
 
     auto &bindlessInfo = imageHW->getAllocation()->getBindlessInfo();
@@ -3380,7 +3390,7 @@ HWTEST2_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgRed
     EXPECT_EQ(nullptr, bindlessInfo.heapAllocation);
 }
 
-HWTEST2_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgBufferCalledThenOutOfMemoryErrorReturned, MatchAny) {
+HWTEST_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgBufferCalledThenOutOfMemoryErrorReturned) {
 
     auto mockMemManager = static_cast<MockMemoryManager *>(neoDevice->getMemoryManager());
     auto bindlessHelper = new MockBindlesHeapsHelper(neoDevice,
@@ -3411,7 +3421,7 @@ HWTEST2_F(SetKernelArg, givenBindlessKernelAndNoAvailableSpaceOnSshWhenSetArgBuf
     svmAllocsManager->freeSVMAlloc(svmAllocation);
 }
 
-HWTEST2_F(SetKernelArg, givenSlmPointerWhenSettingKernelArgThenPropertyIsSaved, MatchAny) {
+HWTEST_F(SetKernelArg, givenSlmPointerWhenSettingKernelArgThenPropertyIsSaved) {
     ze_kernel_desc_t desc = {};
     desc.pKernelName = kernelName.c_str();
     WhiteBoxKernelHw<FamilyType::gfxCoreFamily> mockKernel;
@@ -3487,7 +3497,7 @@ HWTEST2_F(SetKernelArg, givenImageAndBindfulKernelWhenSetArgImageThenCopySurface
 
 template <GFXCORE_FAMILY gfxCoreFamily>
 struct MyMockImageMediaBlock : public WhiteBox<::L0::ImageCoreFamily<gfxCoreFamily>> {
-    void copySurfaceStateToSSH(void *surfaceStateHeap, const uint32_t surfaceStateOffset, bool isMediaBlockArg) override {
+    void copySurfaceStateToSSH(void *surfaceStateHeap, const uint32_t surfaceStateOffset, uint32_t bindlessSlot, bool isMediaBlockArg) override {
         isMediaBlockPassedValue = isMediaBlockArg;
     }
     bool isMediaBlockPassedValue = false;
@@ -3847,7 +3857,7 @@ HWTEST_F(PrintfHandlerTests, givenKernelWithPrintfWhenPrintingOutputWithBlitterU
     auto device = std::unique_ptr<NEO::MockDevice>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&hwInfo, 0));
     {
         device->incRefInternal();
-        MockDeviceImp deviceImp(device.get(), device->getExecutionEnvironment());
+        MockDeviceImp deviceImp(device.get());
 
         auto kernelInfo = std::make_unique<KernelInfo>();
         kernelInfo->heapInfo.kernelHeapSize = 1;
@@ -3875,9 +3885,10 @@ HWTEST_F(PrintfHandlerTests, givenKernelWithPrintfWhenPrintingOutputWithBlitterU
         printfAllocation[0] = 8;
         printfAllocation[1] = 0;
 
-        testing::internal::CaptureStdout();
+        StreamCapture capture;
+        capture.captureStdout();
         PrintfHandler::printOutput(kernelImmutableData.get(), &mockAllocation, &deviceImp, true);
-        std::string output = testing::internal::GetCapturedStdout();
+        std::string output = capture.getCapturedStdout();
 
         auto bcsEngine = device->tryGetEngine(NEO::EngineHelpers::getBcsEngineType(device->getRootDeviceEnvironment(), device->getDeviceBitfield(), device->getSelectorCopyEngine(), true), EngineUsage::internal);
         if (bcsEngine) {
@@ -3907,7 +3918,7 @@ HWTEST_F(PrintfHandlerTests, givenPrintDebugMessagesAndKernelWithPrintfWhenBlitt
             GTEST_SKIP();
         }
         device->incRefInternal();
-        MockDeviceImp deviceImp(device.get(), device->getExecutionEnvironment());
+        MockDeviceImp deviceImp(device.get());
 
         auto bcsCsr = static_cast<UltCommandStreamReceiver<FamilyType> *>(bcsEngine->commandStreamReceiver);
         bcsCsr->callBaseFlushBcsTask = false;
@@ -3939,10 +3950,11 @@ HWTEST_F(PrintfHandlerTests, givenPrintDebugMessagesAndKernelWithPrintfWhenBlitt
         printfAllocation[0] = 8;
         printfAllocation[1] = 0;
 
-        testing::internal::CaptureStdout();
+        StreamCapture capture;
+        capture.captureStdout();
         testing::internal::CaptureStderr();
         PrintfHandler::printOutput(kernelImmutableData.get(), &mockAllocation, &deviceImp, true);
-        std::string output = testing::internal::GetCapturedStdout();
+        std::string output = capture.getCapturedStdout();
         std::string error = testing::internal::GetCapturedStderr();
 
         EXPECT_EQ(1u, bcsCsr->blitBufferCalled);
@@ -3977,9 +3989,10 @@ TEST_F(KernelPatchtokensPrintfStringMapTests, givenKernelWithPrintfStringsMapUsa
     printfAllocation[0] = 8;
     printfAllocation[1] = 0;
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     kernel->printPrintfOutput(false);
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_STREQ(expectedString.c_str(), output.c_str());
 }
 
@@ -4005,9 +4018,10 @@ TEST_F(KernelPatchtokensPrintfStringMapTests, givenKernelWithPrintfStringsMapUsa
     printfAllocation[0] = 8;
     printfAllocation[1] = 0;
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     kernel->printPrintfOutput(false);
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_STREQ("", output.c_str());
 }
 
@@ -4033,9 +4047,10 @@ TEST_F(KernelPatchtokensPrintfStringMapTests, givenKernelWithPrintfStringsMapUsa
     printfAllocation[0] = 8;
     printfAllocation[1] = 0;
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     kernel->printPrintfOutput(false);
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_STREQ(expectedString.c_str(), output.c_str());
 }
 
@@ -4345,7 +4360,7 @@ TEST(KernelImmutableDataTest, givenBindlessKernelWhenInitializingImmDataThenSshT
     auto device = std::unique_ptr<NEO::MockDevice>(NEO::MockDevice::createWithNewExecutionEnvironment<NEO::MockDevice>(&hwInfo, 0));
     {
         device->incRefInternal();
-        MockDeviceImp deviceImp(device.get(), device->getExecutionEnvironment());
+        MockDeviceImp deviceImp(device.get());
 
         auto kernelInfo = std::make_unique<KernelInfo>();
         kernelInfo->heapInfo.kernelHeapSize = 1;

@@ -28,28 +28,8 @@ struct MockAubFileStreamMockMmioWrite : public AubMemDump::AubFileStream {
     void writeMMIOImpl(uint32_t offset, uint32_t value) override {
         mmioList.push_back(std::make_pair(offset, value));
     }
-    bool isOnMmioList(const MMIOPair &mmio) {
-        bool mmioFound = false;
-        for (auto &mmioPair : mmioList) {
-            if (mmioPair.first == mmio.first && mmioPair.second == mmio.second) {
-                mmioFound = true;
-                break;
-            }
-        }
-        return mmioFound;
-    }
 
     std::vector<std::pair<uint32_t, uint32_t>> mmioList;
-};
-
-template <typename GfxFamily>
-struct MockAubCsrToTestDumpContext : public AUBCommandStreamReceiverHw<GfxFamily> {
-    using AUBCommandStreamReceiverHw<GfxFamily>::AUBCommandStreamReceiverHw;
-
-    void addContextToken(uint32_t dumpHandle) override {
-        handle = dumpHandle;
-    }
-    uint32_t handle = 0;
 };
 
 template <typename GfxFamily>
@@ -63,20 +43,17 @@ struct MockAubCsr : public AUBCommandStreamReceiverHw<GfxFamily> {
     using AUBCommandStreamReceiverHw<GfxFamily>::pollForCompletion;
     using AUBCommandStreamReceiverHw<GfxFamily>::AUBCommandStreamReceiverHw;
 
+    MockAubCsr(ExecutionEnvironment &executionEnvironment,
+               uint32_t rootDeviceIndex,
+               const DeviceBitfield deviceBitfield)
+        : AUBCommandStreamReceiverHw<GfxFamily>("", true, executionEnvironment, rootDeviceIndex, deviceBitfield) {}
+
     CompletionStamp flushTask(LinearStream &commandStream, size_t commandStreamStart,
                               const IndirectHeap *dsh, const IndirectHeap *ioh, const IndirectHeap *ssh,
                               TaskCountType taskLevel, DispatchFlags &dispatchFlags, Device &device) override {
         recordedDispatchFlags = dispatchFlags;
 
         return AUBCommandStreamReceiverHw<GfxFamily>::flushTask(commandStream, commandStreamStart, dsh, ioh, ssh, taskLevel, dispatchFlags, device);
-    }
-
-    CompletionStamp flushTaskStateless(LinearStream &commandStream, size_t commandStreamStart,
-                                       const IndirectHeap *dsh, const IndirectHeap *ioh, const IndirectHeap *ssh,
-                                       TaskCountType taskLevel, DispatchFlags &dispatchFlags, Device &device) override {
-        recordedDispatchFlags = dispatchFlags;
-
-        return AUBCommandStreamReceiverHw<GfxFamily>::flushTaskStateless(commandStream, commandStreamStart, dsh, ioh, ssh, taskLevel, dispatchFlags, device);
     }
 
     DispatchMode peekDispatchMode() const {
@@ -194,8 +171,6 @@ struct MockAubCsr : public AUBCommandStreamReceiverHw<GfxFamily> {
     }
     bool fileIsOpen = false;
     std::string openFileName = "";
-
-    ADDMETHOD_NOBASE(addPatchInfoComments, bool, true, ());
 
     using CommandStreamReceiverHw<GfxFamily>::localMemoryEnabled;
 };

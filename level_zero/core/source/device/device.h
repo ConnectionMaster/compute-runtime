@@ -95,7 +95,6 @@ struct Device : _ze_device_handle_t {
 
     virtual ~Device() = default;
 
-    virtual void *getExecEnvironment() = 0;
     virtual BuiltinFunctionsLib *getBuiltinFunctionsLib() = 0;
     virtual uint32_t getMOCS(bool l3enabled, bool l1enabled) = 0;
     virtual uint32_t getMaxNumHwThreads() const = 0;
@@ -143,7 +142,7 @@ struct Device : _ze_device_handle_t {
     virtual NEO::GraphicsAllocation *allocateMemoryFromHostPtr(const void *buffer, size_t size, bool hostCopyAllowed) = 0;
     virtual void setSysmanHandle(SysmanDevice *pSysmanDevice) = 0;
     virtual SysmanDevice *getSysmanHandle() = 0;
-    virtual ze_result_t getCsrForOrdinalAndIndex(NEO::CommandStreamReceiver **csr, uint32_t ordinal, uint32_t index, ze_command_queue_priority_t priority, bool allocateInterrupt) = 0;
+    virtual ze_result_t getCsrForOrdinalAndIndex(NEO::CommandStreamReceiver **csr, uint32_t ordinal, uint32_t index, ze_command_queue_priority_t priority, int priorityLevel, bool allocateInterrupt) = 0;
     virtual ze_result_t getCsrForLowPriority(NEO::CommandStreamReceiver **csr, bool copyOnly) = 0;
     virtual NEO::GraphicsAllocation *obtainReusableAllocation(size_t requiredSize, NEO::AllocationType type) = 0;
     virtual void storeReusableAllocation(NEO::GraphicsAllocation &alloc) = 0;
@@ -158,6 +157,8 @@ struct Device : _ze_device_handle_t {
     void ensureSyncDispatchTokenAllocation();
     void setIdentifier(uint32_t id) { identifier = id; }
     uint32_t getIdentifier() const { return identifier; }
+    ze_result_t getPriorityLevels(int *lowestPriority,
+                                  int *highestPriority);
 
   protected:
     NEO::Device *neoDevice = nullptr;
@@ -170,6 +171,8 @@ struct Device : _ze_device_handle_t {
     std::atomic<uint32_t> syncDispatchQueueIdAllocator = 0;
     uint32_t identifier = 0;
     bool implicitScalingCapable = false;
+    int queuePriorityHigh = 0;
+    int queuePriorityLow = 1;
 };
 
 } // namespace L0

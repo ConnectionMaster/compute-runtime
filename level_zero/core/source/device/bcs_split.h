@@ -95,7 +95,7 @@ struct BcsSplit {
 
         auto signalEvent = Event::fromHandle(hSignalEvent);
 
-        if (!cmdList->handleCounterBasedEventOperations(signalEvent)) {
+        if (!cmdList->handleCounterBasedEventOperations(signalEvent, false)) {
             return ZE_RESULT_ERROR_INVALID_ARGUMENT;
         }
 
@@ -121,7 +121,7 @@ struct BcsSplit {
             result = appendCall(localDstPtr, localSrcPtr, localSize, eventHandle);
 
             if (cmdList->flushTaskSubmissionEnabled()) {
-                cmdList->executeCommandListImmediateWithFlushTaskImpl(performMigration, hasStallingCmds, hasRelaxedOrderingDependencies, NEO::AppendOperations::nonKernel, false, cmdQsForSplit[i], nullptr, nullptr);
+                cmdList->executeCommandListImmediateWithFlushTaskImpl(performMigration, hasStallingCmds, hasRelaxedOrderingDependencies, NEO::AppendOperations::nonKernel, true, cmdQsForSplit[i], nullptr, nullptr);
             } else {
                 cmdList->executeCommandListImmediateImpl(performMigration, cmdQsForSplit[i]);
             }

@@ -192,18 +192,19 @@ bool Device::initializeCommonResources() {
         }
     }
 
-    auto &hwInfo = getHardwareInfo();
-    auto &gfxCoreHelper = getGfxCoreHelper();
-    auto debugSurfaceSize = gfxCoreHelper.getSipKernelMaxDbgSurfaceSize(hwInfo);
     if (this->isStateSipRequired()) {
         bool ret = SipKernel::initSipKernel(SipKernel::getSipKernelType(*this), *this);
         UNRECOVERABLE_IF(!ret);
-        debugSurfaceSize = NEO::SipKernel::getSipKernel(*this, nullptr).getStateSaveAreaSize(this);
-    }
-
-    const bool isDebugSurfaceRequired = getL0Debugger();
-    if (isDebugSurfaceRequired) {
-        allocateDebugSurface(debugSurfaceSize);
+        const bool isDebugSurfaceRequired = getL0Debugger();
+        if (isDebugSurfaceRequired) {
+            auto debugSurfaceSize = NEO::SipKernel::getSipKernel(*this, nullptr).getStateSaveAreaSize(this);
+            if (debugSurfaceSize) {
+                allocateDebugSurface(debugSurfaceSize);
+            } else {
+                NEO::printDebugString(NEO::debugManager.flags.PrintDebugMessages.get(), stderr, "Unable to determine debug surface size.\n");
+                return false;
+            }
+        }
     }
 
     bool usmPoolManagerEnabled = ApiSpecificConfig::isDeviceUsmPoolingEnabled() &&
@@ -632,21 +633,21 @@ bool Device::createSecondaryEngine(CommandStreamReceiver *primaryCsr, EngineType
     return true;
 }
 
-EngineControl *Device::getSecondaryEngineCsr(EngineTypeUsage engineTypeUsage, bool allocateInterrupt) {
+EngineControl *Device::getSecondaryEngineCsr(EngineTypeUsage engineTypeUsage, int priorityLevel, bool allocateInterrupt) {
     if (secondaryEngines.find(engineTypeUsage.first) == secondaryEngines.end()) {
         return nullptr;
     }
 
     auto &secondaryEnginesForType = secondaryEngines[engineTypeUsage.first];
 
-    auto engineControl = secondaryEnginesForType.getEngine(engineTypeUsage.second);
+    auto engineControl = secondaryEnginesForType.getEngine(engineTypeUsage.second, priorityLevel);
 
     bool isPrimaryContextInGroup = engineControl->osContext->getIsPrimaryEngine() && engineControl->osContext->isPartOfContextGroup();
 
     if (isPrimaryContextInGroup && allocateInterrupt) {
         // Context 0 is already pre-initialized. We need non-initialized context, to pass context creation flag.
         // If all contexts are already initialized, just take next available. Interrupt request is only a hint.
-        engineControl = secondaryEnginesForType.getEngine(engineTypeUsage.second);
+        engineControl = secondaryEnginesForType.getEngine(engineTypeUsage.second, priorityLevel);
     }
 
     isPrimaryContextInGroup = engineControl->osContext->getIsPrimaryEngine() && engineControl->osContext->isPartOfContextGroup();
@@ -724,11 +725,11 @@ Debugger *Device::getDebugger() const {
 }
 
 bool Device::areSharedSystemAllocationsAllowed() const {
-    if ((debugManager.flags.EnableRecoverablePageFaults.get() == 0) || (debugManager.flags.EnableSharedSystemUsmSupport.get() == 0)) {
+    if ((debugManager.flags.EnableRecoverablePageFaults.get() == 0) || (debugManager.flags.EnableSharedSystemUsmSupport.get() != 1)) {
         return false;
     }
-    uint64_t mask = UnifiedSharedMemoryFlags::access | UnifiedSharedMemoryFlags::sharedSystemPageFaultEnabled;
-    if (((getHardwareInfo().capabilityTable.sharedSystemMemCapabilities) & mask) == mask) {
+    uint64_t mask = (UnifiedSharedMemoryFlags::access | UnifiedSharedMemoryFlags::atomicAccess | UnifiedSharedMemoryFlags::concurrentAccess | UnifiedSharedMemoryFlags::concurrentAtomicAccess);
+    if (getHardwareInfo().capabilityTable.sharedSystemMemCapabilities & mask) {
         return true;
     }
     return false;
@@ -1225,7 +1226,7 @@ const EngineGroupT *Device::tryGetRegularEngineGroup(EngineGroupType engineGroup
     return nullptr;
 }
 
-EngineControl *SecondaryContexts::getEngine(EngineUsage usage) {
+EngineControl *SecondaryContexts::getEngine(EngineUsage usage, int priorityLevel) {
     auto secondaryEngineIndex = 0;
 
     std::lock_guard<std::mutex> guard(mutex);
@@ -1278,6 +1279,7 @@ EngineControl *SecondaryContexts::getEngine(EngineUsage usage) {
     } else {
         DEBUG_BREAK_IF(true);
     }
+    engines[secondaryEngineIndex].osContext->overridePriority(priorityLevel);
 
     return &engines[secondaryEngineIndex];
 }

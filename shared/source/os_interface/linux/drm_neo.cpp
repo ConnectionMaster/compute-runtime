@@ -496,6 +496,7 @@ int Drm::setupHardwareInfo(const DeviceDescriptor *device, bool setupFeatureTabl
 
     auto releaseHelper = rootDeviceEnvironment.getReleaseHelper();
     device->setupHardwareInfo(hwInfo, setupFeatureTableAndWorkaroundTable, releaseHelper);
+    this->adjustSharedSystemMemCapabilities();
 
     querySystemInfo();
 
@@ -513,7 +514,9 @@ int Drm::setupHardwareInfo(const DeviceDescriptor *device, bool setupFeatureTabl
         printDebugString(debugManager.flags.PrintDebugMessages.get(), stderr, "%s", "WARNING: Failed to query memory info\n");
     } else if (getMemoryInfo()->isSmallBarDetected()) {
         IoFunctions::fprintf(stderr, "WARNING: Small BAR detected for device %s\n", getPciPath().c_str());
-        return -1;
+        if (!ioctlHelper->isSmallBarConfigAllowed()) {
+            return -1;
+        }
     }
 
     if (!queryEngineInfo()) {
@@ -606,6 +609,9 @@ int Drm::setupHardwareInfo(const DeviceDescriptor *device, bool setupFeatureTabl
     }
 
     auto numThreadsPerEu = systemInfo ? systemInfo->getNumThreadsPerEu() : (releaseHelper ? releaseHelper->getNumThreadsPerEu() : 7u);
+    if (debugManager.flags.OverrideNumThreadsPerEu.get() != -1) {
+        numThreadsPerEu = debugManager.flags.OverrideNumThreadsPerEu.get();
+    }
 
     hwInfo->gtSystemInfo.ThreadCount = numThreadsPerEu * hwInfo->gtSystemInfo.EUCount;
 
@@ -1502,7 +1508,8 @@ int changeBufferObjectBinding(Drm *drm, OsContext *osContext, uint32_t vmHandleI
     }
 
     // Use only when debugger is disabled
-    const bool guaranteePagingFence = forcePagingFence && !drm->getRootDeviceEnvironment().executionEnvironment.isDebuggingEnabled();
+    auto debuggingEnabled = drm->getRootDeviceEnvironment().executionEnvironment.isDebuggingEnabled();
+    const bool guaranteePagingFence = forcePagingFence && !debuggingEnabled;
 
     std::unique_ptr<uint8_t[]> extensions;
     if (bind) {
@@ -1510,7 +1517,7 @@ int changeBufferObjectBinding(Drm *drm, OsContext *osContext, uint32_t vmHandleI
         if (bo->getBindExtHandles().size() > 0 && allowUUIDsForDebug) {
             extensions = ioctlHelper->prepareVmBindExt(bo->getBindExtHandles(), bo->getRegisteredBindHandleCookie());
         }
-        bool bindCapture = bo->isMarkedForCapture();
+        bool bindCapture = debuggingEnabled && bo->isMarkedForCapture();
         bool bindImmediate = bo->isImmediateBindingRequired();
         bool bindMakeResident = false;
         bool readOnlyResource = bo->isReadOnlyGpuResource();
@@ -1859,6 +1866,12 @@ bool Drm::queryDeviceIdAndRevision() {
         return IoctlHelperXe::queryDeviceIdAndRevision(*this);
     }
     return IoctlHelperI915::queryDeviceIdAndRevision(*this);
+}
+
+void Drm::adjustSharedSystemMemCapabilities() {
+    if (!this->isSharedSystemAllocEnabled()) {
+        this->getRootDeviceEnvironment().getMutableHardwareInfo()->capabilityTable.sharedSystemMemCapabilities = 0;
+    }
 }
 
 uint32_t Drm::getAggregatedProcessCount() const {

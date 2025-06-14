@@ -21,6 +21,7 @@
 #include "shared/test/common/helpers/default_hw_info.h"
 #include "shared/test/common/helpers/engine_descriptor_helper.h"
 #include "shared/test/common/helpers/raii_gfx_core_helper.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/helpers/variable_backup.h"
 #include "shared/test/common/libult/linux/drm_mock.h"
 #include "shared/test/common/mocks/linux/mock_drm_memory_manager.h"
@@ -150,9 +151,13 @@ struct MockIoctlHelperForSmallBar : public IoctlHelperUpstream {
         memoryInfo->smallBarDetected = true;
         return std::unique_ptr<MemoryInfo>{memoryInfo};
     }
+
+    bool isSmallBarConfigAllowed() const override { return smallBarAllowed; }
+
+    bool smallBarAllowed = true;
 };
 
-TEST(DrmTest, givenSmallBarDetectedInMemoryInfoWhenSetupHardwareInfoCalledThenErrorMessagePrinted) {
+TEST(DrmTest, givenSmallBarDetectedInMemoryInfoAndNotSupportedWhenSetupHardwareInfoCalledThenWarningMessagePrintedAndFailureIsReturned) {
     auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
     DrmMock drm{*executionEnvironment->rootDeviceEnvironments[0]};
     drm.setPciPath("0000:ab:cd.e");
@@ -161,10 +166,31 @@ TEST(DrmTest, givenSmallBarDetectedInMemoryInfoWhenSetupHardwareInfoCalledThenEr
     DeviceDescriptor device = {0, defaultHwInfo.get(), setupHardwareInfo};
 
     auto mockIoctlHelper = std::make_unique<MockIoctlHelperForSmallBar>(drm);
+    mockIoctlHelper->smallBarAllowed = false;
+
     drm.ioctlHelper.reset(mockIoctlHelper.release());
 
     ::testing::internal::CaptureStderr();
     EXPECT_EQ(-1, drm.setupHardwareInfo(&device, false));
+    std::string output = testing::internal::GetCapturedStderr();
+    EXPECT_STREQ("WARNING: Small BAR detected for device 0000:ab:cd.e\n", output.c_str());
+}
+
+TEST(DrmTest, givenSmallBarDetectedInMemoryInfoAndSupportedWhenSetupHardwareInfoCalledThenWarningMessagePrintedAndInitializationIsNotBroken) {
+    auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
+    DrmMock drm{*executionEnvironment->rootDeviceEnvironments[0]};
+    drm.setPciPath("0000:ab:cd.e");
+
+    auto setupHardwareInfo = [](HardwareInfo *hwInfo, bool, const ReleaseHelper *) {};
+    DeviceDescriptor device = {0, defaultHwInfo.get(), setupHardwareInfo};
+
+    auto mockIoctlHelper = std::make_unique<MockIoctlHelperForSmallBar>(drm);
+    mockIoctlHelper->smallBarAllowed = true;
+
+    drm.ioctlHelper.reset(mockIoctlHelper.release());
+
+    ::testing::internal::CaptureStderr();
+    EXPECT_EQ(0, drm.setupHardwareInfo(&device, false));
     std::string output = testing::internal::GetCapturedStderr();
     EXPECT_STREQ("WARNING: Small BAR detected for device 0000:ab:cd.e\n", output.c_str());
 }
@@ -832,11 +858,12 @@ TEST(DrmTest, givenPrintIoctlDebugFlagSetWhenGettingTimestampFrequencyThenCaptur
 
     int frequency = 0;
 
-    testing::internal::CaptureStdout(); // start capturing
+    StreamCapture capture;
+    capture.captureStdout(); // start capturing
 
     int ret = drm.getTimestampFrequency(frequency);
     debugManager.flags.PrintIoctlEntries.set(false);
-    std::string outputString = testing::internal::GetCapturedStdout(); // stop capturing
+    std::string outputString = capture.getCapturedStdout(); // stop capturing
 
     EXPECT_EQ(0, ret);
     EXPECT_EQ(1000, frequency);
@@ -854,10 +881,11 @@ TEST(DrmTest, givenPrintIoctlDebugFlagNotSetWhenGettingTimestampFrequencyThenCap
 
     int frequency = 0;
 
-    testing::internal::CaptureStdout(); // start capturing
+    StreamCapture capture;
+    capture.captureStdout(); // start capturing
 
     int ret = drm.getTimestampFrequency(frequency);
-    std::string outputString = testing::internal::GetCapturedStdout(); // stop capturing
+    std::string outputString = capture.getCapturedStdout(); // stop capturing
 
     EXPECT_EQ(0, ret);
     EXPECT_EQ(1000, frequency);
@@ -875,11 +903,12 @@ TEST(DrmTest, givenPrintIoctlDebugFlagSetWhenGettingOATimestampFrequencyThenCapt
 
     int frequency = 0;
 
-    testing::internal::CaptureStdout(); // start capturing
+    StreamCapture capture;
+    capture.captureStdout(); // start capturing
 
     int ret = drm.getOaTimestampFrequency(frequency);
     debugManager.flags.PrintIoctlEntries.set(false);
-    std::string outputString = testing::internal::GetCapturedStdout(); // stop capturing
+    std::string outputString = capture.getCapturedStdout(); // stop capturing
 
     EXPECT_EQ(0, ret);
     EXPECT_EQ(123456, frequency);
@@ -1535,10 +1564,11 @@ TEST(DrmDeathTest, GivenResetStatsWithValidFaultWhenIsGpuHangIsCalledThenProcess
     std::string expectedString = std::string(buf.get());
 
     ::testing::internal::CaptureStderr();
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     EXPECT_THROW(drm.isGpuHangDetected(mockOsContextLinux), std::runtime_error);
     auto stderrString = ::testing::internal::GetCapturedStderr();
-    auto stdoutString = ::testing::internal::GetCapturedStdout();
+    auto stdoutString = capture.getCapturedStdout();
     EXPECT_EQ(expectedString, stderrString);
     EXPECT_EQ(expectedString, stdoutString);
 }

@@ -159,7 +159,7 @@ TEST(DebugSessionLinuxi915Test, WhenConvertingThreadIDsForDeviceWithSingleSliceT
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
 
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
 
     auto sessionMock = std::make_unique<MockDebugSessionLinuxi915>(zet_debug_config_t{0x1234}, &deviceImp, 10);
     ASSERT_NE(nullptr, sessionMock);
@@ -213,7 +213,7 @@ TEST(DebugSessionLinuxi915Test, WhenConvertingThreadIDsForDeviceWithMultipleSlic
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
 
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
 
     auto sessionMock = std::make_unique<MockDebugSessionLinuxi915>(zet_debug_config_t{0x1234}, &deviceImp, 10);
     ASSERT_NE(nullptr, sessionMock);
@@ -264,7 +264,7 @@ TEST(DebugSessionLinuxi915Test, GivenDeviceWithSingleSliceWhenCallingAreRequeste
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
 
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
     auto sessionMock = std::make_unique<MockDebugSessionLinuxi915>(zet_debug_config_t{0x1234}, &deviceImp, 10);
     ASSERT_NE(nullptr, sessionMock);
 
@@ -374,7 +374,7 @@ TEST(DebugSessionLinuxi915Test, GivenRootDebugSessionWhenCreateTileSessionCalled
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
 
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
 
     struct DebugSession : public DebugSessionLinuxi915 {
         using DebugSessionLinuxi915::createTileSession;
@@ -396,7 +396,7 @@ TEST(DebugSessionLinuxi915Test, GivenRootLinuxSessionWhenCallingTileSepcificFunc
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
 
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
 
     auto sessionMock = std::make_unique<MockDebugSessionLinuxi915>(zet_debug_config_t{0x1234}, &deviceImp, 10);
     ASSERT_NE(nullptr, sessionMock);
@@ -413,7 +413,7 @@ TEST(DebugSessionLinuxi915Test, GivenContextStateSaveAreaBindInfoWhenGettingCSSA
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface.reset(new NEO::OSInterface);
     neoDevice->executionEnvironment->rootDeviceEnvironments[0]->osInterface->setDriverModel(std::unique_ptr<DriverModel>(mockDrm));
 
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
 
     auto sessionMock = std::make_unique<MockDebugSessionLinuxi915>(zet_debug_config_t{0x1234}, &deviceImp, 10);
     ASSERT_NE(nullptr, sessionMock);
@@ -973,7 +973,7 @@ TEST_F(DebugApiLinuxTest, GivenDebugSessionWhenReadingEventThenResultNotReadyIsR
     zet_debug_config_t config = {};
     config.pid = 0x1234;
 
-    MockDeviceImp deviceImp(neoDevice, neoDevice->getExecutionEnvironment());
+    MockDeviceImp deviceImp(neoDevice);
     auto mockSession = new MockDebugSessionLinuxi915(config, &deviceImp, 10);
     mockSession->clientHandle = MockDebugSessionLinuxi915::mockClientHandle;
     deviceImp.debugSession.reset(mockSession);
@@ -5585,7 +5585,7 @@ TEST_F(DebugApiLinuxTest, GivenStoppedThreadResumeCausingPageFaultAndFEBitSetWhe
     EXPECT_EQ(0u, sessionMock->apiEvents.size());
 }
 
-HWTEST2_F(DebugApiLinuxTest, GivenNoAttentionBitsWhenMultipleThreadsPassedToCheckStoppedThreadsAndGenerateEventsThenThreadsStateNotCheckedAndEventsNotGenerated, MatchAny) {
+HWTEST_F(DebugApiLinuxTest, GivenNoAttentionBitsWhenMultipleThreadsPassedToCheckStoppedThreadsAndGenerateEventsThenThreadsStateNotCheckedAndEventsNotGenerated) {
     MockL0GfxCoreHelperSupportsThreadControlStopped<FamilyType> mockL0GfxCoreHelper;
     std::unique_ptr<ApiGfxCoreHelper> l0GfxCoreHelperBackup(static_cast<ApiGfxCoreHelper *>(&mockL0GfxCoreHelper));
     device->getNEODevice()->getExecutionEnvironment()->rootDeviceEnvironments[0]->apiGfxCoreHelper.swap(l0GfxCoreHelperBackup);
@@ -5696,7 +5696,7 @@ TEST_F(DebugApiLinuxTest, GivenNoAttentionBitsWhenSingleThreadPassedToCheckStopp
     EXPECT_EQ(0u, sessionMock->apiEvents.size());
 }
 
-HWTEST2_F(DebugApiLinuxTest, GivenErrorFromSynchronousAttScanWhenMultipleThreadsPassedToCheckStoppedThreadsAndGenerateEventsThenThreadsStateNotChecked, MatchAny) {
+HWTEST_F(DebugApiLinuxTest, GivenErrorFromSynchronousAttScanWhenMultipleThreadsPassedToCheckStoppedThreadsAndGenerateEventsThenThreadsStateNotChecked) {
     MockL0GfxCoreHelperSupportsThreadControlStopped<FamilyType> mockL0GfxCoreHelper;
     std::unique_ptr<ApiGfxCoreHelper> l0GfxCoreHelperBackup(static_cast<ApiGfxCoreHelper *>(&mockL0GfxCoreHelper));
     device->getNEODevice()->getExecutionEnvironment()->rootDeviceEnvironments[0]->apiGfxCoreHelper.swap(l0GfxCoreHelperBackup);
@@ -7247,8 +7247,7 @@ struct DebugApiRegistersAccessFixture : public DebugApiLinuxPrelimFixture {
         session = std::make_unique<MockDebugSessionLinuxi915>(zet_debug_config_t{}, device, 0);
         session->clientHandle = MockDebugSessionLinuxi915::mockClientHandle;
         session->clientHandleToConnection[MockDebugSessionLinuxi915::mockClientHandle]->contextsCreated[ctxHandle].vm = vmHandle;
-        auto &gfxCoreHelper = device->getGfxCoreHelper();
-        maxDbgSurfaceSize = gfxCoreHelper.getSipKernelMaxDbgSurfaceSize(hwInfo);
+        maxDbgSurfaceSize = MemoryConstants::pageSize;
         session->clientHandleToConnection[MockDebugSessionLinuxi915::mockClientHandle]->vmToContextStateSaveAreaBindInfo[vmHandle] = {stateSaveAreaGpuVa, maxDbgSurfaceSize};
         session->allThreadsStopped = true;
         session->allThreads[stoppedThreadId]->stopThread(1u);
@@ -7355,10 +7354,11 @@ TEST_F(DebugApiRegistersAccessTest, givenReadRegistersCalledCorrectValuesRead) {
     char grf[32] = {0};
     char grfRef[32] = {0};
 
-    const uint32_t numSlices = hwInfo.gtSystemInfo.SliceCount > 2 ? 2 : hwInfo.gtSystemInfo.SliceCount;
-    const uint32_t numSubslicesPerSlice = hwInfo.gtSystemInfo.SubSliceCount / hwInfo.gtSystemInfo.SliceCount;
-    const uint32_t numEusPerSubslice = hwInfo.gtSystemInfo.EUCount / hwInfo.gtSystemInfo.SubSliceCount;
-    const uint32_t numThreadsPerEu = hwInfo.gtSystemInfo.ThreadCount / hwInfo.gtSystemInfo.EUCount;
+    auto pStateSaveAreaHeader = reinterpret_cast<SIP::StateSaveAreaHeader *>(session->stateSaveAreaHeader.data());
+    const uint32_t numSlices = pStateSaveAreaHeader->regHeader.num_slices;
+    const uint32_t numSubslicesPerSlice = pStateSaveAreaHeader->regHeader.num_subslices_per_slice;
+    const uint32_t numEusPerSubslice = pStateSaveAreaHeader->regHeader.num_eus_per_subslice;
+    const uint32_t numThreadsPerEu = pStateSaveAreaHeader->regHeader.num_threads_per_eu;
 
     const uint32_t midSlice = (numSlices > 1) ? (numSlices / 2) : 0;
     const uint32_t midSubslice = (numSubslicesPerSlice > 1) ? (numSubslicesPerSlice / 2) : 0;
@@ -7467,10 +7467,11 @@ TEST_F(DebugApiRegistersAccessTest, givenWriteRegistersCalledCorrectValuesRead) 
     char grf[32] = {0};
     char grfRef[32] = {0};
 
-    const uint32_t numSlices = hwInfo.gtSystemInfo.SliceCount > 2 ? 2 : hwInfo.gtSystemInfo.SliceCount;
-    const uint32_t numSubslicesPerSlice = hwInfo.gtSystemInfo.SubSliceCount / hwInfo.gtSystemInfo.SliceCount;
-    const uint32_t numEusPerSubslice = hwInfo.gtSystemInfo.EUCount / hwInfo.gtSystemInfo.SubSliceCount;
-    const uint32_t numThreadsPerEu = hwInfo.gtSystemInfo.ThreadCount / hwInfo.gtSystemInfo.EUCount;
+    auto pStateSaveAreaHeader = reinterpret_cast<SIP::StateSaveAreaHeader *>(session->stateSaveAreaHeader.data());
+    const uint32_t numSlices = pStateSaveAreaHeader->regHeader.num_slices;
+    const uint32_t numSubslicesPerSlice = pStateSaveAreaHeader->regHeader.num_subslices_per_slice;
+    const uint32_t numEusPerSubslice = pStateSaveAreaHeader->regHeader.num_eus_per_subslice;
+    const uint32_t numThreadsPerEu = pStateSaveAreaHeader->regHeader.num_threads_per_eu;
 
     const uint32_t midSlice = (numSlices > 1) ? (numSlices / 2) : 0;
     const uint32_t midSubslice = (numSubslicesPerSlice > 1) ? (numSubslicesPerSlice / 2) : 0;
@@ -7719,9 +7720,7 @@ struct MockRenderSurfaceState {
 static_assert(64 == sizeof(MockRenderSurfaceState));
 
 void sbaInit(std::vector<char> &stateSaveArea, uint64_t stateSaveAreaGpuVa, SbaTrackedAddresses &sba, uint32_t r0[8], L0::Device *device) {
-    auto &hwInfo = *NEO::defaultHwInfo.get();
-    auto &gfxCoreHelper = device->getGfxCoreHelper();
-    auto maxDbgSurfaceSize = gfxCoreHelper.getSipKernelMaxDbgSurfaceSize(hwInfo);
+    auto maxDbgSurfaceSize = MemoryConstants::pageSize;
     uint64_t surfaceStateBaseAddress = stateSaveAreaGpuVa + maxDbgSurfaceSize + sizeof(SbaTrackedAddresses);
     uint32_t renderSurfaceStateOffset = 256;
     r0[4] = 0xAAAAAAAA;
@@ -7843,10 +7842,11 @@ TEST_F(DebugApiRegistersAccessTest, GivenScratchPointerAndZeroAddressInSurfaceSt
     session->vmHandle = 7;
     session->clientHandleToConnection[MockDebugSessionLinuxi915::mockClientHandle]->vmToStateBaseAreaBindInfo[vmHandle] = {stateSaveAreaGpuVa + maxDbgSurfaceSize, sizeof(SbaTrackedAddresses)};
 
-    const uint32_t numSlices = hwInfo.gtSystemInfo.SliceCount > 2 ? 2 : hwInfo.gtSystemInfo.SliceCount;
-    const uint32_t numSubslicesPerSlice = hwInfo.gtSystemInfo.SubSliceCount / hwInfo.gtSystemInfo.SliceCount;
-    const uint32_t numEusPerSubslice = hwInfo.gtSystemInfo.EUCount / hwInfo.gtSystemInfo.SubSliceCount;
-    const uint32_t numThreadsPerEu = hwInfo.gtSystemInfo.ThreadCount / hwInfo.gtSystemInfo.EUCount;
+    auto pStateSaveAreaHeader = reinterpret_cast<SIP::StateSaveAreaHeader *>(session->stateSaveAreaHeader.data());
+    const uint32_t numSlices = pStateSaveAreaHeader->regHeader.num_slices;
+    const uint32_t numSubslicesPerSlice = pStateSaveAreaHeader->regHeader.num_subslices_per_slice;
+    const uint32_t numEusPerSubslice = pStateSaveAreaHeader->regHeader.num_eus_per_subslice;
+    const uint32_t numThreadsPerEu = pStateSaveAreaHeader->regHeader.num_threads_per_eu;
 
     const uint32_t midSlice = (numSlices > 1) ? (numSlices / 2) : 0;
     const uint32_t midSubslice = (numSubslicesPerSlice > 1) ? (numSubslicesPerSlice / 2) : 0;

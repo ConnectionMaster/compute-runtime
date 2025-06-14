@@ -16,6 +16,7 @@
 #include "shared/test/common/cmd_parse/gen_cmd_parse.h"
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/relaxed_ordering_commands_helper.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/mocks/mock_csr.h"
 #include "shared/test/common/mocks/mock_direct_submission_hw.h"
 #include "shared/test/common/mocks/mock_timestamp_container.h"
@@ -443,9 +444,26 @@ INSTANTIATE_TEST_SUITE_P(EnqueueKernel,
 
 typedef EnqueueKernelTypeTest<int> EnqueueKernelWithScratch;
 
-HWTEST_P(EnqueueKernelWithScratch, GivenKernelRequiringScratchWhenItIsEnqueuedWithDifferentScratchSizesThenPreviousScratchAllocationIsMadeNonResidentPriorStoringOnResueList) {
-    auto mockCsr = new MockCsrHw<FamilyType>(*pDevice->executionEnvironment, pDevice->getRootDeviceIndex(), pDevice->getDeviceBitfield());
-    pDevice->resetCommandStreamReceiver(mockCsr);
+struct EnqueueKernelWithScratchAndMockCsrHw
+    : public EnqueueKernelWithScratch {
+    void SetUp() override {}
+    void TearDown() override {}
+
+    template <typename FamilyType>
+    void setUpT() {
+        EnvironmentWithCsrWrapper environment;
+        environment.setCsrType<MockCsrHw<FamilyType>>();
+        EnqueueKernelWithScratch::SetUp();
+    }
+
+    template <typename FamilyType>
+    void tearDownT() {
+        EnqueueKernelWithScratch::TearDown();
+    }
+};
+
+HWTEST_TEMPLATED_P(EnqueueKernelWithScratchAndMockCsrHw, GivenKernelRequiringScratchWhenItIsEnqueuedWithDifferentScratchSizesThenPreviousScratchAllocationIsMadeNonResidentPriorStoringOnResueList) {
+    auto *mockCsr = static_cast<MockCsrHw<FamilyType> *>(&pDevice->getUltCommandStreamReceiver<FamilyType>());
 
     uint32_t scratchSizeSlot0 = 1024u;
 
@@ -530,6 +548,9 @@ HWCMDTEST_P(IGFX_GEN12LP_CORE, EnqueueKernelWithScratch, givenDeviceForcing32bit
 
 INSTANTIATE_TEST_SUITE_P(EnqueueKernel,
                          EnqueueKernelWithScratch, testing::Values(1));
+
+INSTANTIATE_TEST_SUITE_P(EnqueueKernel,
+                         EnqueueKernelWithScratchAndMockCsrHw, testing::Values(1));
 
 TestParam testParamPrintf[] = {
     {1, 1, 1, 1, 1, 1}};
@@ -661,9 +682,10 @@ HWTEST_P(EnqueueKernelPrintfTest, GivenKernelWithPrintfBlockedByEventWhenEventUn
 
     pOutEvent->release();
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     userEvent->setStatus(CL_COMPLETE);
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
 
     EXPECT_STREQ("test", output.c_str());
 }
@@ -706,9 +728,10 @@ HWTEST_P(EnqueueKernelPrintfTest, GivenKernelWithPrintfWithStringMapDisbaledAndI
 
     pOutEvent->release();
 
-    testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     userEvent->setStatus(CL_COMPLETE);
-    std::string output = testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
 
     EXPECT_STREQ("", output.c_str());
 }
@@ -976,7 +999,7 @@ HWTEST_F(EnqueueAuxKernelTests, givenMultipleArgsWhenAuxTranslationIsRequiredThe
     auto pipeControls = findAll<typename FamilyType::PIPE_CONTROL *>(cmdList.begin(), cmdList.end());
 
     auto additionalPcCount = MemorySynchronizationCommands<FamilyType>::getSizeForBarrierWithPostSyncOperation(
-                                 pDevice->getRootDeviceEnvironment(), false) /
+                                 pDevice->getRootDeviceEnvironment(), NEO::PostSyncMode::immediateData) /
                              sizeof(typename FamilyType::PIPE_CONTROL);
 
     // |AuxToNonAux|NDR|NonAuxToAux|
@@ -1009,13 +1032,13 @@ HWTEST_F(EnqueueAuxKernelTests, givenKernelWithRequiredAuxTranslationWhenEnqueue
     EXPECT_EQ(1u, std::get<size_t>(cmdQ.dispatchAuxTranslationInputs.at(0))); // aux before NDR
     auto kernelBefore = std::get<Kernel *>(cmdQ.dispatchAuxTranslationInputs.at(0));
     EXPECT_EQ("fullCopy", kernelBefore->getKernelInfo().kernelDescriptor.kernelMetadata.kernelName);
-    EXPECT_TRUE(kernelBefore->isBuiltIn);
+    EXPECT_TRUE(kernelBefore->isBuiltInKernel());
 
     // after kernel
     EXPECT_EQ(3u, std::get<size_t>(cmdQ.dispatchAuxTranslationInputs.at(1))); // aux + NDR + aux
     auto kernelAfter = std::get<Kernel *>(cmdQ.dispatchAuxTranslationInputs.at(1));
     EXPECT_EQ("fullCopy", kernelAfter->getKernelInfo().kernelDescriptor.kernelMetadata.kernelName);
-    EXPECT_TRUE(kernelAfter->isBuiltIn);
+    EXPECT_TRUE(kernelAfter->isBuiltInKernel());
 }
 
 using BlitAuxKernelTests = ::testing::Test;
@@ -1066,7 +1089,7 @@ HWTEST_F(EnqueueKernelTest, givenTimestampWriteEnableWhenMarkerProfilingWithoutW
     auto baseCommandStreamSize = EnqueueOperation<FamilyType>::getTotalSizeRequiredCS(CL_COMMAND_MARKER, {}, false, false, false, *pCmdQ, multiDispatchInfo, false, false, false, nullptr);
     auto extendedCommandStreamSize = EnqueueOperation<FamilyType>::getTotalSizeRequiredCS(CL_COMMAND_MARKER, {}, false, false, false, *pCmdQ, multiDispatchInfo, true, false, false, nullptr);
 
-    EXPECT_EQ(baseCommandStreamSize + 4 * EncodeStoreMMIO<FamilyType>::size + MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier(false), extendedCommandStreamSize);
+    EXPECT_EQ(baseCommandStreamSize + 4 * EncodeStoreMMIO<FamilyType>::size + MemorySynchronizationCommands<FamilyType>::getSizeForSingleBarrier(), extendedCommandStreamSize);
 }
 
 HWTEST_F(EnqueueKernelTest, givenRelaxedOrderingEnabledWhenCheckingSizeForCsThenReturnCorrectValue) {

@@ -13,11 +13,13 @@
 #include "shared/source/helpers/basic_math.h"
 #include "shared/source/helpers/bindless_heaps_helper.h"
 #include "shared/source/helpers/gfx_core_helper.h"
+#include "shared/source/helpers/image_helper.h"
 #include "shared/source/helpers/surface_format_info.h"
 #include "shared/source/image/image_surface_state.h"
 #include "shared/source/memory_manager/allocation_properties.h"
 #include "shared/source/memory_manager/memory_manager.h"
 #include "shared/source/memory_manager/unified_memory_manager.h"
+#include "shared/source/memory_manager/unified_memory_pooling.h"
 #include "shared/source/release_helper/release_helper.h"
 
 #include "level_zero/core/source/device/device.h"
@@ -105,6 +107,8 @@ ze_result_t ImageCoreFamily<gfxCoreFamily>::initialize(Device *device, const ze_
         this->samplerDesc.pNext = nullptr;
     }
 
+    NEO::UsmMemAllocPool *usmPool = nullptr;
+
     if (!isImageView()) {
         if (lookupTable.isSharedHandle) {
             if (!lookupTable.sharedHandleType.isSupportedHandle) {
@@ -139,6 +143,15 @@ ze_result_t ImageCoreFamily<gfxCoreFamily>::initialize(Device *device, const ze_
                 if (usmAllocation == nullptr) {
                     return ZE_RESULT_ERROR_INVALID_ARGUMENT;
                 }
+
+                if (this->device->getNEODevice()->getUsmMemAllocPool() &&
+                    this->device->getNEODevice()->getUsmMemAllocPool()->isInPool(lookupTable.imageProperties.pitchedPtr)) {
+                    usmPool = this->device->getNEODevice()->getUsmMemAllocPool();
+                    if (nullptr == usmPool->getPooledAllocationBasePtr(lookupTable.imageProperties.pitchedPtr)) {
+                        return ZE_RESULT_ERROR_INVALID_ARGUMENT;
+                    }
+                }
+
                 allocation = usmAllocation->gpuAllocations.getGraphicsAllocation(device->getRootDeviceIndex());
             }
         }
@@ -157,10 +170,14 @@ ze_result_t ImageCoreFamily<gfxCoreFamily>::initialize(Device *device, const ze_
             imgInfo.rowPitch = imgInfo.imgDesc.imageWidth * imgInfo.surfaceFormat->imageElementSizeInBytes;
         }
         imgInfo.slicePitch = imgInfo.rowPitch * imgInfo.imgDesc.imageHeight;
-        imgInfo.size = allocation->getUnderlyingBufferSize();
         imgInfo.qPitch = 0;
-
-        UNRECOVERABLE_IF(imgInfo.offset != 0);
+        if (!isImageView()) {
+            imgInfo.size = allocation->getUnderlyingBufferSize();
+            if (usmPool) {
+                imgInfo.size = usmPool->getPooledAllocationSize(lookupTable.imageProperties.pitchedPtr);
+                imgInfo.offset = usmPool->getOffsetInPool(lookupTable.imageProperties.pitchedPtr);
+            }
+        }
     }
 
     if (this->bindlessImage) {
@@ -228,7 +245,7 @@ ze_result_t ImageCoreFamily<gfxCoreFamily>::initialize(Device *device, const ze_
 
     if (this->bindlessImage) {
         auto ssInHeap = getBindlessSlot();
-        copySurfaceStateToSSH(ssInHeap->ssPtr, 0u, false);
+        copySurfaceStateToSSH(ssInHeap->ssPtr, 0u, NEO::BindlessImageSlot::image, false);
 
         if (this->sampledImage) {
             auto productFamily = this->device->getNEODevice()->getHardwareInfo().platform.eProductFamily;
@@ -245,6 +262,7 @@ ze_result_t ImageCoreFamily<gfxCoreFamily>::initialize(Device *device, const ze_
         }
     }
 
+    const auto &productHelper = rootDeviceEnvironment.getHelper<NEO::ProductHelper>();
     if (this->bindlessImage && implicitArgsAllocation) {
         implicitArgsSurfaceState = GfxFamily::cmdInitRenderSurfaceState;
 
@@ -269,7 +287,6 @@ ze_result_t ImageCoreFamily<gfxCoreFamily>::initialize(Device *device, const ze_
         imageImplicitArgs.flagHeight = (imgInfo.imgDesc.imageHeight * pixelSize) - 1u;
         imageImplicitArgs.flatPitch = imgInfo.imgDesc.imageRowPitch - 1u;
 
-        const auto &productHelper = rootDeviceEnvironment.getHelper<NEO::ProductHelper>();
         NEO::MemoryTransferHelper::transferMemoryToAllocation(productHelper.isBlitCopyRequiredForLocalMemory(rootDeviceEnvironment, *implicitArgsAllocation), *this->device->getNEODevice(), implicitArgsAllocation, 0u, &imageImplicitArgs, NEO::ImageImplicitArgs::getSize());
 
         {
@@ -346,48 +363,49 @@ ze_result_t ImageCoreFamily<gfxCoreFamily>::initialize(Device *device, const ze_
         }
     }
 
+    if (productHelper.isPackedCopyFormatSupported()) {
+        packedSurfaceState = redescribedSurfaceState;
+
+        NEO::EncodeSurfaceState<GfxFamily>::convertSurfaceStateToPacked(&packedSurfaceState, imgInfo);
+    }
+
     return ZE_RESULT_SUCCESS;
 }
 
 template <GFXCORE_FAMILY gfxCoreFamily>
 void ImageCoreFamily<gfxCoreFamily>::copySurfaceStateToSSH(void *surfaceStateHeap,
-                                                           const uint32_t surfaceStateOffset,
+                                                           uint32_t surfaceStateOffset,
+                                                           uint32_t bindlessSlot,
                                                            bool isMediaBlockArg) {
     using GfxFamily = typename NEO::GfxFamilyMapper<gfxCoreFamily>::GfxFamily;
     using RENDER_SURFACE_STATE = typename GfxFamily::RENDER_SURFACE_STATE;
 
-    // Copy the image's surface state into position in the provided surface state heap
-    auto destSurfaceState = ptrOffset(surfaceStateHeap, surfaceStateOffset);
-    memcpy_s(destSurfaceState, sizeof(RENDER_SURFACE_STATE),
-             &surfaceState, sizeof(RENDER_SURFACE_STATE));
+    const RENDER_SURFACE_STATE *src = nullptr;
+
+    switch (bindlessSlot) {
+    case NEO::BindlessImageSlot::image:
+        src = &surfaceState;
+        break;
+    case NEO::BindlessImageSlot::redescribedImage:
+        src = &redescribedSurfaceState;
+        break;
+    case NEO::BindlessImageSlot::implicitArgs:
+        src = &implicitArgsSurfaceState;
+        break;
+    case NEO::BindlessImageSlot::packedImage:
+        src = &packedSurfaceState;
+        break;
+    default:
+        UNRECOVERABLE_IF(true);
+    }
+
+    auto dst = ptrOffset(surfaceStateHeap, surfaceStateOffset);
+    memcpy_s(dst, sizeof(RENDER_SURFACE_STATE), src, sizeof(RENDER_SURFACE_STATE));
+
     if (isMediaBlockArg) {
-        RENDER_SURFACE_STATE *dstRss = static_cast<RENDER_SURFACE_STATE *>(destSurfaceState);
+        RENDER_SURFACE_STATE *dstRss = static_cast<RENDER_SURFACE_STATE *>(dst);
         NEO::ImageSurfaceStateHelper<GfxFamily>::setWidthForMediaBlockSurfaceState(dstRss, imgInfo);
     }
-}
-
-template <GFXCORE_FAMILY gfxCoreFamily>
-void ImageCoreFamily<gfxCoreFamily>::copyRedescribedSurfaceStateToSSH(void *surfaceStateHeap,
-                                                                      const uint32_t surfaceStateOffset) {
-    using GfxFamily = typename NEO::GfxFamilyMapper<gfxCoreFamily>::GfxFamily;
-    using RENDER_SURFACE_STATE = typename GfxFamily::RENDER_SURFACE_STATE;
-
-    // Copy the image's surface state into position in the provided surface state heap
-    auto destSurfaceState = ptrOffset(surfaceStateHeap, surfaceStateOffset);
-    memcpy_s(destSurfaceState, sizeof(RENDER_SURFACE_STATE),
-             &redescribedSurfaceState, sizeof(RENDER_SURFACE_STATE));
-}
-
-template <GFXCORE_FAMILY gfxCoreFamily>
-void ImageCoreFamily<gfxCoreFamily>::copyImplicitArgsSurfaceStateToSSH(void *surfaceStateHeap,
-                                                                       const uint32_t surfaceStateOffset) {
-    using GfxFamily = typename NEO::GfxFamilyMapper<gfxCoreFamily>::GfxFamily;
-    using RENDER_SURFACE_STATE = typename GfxFamily::RENDER_SURFACE_STATE;
-
-    // Copy the image's surface state into position in the provided surface state heap
-    auto destSurfaceState = ptrOffset(surfaceStateHeap, surfaceStateOffset);
-    memcpy_s(destSurfaceState, sizeof(RENDER_SURFACE_STATE),
-             &implicitArgsSurfaceState, sizeof(RENDER_SURFACE_STATE));
 }
 
 template <GFXCORE_FAMILY gfxCoreFamily>

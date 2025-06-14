@@ -12,11 +12,11 @@
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/default_hw_info.h"
 #include "shared/test/common/helpers/gtest_helpers.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/libult/linux/drm_mock.h"
 #include "shared/test/common/mocks/mock_execution_environment.h"
 #include "shared/test/common/os_interface/linux/drm_mock_device_blob.h"
-
-#include "gtest/gtest.h"
+#include "shared/test/common/test_macros/test.h"
 
 using namespace NEO;
 
@@ -77,7 +77,8 @@ TEST(DrmSystemInfoTest, givenSetupHardwareInfoWhenQuerySystemInfoFalseThenSystem
     auto setupHardwareInfo = [](HardwareInfo *, bool, const ReleaseHelper *) {};
     DeviceDescriptor device = {0, &hwInfo, setupHardwareInfo};
 
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     ::testing::internal::CaptureStderr();
 
     DebugManagerStateRestore restorer;
@@ -87,7 +88,7 @@ TEST(DrmSystemInfoTest, givenSetupHardwareInfoWhenQuerySystemInfoFalseThenSystem
     EXPECT_EQ(ret, 0);
     EXPECT_EQ(nullptr, drm.getSystemInfo());
 
-    EXPECT_TRUE(isEmpty(::testing::internal::GetCapturedStdout()));
+    EXPECT_TRUE(isEmpty(capture.getCapturedStdout()));
     EXPECT_FALSE(isEmpty(::testing::internal::GetCapturedStderr()));
 }
 
@@ -234,7 +235,8 @@ TEST(DrmSystemInfoTest, givenSetupHardwareInfoWhenQuerySystemInfoFailsThenSystem
     auto setupHardwareInfo = [](HardwareInfo *, bool, const ReleaseHelper *) {};
     DeviceDescriptor device = {0, &hwInfo, setupHardwareInfo};
 
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     ::testing::internal::CaptureStderr();
     DebugManagerStateRestore restorer;
     debugManager.flags.PrintDebugMessages.set(true);
@@ -246,7 +248,7 @@ TEST(DrmSystemInfoTest, givenSetupHardwareInfoWhenQuerySystemInfoFailsThenSystem
     EXPECT_EQ(ret, 0);
     EXPECT_EQ(nullptr, drm.getSystemInfo());
 
-    EXPECT_TRUE(hasSubstr(::testing::internal::GetCapturedStdout(), "INFO: System Info query failed!\n"));
+    EXPECT_TRUE(hasSubstr(capture.getCapturedStdout(), "INFO: System Info query failed!\n"));
     auto &productHelper = executionEnvironment->rootDeviceEnvironments[0]->getHelper<ProductHelper>();
     if (productHelper.isPlatformQuerySupported()) {
         EXPECT_TRUE(hasSubstr(::testing::internal::GetCapturedStderr(), "Size got from PRELIM_DRM_I915_QUERY_HW_IP_VERSION query does not match PrelimI915::prelim_drm_i915_query_hw_ip_version size\n"));
@@ -500,4 +502,39 @@ TEST(DrmSystemInfoTest, givenTopologyWithMoreEuPerDssThanInDeviceBlobWhenSetupHa
     EXPECT_NE(static_cast<uint32_t>(drm.storedEUVal), gtSystemInfo.EUCount);
     EXPECT_EQ(hwInfo.gtSystemInfo.SubSliceCount * drm.getSystemInfo()->getMaxEuPerDualSubSlice(), gtSystemInfo.EUCount);
     EXPECT_EQ(hwInfo.gtSystemInfo.EUCount * drm.getSystemInfo()->getNumThreadsPerEu(), gtSystemInfo.ThreadCount);
+}
+
+TEST(DrmSystemInfoTest, givenOverrideNumThreadsPerEuSetWhenSetupHardwareInfoThenCorrectThreadCountIsSet) {
+    DebugManagerStateRestore restorer;
+
+    auto executionEnvironment = std::make_unique<MockExecutionEnvironment>();
+    auto &hwInfo = *executionEnvironment->rootDeviceEnvironments[0]->getMutableHardwareInfo();
+    auto setupHardwareInfo = [](HardwareInfo *, bool, const ReleaseHelper *) {};
+    DeviceDescriptor device = {0, &hwInfo, setupHardwareInfo};
+
+    uint32_t dummyBlobThreadCount = 90;
+    uint32_t dummyBlobEuCount = 6;
+    {
+        DrmMockEngine drm(*executionEnvironment->rootDeviceEnvironments[0]);
+        drm.setupHardwareInfo(&device, false);
+        EXPECT_EQ(hwInfo.gtSystemInfo.ThreadCount, dummyBlobThreadCount);
+    }
+    {
+        debugManager.flags.OverrideNumThreadsPerEu.set(7);
+        DrmMockEngine drm(*executionEnvironment->rootDeviceEnvironments[0]);
+        drm.setupHardwareInfo(&device, false);
+        EXPECT_EQ(hwInfo.gtSystemInfo.ThreadCount, dummyBlobEuCount * 7);
+    }
+    {
+        debugManager.flags.OverrideNumThreadsPerEu.set(8);
+        DrmMockEngine drm(*executionEnvironment->rootDeviceEnvironments[0]);
+        drm.setupHardwareInfo(&device, false);
+        EXPECT_EQ(hwInfo.gtSystemInfo.ThreadCount, dummyBlobEuCount * 8);
+    }
+    {
+        debugManager.flags.OverrideNumThreadsPerEu.set(10);
+        DrmMockEngine drm(*executionEnvironment->rootDeviceEnvironments[0]);
+        drm.setupHardwareInfo(&device, false);
+        EXPECT_EQ(hwInfo.gtSystemInfo.ThreadCount, dummyBlobEuCount * 10);
+    }
 }

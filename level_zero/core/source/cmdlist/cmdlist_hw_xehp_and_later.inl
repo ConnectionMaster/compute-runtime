@@ -31,7 +31,7 @@
 
 #include "encode_dispatch_kernel_args_ext.h"
 #include "encode_surface_state_args.h"
-#include "igfxfmid.h"
+#include "neo_igfxfmid.h"
 
 namespace L0 {
 
@@ -313,7 +313,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
 
     std::list<void *> additionalCommands;
 
-    if (compactEvent && (!compactEvent->isCounterBased() || this->asMutable())) {
+    if (compactEvent && !compactEvent->isCounterBased()) {
         appendEventForProfilingAllWalkers(compactEvent, nullptr, launchParams.outListCommands, true, true, launchParams.omitAddingEventResidency, false);
     }
 
@@ -331,12 +331,12 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
         inOrderNonWalkerSignalling = isInOrderNonWalkerSignalingRequired(eventForInOrderExec);
 
         if (inOrderExecSignalRequired) {
-            if (!compactEvent || this->asMutable() || !compactEvent->isCounterBased() || compactEvent->isUsingContextEndOffset()) {
+            if (!compactEvent || !compactEvent->isCounterBased() || compactEvent->isUsingContextEndOffset()) {
                 if (inOrderNonWalkerSignalling) {
                     if (!eventForInOrderExec->getAllocation(this->device)) {
                         eventForInOrderExec->resetInOrderTimestampNode(device->getInOrderTimestampAllocator()->getTag(), this->partitionCount);
                     }
-                    if (this->asMutable() || !eventForInOrderExec->isCounterBased()) {
+                    if (!eventForInOrderExec->isCounterBased()) {
                         dispatchEventPostSyncOperation(eventForInOrderExec, nullptr, launchParams.outListCommands, Event::STATE_CLEARED, false, false, false, false, false);
                     } else if (compactEvent) {
                         eventAddress = eventForInOrderExec->getPacketAddress(this->device);
@@ -370,7 +370,8 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
 
     auto isFlushL3ForExternalAllocationRequired = isFlushL3AfterPostSync && isKernelUsingExternalAllocation;
     auto isFlushL3ForHostUsmRequired = isFlushL3AfterPostSync && isKernelUsingSystemAllocation;
-    if (NEO::debugManager.flags.DisableFlushL3ForHostUsm.get() && isFlushL3ForHostUsmRequired) {
+
+    if (NEO::debugManager.flags.RedirectFlushL3HostUsmToExternal.get() && isFlushL3ForHostUsmRequired) {
         isFlushL3ForExternalAllocationRequired = true;
         isFlushL3ForHostUsmRequired = false;
     }
@@ -426,6 +427,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
         .makeCommandView = launchParams.makeKernelCommandView,
     };
     setAdditionalDispatchKernelArgsFromLaunchParams(dispatchKernelArgs, launchParams);
+    setAdditionalDispatchKernelArgsFromKernel(dispatchKernelArgs, kernel);
 
     NEO::EncodeDispatchKernel<GfxFamily>::encodeCommon(commandContainer, dispatchKernelArgs);
     launchParams.outWalker = dispatchKernelArgs.outWalkerPtr;
@@ -462,7 +464,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
     }
 
     if (!launchParams.makeKernelCommandView) {
-        if (compactEvent && (!compactEvent->isCounterBased() || this->asMutable())) {
+        if (compactEvent && !compactEvent->isCounterBased()) {
             void **syncCmdBuffer = nullptr;
             if (launchParams.outSyncCommand != nullptr) {
                 launchParams.outSyncCommand->type = CommandToPatch::SignalEventPostSyncPipeControl;
@@ -487,8 +489,8 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
     if (inOrderExecSignalRequired) {
         if (inOrderNonWalkerSignalling) {
             if (!launchParams.skipInOrderNonWalkerSignaling) {
-                if (!(eventForInOrderExec->isCounterBased() && eventForInOrderExec->isUsingContextEndOffset()) || this->asMutable()) {
-                    if (compactEvent && (compactEvent->isCounterBased() && !this->asMutable())) {
+                if (!(eventForInOrderExec->isCounterBased() && eventForInOrderExec->isUsingContextEndOffset())) {
+                    if (compactEvent && compactEvent->isCounterBased()) {
                         auto pcCmdPtr = this->commandContainer.getCommandStream()->getSpace(0u);
                         inOrderCounterValue = this->inOrderExecInfo->getCounterValue() + getInOrderIncrementValue();
                         appendSignalInOrderDependencyCounter(eventForInOrderExec, false, true, textureFlushRequired);
@@ -556,7 +558,7 @@ ze_result_t CommandListCoreFamily<gfxCoreFamily>::appendLaunchKernelWithParams(K
 
     // Store PrintfBuffer from a kernel
     {
-        if (kernelDescriptor.kernelAttributes.flags.usesPrintf) {
+        if (kernelImp->getPrintfBufferAllocation() != nullptr) {
             storePrintfKernel(kernel);
         }
     }

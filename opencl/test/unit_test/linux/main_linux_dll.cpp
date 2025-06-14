@@ -22,6 +22,7 @@
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/helpers/default_hw_info.inl"
 #include "shared/test/common/helpers/gtest_helpers.h"
+#include "shared/test/common/helpers/stream_capture.h"
 #include "shared/test/common/helpers/ult_hw_config.inl"
 #include "shared/test/common/helpers/variable_backup.h"
 #include "shared/test/common/libult/signal_utils.h"
@@ -51,6 +52,7 @@ namespace NEO {
 class OsLibrary;
 void __attribute__((destructor)) platformsDestructor();
 extern const DeviceDescriptor deviceDescriptorTable[];
+const char *apiName = "OCL";
 } // namespace NEO
 
 NEO::OsLibrary *setAdapterInfo(const PLATFORM *platform, const GT_SYSTEM_INFO *gtSystemInfo, uint64_t gpuAddressSpace) {
@@ -193,7 +195,8 @@ TEST_F(DrmSimpleTests, GivenSelectedExistingDeviceWhenOpenDirFailsThenRetryOpeni
 }
 
 TEST_F(DrmSimpleTests, givenPrintIoctlEntriesWhenCallIoctlThenIoctlIsPrinted) {
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     auto drm = DrmWrap::createDrm(*(mockExecutionEnvironment.rootDeviceEnvironments[0].get()));
 
@@ -203,7 +206,7 @@ TEST_F(DrmSimpleTests, givenPrintIoctlEntriesWhenCallIoctlThenIoctlIsPrinted) {
     uint32_t contextId = 1u;
     drm->destroyDrmContext(contextId);
 
-    std::string output = ::testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_STREQ(output.c_str(), "IOCTL DRM_IOCTL_I915_GEM_CONTEXT_DESTROY called\nIOCTL DRM_IOCTL_I915_GEM_CONTEXT_DESTROY returns 0\n");
 }
 
@@ -217,7 +220,8 @@ struct DrmFailedIoctlTests : public ::testing::Test {
 };
 
 TEST_F(DrmFailedIoctlTests, givenPrintIoctlEntriesWhenCallFailedIoctlThenExpectedIoctlIsPrinted) {
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     auto drm = DrmWrap::createDrm(*(mockExecutionEnvironment.rootDeviceEnvironments[0].get()));
 
@@ -228,7 +232,7 @@ TEST_F(DrmFailedIoctlTests, givenPrintIoctlEntriesWhenCallFailedIoctlThenExpecte
     uint32_t vmId = 100u;
     drm->queryVmId(contextId, vmId);
 
-    std::string output = ::testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_STREQ(output.c_str(), "IOCTL DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM called\nIOCTL DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM returns -1, errno 9(Bad file descriptor)\n");
 }
 
@@ -317,11 +321,12 @@ TEST_F(DrmSimpleTests, givenPrintIoctlTimesWhenCallIoctlThenStatisticsAreGathere
     EXPECT_EQ(1u, destroyData->second.count);
     EXPECT_NE(0, destroyData->second.totalTime);
 
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     drm.reset();
 
-    std::string output = ::testing::internal::GetCapturedStdout();
+    std::string output = capture.getCapturedStdout();
     EXPECT_STRNE("", output.c_str());
 
     std::string_view requestString("Request");
@@ -520,12 +525,13 @@ TEST_F(DrmTests, GivenUnknownDeviceWhenCreatingDrmThenNullIsReturned) {
     revisionId = -1;
 
     ::testing::internal::CaptureStderr();
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     auto drm = DrmWrap::createDrm(*mockRootDeviceEnvironment);
     EXPECT_EQ(drm, nullptr);
     std::string errStr = ::testing::internal::GetCapturedStderr();
     EXPECT_TRUE(hasSubstr(errStr, std::string("FATAL: Unknown device: deviceId: ffff, revisionId: ffff")));
-    ::testing::internal::GetCapturedStdout();
+    capture.getCapturedStdout();
 }
 
 TEST_F(DrmTests, GivenKnownDeviceWhenCreatingDrmThenHwInfoIsProperlySet) {
@@ -737,7 +743,8 @@ TEST_F(DrmTests, givenEnabledDebuggingAndVmBindNotAvailableWhenDrmIsCreatedThenP
     DebugManagerStateRestore restore;
 
     ::testing::internal::CaptureStderr();
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     debugManager.flags.CreateMultipleSubDevices.set(2);
     debugManager.flags.UseVmBind.set(0);
@@ -749,7 +756,7 @@ TEST_F(DrmTests, givenEnabledDebuggingAndVmBindNotAvailableWhenDrmIsCreatedThenP
     EXPECT_NE(drm, nullptr);
 
     if (drm->isPerContextVMRequired()) {
-        ::testing::internal::GetCapturedStdout();
+        capture.getCapturedStdout();
         ::testing::internal::GetCapturedStderr();
         GTEST_SKIP();
     }
@@ -761,7 +768,7 @@ TEST_F(DrmTests, givenEnabledDebuggingAndVmBindNotAvailableWhenDrmIsCreatedThenP
     EXPECT_NE(0u, static_cast<DrmWrap *>(drm.get())->virtualMemoryIds.size());
 
     debugManager.flags.PrintDebugMessages.set(false);
-    ::testing::internal::GetCapturedStdout();
+    capture.getCapturedStdout();
     std::string errStr = ::testing::internal::GetCapturedStderr();
 
     auto &compilerProductHelper = drm->getRootDeviceEnvironment().getHelper<CompilerProductHelper>();
@@ -797,7 +804,8 @@ TEST_F(DrmTests, givenDrmIsCreatedWhenCreateVirtualMemoryFailsThenReturnVirtualM
     failOnVirtualMemoryCreate = -1;
 
     ::testing::internal::CaptureStderr();
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
     auto drm = DrmWrap::createDrm(*mockRootDeviceEnvironment);
     EXPECT_NE(drm, nullptr);
 
@@ -808,7 +816,7 @@ TEST_F(DrmTests, givenDrmIsCreatedWhenCreateVirtualMemoryFailsThenReturnVirtualM
     if (!drm->isPerContextVMRequired()) {
         EXPECT_TRUE(hasSubstr(errStr, std::string("INFO: Device doesn't support GEM Virtual Memory")));
     }
-    ::testing::internal::GetCapturedStdout();
+    capture.getCapturedStdout();
 }
 
 TEST(SysCalls, WhenSysCallsPollCalledThenCallIsRedirectedToOs) {
@@ -989,7 +997,8 @@ TEST_F(DrmTests, whenDrmIsCreatedAndQueryEngineInfoFailsThenWarningIsReported) {
     DrmQueryConfig::failOnQueryEngineInfo = true;
 
     ::testing::internal::CaptureStderr();
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     MockExecutionEnvironment mockExecutionEnvironment;
     auto drm = DrmWrap::createDrm(*mockExecutionEnvironment.rootDeviceEnvironments[0]);
@@ -997,7 +1006,7 @@ TEST_F(DrmTests, whenDrmIsCreatedAndQueryEngineInfoFailsThenWarningIsReported) {
 
     std::string errStr = ::testing::internal::GetCapturedStderr();
     EXPECT_TRUE(hasSubstr(errStr, std::string("WARNING: Failed to query engine info\n")));
-    ::testing::internal::GetCapturedStdout();
+    capture.getCapturedStdout();
 }
 
 TEST_F(DrmTests, whenDrmIsCreatedAndQueryMemoryInfoFailsThenWarningIsReported) {
@@ -1009,7 +1018,8 @@ TEST_F(DrmTests, whenDrmIsCreatedAndQueryMemoryInfoFailsThenWarningIsReported) {
     DrmQueryConfig::failOnQueryMemoryInfo = true;
 
     ::testing::internal::CaptureStderr();
-    ::testing::internal::CaptureStdout();
+    StreamCapture capture;
+    capture.captureStdout();
 
     MockExecutionEnvironment mockExecutionEnvironment;
     auto drm = DrmWrap::createDrm(*mockExecutionEnvironment.rootDeviceEnvironments[0]);
@@ -1017,5 +1027,5 @@ TEST_F(DrmTests, whenDrmIsCreatedAndQueryMemoryInfoFailsThenWarningIsReported) {
 
     std::string errStr = ::testing::internal::GetCapturedStderr();
     EXPECT_TRUE(hasSubstr(errStr, std::string("WARNING: Failed to query memory info\n")));
-    ::testing::internal::GetCapturedStdout();
+    capture.getCapturedStdout();
 }

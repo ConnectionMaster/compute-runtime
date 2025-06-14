@@ -68,6 +68,7 @@ set(NEO_CORE_HELPERS
     ${CMAKE_CURRENT_SOURCE_DIR}/engine_node_helper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/engine_node_helper.h
     ${CMAKE_CURRENT_SOURCE_DIR}/extendable_enum.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/fence_type.h
     ${CMAKE_CURRENT_SOURCE_DIR}/file_io_load.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/file_io.h
     ${CMAKE_CURRENT_SOURCE_DIR}/flat_batch_buffer_helper.h
@@ -166,6 +167,8 @@ set(NEO_CORE_HELPERS
     ${CMAKE_CURRENT_SOURCE_DIR}/definitions/engine_group_types.h
     ${CMAKE_CURRENT_SOURCE_DIR}/definitions/command_encoder_args.h
     ${CMAKE_CURRENT_SOURCE_DIR}/definitions/indirect_detection_versions.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/image_helper.h
+    ${CMAKE_CURRENT_SOURCE_DIR}${BRANCH_DIR_SUFFIX}image_helper.cpp
 )
 
 if(WIN32)

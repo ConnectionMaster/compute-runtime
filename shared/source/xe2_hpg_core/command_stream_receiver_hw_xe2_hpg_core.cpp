@@ -214,16 +214,34 @@ void BlitCommandsHelper<Family>::appendBlitCommandsMemCopy(const BlitProperties 
 
     uint8_t compressionFormat = 0;
 
-    if (dstAllocation->isCompressionEnabled()) {
-        auto resourceFormat = dstAllocation->getDefaultGmm()->gmmResourceInfo->getResourceFormat();
-        compressionFormat = rootDeviceEnvironment.getGmmClientContext()->getSurfaceStateCompressionFormat(resourceFormat);
-    } else if (srcAllocation->isCompressionEnabled()) {
-        auto resourceFormat = srcAllocation->getDefaultGmm()->gmmResourceInfo->getResourceFormat();
-        compressionFormat = rootDeviceEnvironment.getGmmClientContext()->getSurfaceStateCompressionFormat(resourceFormat);
+    if (dstAllocation) {
+        if (dstAllocation->isCompressionEnabled()) {
+            auto resourceFormat = dstAllocation->getDefaultGmm()->gmmResourceInfo->getResourceFormat();
+            compressionFormat = rootDeviceEnvironment.getGmmClientContext()->getSurfaceStateCompressionFormat(resourceFormat);
+        }
+    }
+    if (compressionFormat == 0) {
+        if (srcAllocation) {
+            if (srcAllocation->isCompressionEnabled()) {
+                auto resourceFormat = srcAllocation->getDefaultGmm()->gmmResourceInfo->getResourceFormat();
+                compressionFormat = rootDeviceEnvironment.getGmmClientContext()->getSurfaceStateCompressionFormat(resourceFormat);
+            }
+        }
     }
 
     if (debugManager.flags.EnableStatelessCompressionWithUnifiedMemory.get()) {
-        if (!MemoryPoolHelper::isSystemMemoryPool(srcAllocation->getMemoryPool()) || !MemoryPoolHelper::isSystemMemoryPool(dstAllocation->getMemoryPool())) {
+        bool enable = false;
+        if (srcAllocation) {
+            if (!MemoryPoolHelper::isSystemMemoryPool(srcAllocation->getMemoryPool())) {
+                enable = true;
+            }
+        }
+        if (dstAllocation) {
+            if (!MemoryPoolHelper::isSystemMemoryPool(dstAllocation->getMemoryPool())) {
+                enable = true;
+            }
+        }
+        if (enable) {
             compressionFormat = static_cast<uint8_t>(debugManager.flags.FormatForStatelessCompressionWithUnifiedMemory.get());
         }
     }
@@ -281,6 +299,7 @@ const Family::INTERFACE_DESCRIPTOR_DATA Family::cmdInitInterfaceDescriptorData =
 const Family::MI_BATCH_BUFFER_START Family::cmdInitBatchBufferStart = Family::MI_BATCH_BUFFER_START::sInit();
 const Family::MI_BATCH_BUFFER_END Family::cmdInitBatchBufferEnd = Family::MI_BATCH_BUFFER_END::sInit();
 const Family::PIPE_CONTROL Family::cmdInitPipeControl = Family::PIPE_CONTROL::sInit();
+const Family::RESOURCE_BARRIER Family::cmdInitResourceBarrier = Family::RESOURCE_BARRIER::sInit();
 const Family::STATE_COMPUTE_MODE Family::cmdInitStateComputeMode = Family::STATE_COMPUTE_MODE::sInit();
 const Family::_3DSTATE_BINDING_TABLE_POOL_ALLOC Family::cmdInitStateBindingTablePoolAlloc =
     Family::_3DSTATE_BINDING_TABLE_POOL_ALLOC::sInit();

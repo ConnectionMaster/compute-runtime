@@ -180,13 +180,12 @@ uint64_t ProductHelperHw<gfxProduct>::getHostMemCapabilities(const HardwareInfo 
 
 template <PRODUCT_FAMILY gfxProduct>
 uint64_t ProductHelperHw<gfxProduct>::getSharedSystemMemCapabilities(const HardwareInfo *hwInfo) const {
-    bool supported = false;
 
-    if (debugManager.flags.EnableSharedSystemUsmSupport.get() != -1) {
-        supported = !!debugManager.flags.EnableSharedSystemUsmSupport.get();
+    if ((debugManager.flags.EnableRecoverablePageFaults.get() == 0) || (debugManager.flags.EnableSharedSystemUsmSupport.get() != 1)) {
+        return 0;
     }
 
-    return (supported ? (UnifiedSharedMemoryFlags::access | UnifiedSharedMemoryFlags::atomicAccess | UnifiedSharedMemoryFlags::concurrentAccess | UnifiedSharedMemoryFlags::concurrentAtomicAccess) : 0);
+    return (hwInfo->capabilityTable.sharedSystemMemCapabilities);
 }
 
 template <PRODUCT_FAMILY gfxProduct>
@@ -245,6 +244,11 @@ template <PRODUCT_FAMILY gfxProduct>
 uint32_t ProductHelperHw<gfxProduct>::getMaxThreadsForWorkgroup(const HardwareInfo &hwInfo, uint32_t maxNumEUsPerSubSlice) const {
     uint32_t numThreadsPerEU = hwInfo.gtSystemInfo.ThreadCount / hwInfo.gtSystemInfo.EUCount;
     return maxNumEUsPerSubSlice * numThreadsPerEU;
+}
+
+template <PRODUCT_FAMILY gfxProduct>
+uint32_t ProductHelperHw<gfxProduct>::getPreferredWorkgroupCountPerSubslice() const {
+    return 0;
 }
 
 template <PRODUCT_FAMILY gfxProduct>
@@ -472,7 +476,7 @@ bool ProductHelperHw<gfxProduct>::isCopyEngineSelectorEnabled(const HardwareInfo
 }
 
 template <PRODUCT_FAMILY gfxProduct>
-bool ProductHelperHw<gfxProduct>::isGlobalFenceInCommandStreamRequired(const HardwareInfo &hwInfo) const {
+bool ProductHelperHw<gfxProduct>::isReleaseGlobalFenceInCommandStreamRequired(const HardwareInfo &hwInfo) const {
     return false;
 }
 
@@ -482,8 +486,8 @@ bool ProductHelperHw<gfxProduct>::isGlobalFenceInPostSyncRequired(const Hardware
 }
 
 template <PRODUCT_FAMILY gfxProduct>
-bool ProductHelperHw<gfxProduct>::isGlobalFenceInDirectSubmissionRequired(const HardwareInfo &hwInfo) const {
-    return ProductHelperHw<gfxProduct>::isGlobalFenceInCommandStreamRequired(hwInfo);
+bool ProductHelperHw<gfxProduct>::isAcquireGlobalFenceInDirectSubmissionRequired(const HardwareInfo &hwInfo) const {
+    return ProductHelperHw<gfxProduct>::isReleaseGlobalFenceInCommandStreamRequired(hwInfo);
 };
 
 template <PRODUCT_FAMILY gfxProduct>
@@ -953,6 +957,11 @@ uint64_t ProductHelperHw<gfxProduct>::getPatIndex(CacheRegion cacheRegion, Cache
 }
 
 template <PRODUCT_FAMILY gfxProduct>
+uint32_t ProductHelperHw<gfxProduct>::getGmmResourceUsageOverride(uint32_t usageType) const {
+    return 0u;
+}
+
+template <PRODUCT_FAMILY gfxProduct>
 bool ProductHelperHw<gfxProduct>::isEvictionIfNecessaryFlagSupported() const {
     return true;
 }
@@ -963,7 +972,7 @@ bool ProductHelperHw<gfxProduct>::isL3FlushAfterPostSyncRequired(bool heaplessEn
 }
 
 template <PRODUCT_FAMILY gfxProduct>
-uint32_t ProductHelperHw<gfxProduct>::adjustMaxThreadsPerThreadGroup(uint32_t maxThreadsPerThreadGroup, uint32_t simt, uint32_t totalWorkItems, uint32_t grfCount, bool isHwLocalIdGeneration, bool isHeaplessModeEnabled) const {
+uint32_t ProductHelperHw<gfxProduct>::adjustMaxThreadsPerThreadGroup(uint32_t maxThreadsPerThreadGroup, uint32_t simt, uint32_t grfCount, bool isHeaplessModeEnabled) const {
     return maxThreadsPerThreadGroup;
 }
 
@@ -1074,6 +1083,16 @@ bool ProductHelperHw<gfxProduct>::isExposingSubdevicesAllowed() const {
 template <PRODUCT_FAMILY gfxProduct>
 bool ProductHelperHw<gfxProduct>::useAdditionalBlitProperties() const {
     return false;
+}
+
+template <PRODUCT_FAMILY gfxProduct>
+bool ProductHelperHw<gfxProduct>::isPackedCopyFormatSupported() const {
+    return false;
+}
+
+template <PRODUCT_FAMILY gfxProduct>
+bool ProductHelperHw<gfxProduct>::getStorageInfoLocalOnlyFlag(LocalMemAllocationMode usmDeviceAllocationMode, bool defaultValue) const {
+    return defaultValue;
 }
 
 } // namespace NEO

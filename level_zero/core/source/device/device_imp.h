@@ -76,7 +76,6 @@ struct DeviceImp : public Device, NEO::NonCopyableAndNonMovableClass {
 
     ze_result_t systemBarrier() override;
     ze_result_t synchronize() override;
-    void *getExecEnvironment() override;
     BuiltinFunctionsLib *getBuiltinFunctionsLib() override;
     uint32_t getMOCS(bool l3enabled, bool l1enabled) override;
     const NEO::GfxCoreHelper &getGfxCoreHelper() override;
@@ -116,7 +115,7 @@ struct DeviceImp : public Device, NEO::NonCopyableAndNonMovableClass {
     NEO::GraphicsAllocation *allocateMemoryFromHostPtr(const void *buffer, size_t size, bool hostCopyAllowed) override;
     void setSysmanHandle(SysmanDevice *pSysman) override;
     SysmanDevice *getSysmanHandle() override;
-    ze_result_t getCsrForOrdinalAndIndex(NEO::CommandStreamReceiver **csr, uint32_t ordinal, uint32_t index, ze_command_queue_priority_t priority, bool allocateInterrupt) override;
+    ze_result_t getCsrForOrdinalAndIndex(NEO::CommandStreamReceiver **csr, uint32_t ordinal, uint32_t index, ze_command_queue_priority_t priority, int priorityLevel, bool allocateInterrupt) override;
     ze_result_t getCsrForLowPriority(NEO::CommandStreamReceiver **csr, bool copyOnly) override;
     ze_result_t getCsrForHighPriority(NEO::CommandStreamReceiver **csr, bool copyOnly);
     bool isSuitableForLowPriority(ze_command_queue_priority_t priority, bool copyOnly);
@@ -129,7 +128,6 @@ struct DeviceImp : public Device, NEO::NonCopyableAndNonMovableClass {
     uint32_t getPhysicalSubDeviceId();
 
     bool isSubdevice = false;
-    void *execEnvironment = nullptr;
     std::unique_ptr<BuiltinFunctionsLib> builtins;
     std::unique_ptr<MetricDeviceContext> metricContext;
     std::unique_ptr<CacheReservation> cacheReservation;
@@ -175,7 +173,6 @@ struct DeviceImp : public Device, NEO::NonCopyableAndNonMovableClass {
     ze_result_t getFabricVertex(ze_fabric_vertex_handle_t *phVertex) override;
 
     ze_result_t queryDeviceLuid(ze_device_luid_ext_properties_t *deviceLuidProperties);
-    ze_result_t setDeviceLuid(ze_device_luid_ext_properties_t *deviceLuidProperties);
     uint32_t getEventMaxPacketCount() const override;
     uint32_t getEventMaxKernelCount() const override;
     uint32_t queryDeviceNodeMask();
@@ -191,7 +188,7 @@ struct DeviceImp : public Device, NEO::NonCopyableAndNonMovableClass {
     NEO::EngineGroupType getEngineGroupTypeForOrdinal(uint32_t ordinal) const;
     void getP2PPropertiesDirectFabricConnection(DeviceImp *peerDeviceImp,
                                                 ze_device_p2p_bandwidth_exp_properties_t *bandwidthPropertiesDesc);
-    bool tryAssignSecondaryContext(aub_stream::EngineType engineType, NEO::EngineUsage engineUsage, NEO::CommandStreamReceiver **csr, bool allocateInterrupt);
+    bool tryAssignSecondaryContext(aub_stream::EngineType engineType, NEO::EngineUsage engineUsage, int priorityLevel, NEO::CommandStreamReceiver **csr, bool allocateInterrupt);
     NEO::EngineGroupsT subDeviceCopyEngineGroups{};
 
     SysmanDevice *pSysmanDevice = nullptr;

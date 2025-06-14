@@ -18,7 +18,7 @@
 #include "shared/test/unit_test/os_interface/product_helper_tests.h"
 
 #include "aubstream/product_family.h"
-#include "platforms.h"
+#include "neo_aot_platforms.h"
 
 using namespace NEO;
 
@@ -33,8 +33,8 @@ BMGTEST_F(BmgProductHelper, givenProductHelperWhenGettingEvictIfNecessaryFlagSup
     EXPECT_TRUE(productHelper->isEvictionIfNecessaryFlagSupported());
 }
 
-BMGTEST_F(BmgProductHelper, givenBmgProductHelperWhenIsInitBuiltinAsyncSupportedThenReturnFalse) {
-    EXPECT_FALSE(productHelper->isInitBuiltinAsyncSupported(*defaultHwInfo));
+BMGTEST_F(BmgProductHelper, givenBmgProductHelperWhenIsInitBuiltinAsyncSupportedThenReturnTrue) {
+    EXPECT_TRUE(productHelper->isInitBuiltinAsyncSupported(*defaultHwInfo));
 }
 
 BMGTEST_F(BmgProductHelper, givenProductHelperWhenCheckIsCopyBufferRectSplitSupportedThenReturnsTrue) {
@@ -127,4 +127,8 @@ BMGTEST_F(BmgProductHelper, whenAdjustScratchSizeThenSizeIsDoubled) {
     size_t scratchSize = initialScratchSize;
     productHelper->adjustScratchSize(scratchSize);
     EXPECT_EQ(initialScratchSize * 2, scratchSize);
+}
+
+BMGTEST_F(BmgProductHelper, givenProductHelperWhenCallDeferMOCSToPatOnWSLThenTrueIsReturned) {
+    EXPECT_TRUE(productHelper->deferMOCSToPatIndex(true));
 }
