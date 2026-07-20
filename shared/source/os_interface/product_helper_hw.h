@@ -188,6 +188,7 @@ class ProductHelperHw : public ProductHelper {
     bool isAvailableExtendedScratch() const override;
     std::optional<bool> isCoherentAllocation(uint64_t patIndex) const override;
     bool isStagingBuffersEnabled() const override;
+    size_t getCpuCopyThreshold(TransferType transferType) const override;
     uint32_t getCacheLineSize() const override;
     bool supports2DBlockStore() const override;
     bool supports2DBlockLoad() const override;

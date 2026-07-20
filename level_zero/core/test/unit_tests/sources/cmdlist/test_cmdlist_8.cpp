@@ -199,10 +199,11 @@ HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListAndNonUsmHostPtrWh
     cmdList.copyThroughLockedPtrEnabled = true;
     cmdList.cmdQImmediate = queue.get();
     cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
-    CpuMemCopyInfo cpuMemCopyInfo(nonUsmHostPtr, devicePtr, 1024);
-    auto srcFound = device->getDriverHandle()->findAllocationDataForRange(devicePtr, 1024, cpuMemCopyInfo.srcAllocInfo.svmAlloc);
+    const size_t copySize = device->getProductHelper().getCpuCopyThreshold(TransferType::deviceUsmToHostNonUsm);
+    CpuMemCopyInfo cpuMemCopyInfo(nonUsmHostPtr, devicePtr, copySize);
+    auto srcFound = device->getDriverHandle()->findAllocationDataForRange(devicePtr, copySize, cpuMemCopyInfo.srcAllocInfo.svmAlloc);
     ASSERT_TRUE(srcFound);
-    auto dstFound = device->getDriverHandle()->findAllocationDataForRange(nonUsmHostPtr, 1024, cpuMemCopyInfo.dstAllocInfo.svmAlloc);
+    auto dstFound = device->getDriverHandle()->findAllocationDataForRange(nonUsmHostPtr, copySize, cpuMemCopyInfo.dstAllocInfo.svmAlloc);
     ASSERT_FALSE(dstFound);
     EXPECT_TRUE(cmdList.preferCopyThroughLockedPtr(cpuMemCopyInfo, 0, nullptr));
 }
@@ -873,51 +874,47 @@ HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListWhenGetTransferTyp
     context->freeMem(hostPtr2);
 }
 
-HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListWhenGetTransferThresholdThenReturnCorrectValue) {
+HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListWhenGetCpuCopyThresholdThenProductHelperValueIsReturned) {
     ze_command_queue_desc_t queueDesc = {};
     auto queue = std::make_unique<Mock<CommandQueue>>(device, device->getNEODevice()->getDefaultEngine().commandStreamReceiver, &queueDesc);
     MockCommandListImmediateHw<FamilyType::gfxCoreFamily> cmdList;
     cmdList.cmdQImmediate = queue.get();
     cmdList.copyThroughLockedPtrEnabled = true;
     cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::unknown));
 
-    EXPECT_EQ(1 * MemoryConstants::megaByte, cmdList.getTransferThreshold(TransferType::hostNonUsmToHostUsm));
-    EXPECT_EQ(4 * MemoryConstants::megaByte, cmdList.getTransferThreshold(TransferType::hostNonUsmToDeviceUsm));
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::hostNonUsmToSharedUsm));
-    EXPECT_EQ(1 * MemoryConstants::megaByte, cmdList.getTransferThreshold(TransferType::hostNonUsmToHostNonUsm));
+    auto &productHelper = device->getProductHelper();
 
-    EXPECT_EQ(200 * MemoryConstants::kiloByte, cmdList.getTransferThreshold(TransferType::hostUsmToHostUsm));
-    EXPECT_EQ(50 * MemoryConstants::kiloByte, cmdList.getTransferThreshold(TransferType::hostUsmToDeviceUsm));
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::hostUsmToSharedUsm));
-    EXPECT_EQ(500 * MemoryConstants::kiloByte, cmdList.getTransferThreshold(TransferType::hostUsmToHostNonUsm));
+    constexpr TransferType transferTypes[] = {
+        TransferType::unknown,
+        TransferType::deviceUsmToDeviceUsm,
+        TransferType::deviceUsmToHostUsm,
+        TransferType::deviceUsmToHostNonUsm,
+        TransferType::hostUsmToDeviceUsm,
+        TransferType::hostUsmToHostUsm,
+        TransferType::hostUsmToHostNonUsm,
+        TransferType::hostNonUsmToDeviceUsm,
+        TransferType::hostNonUsmToHostUsm,
+        TransferType::hostNonUsmToHostNonUsm,
+        TransferType::sharedUsmToSharedUsm};
 
-    EXPECT_EQ(128u, cmdList.getTransferThreshold(TransferType::deviceUsmToHostUsm));
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::deviceUsmToDeviceUsm));
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::deviceUsmToSharedUsm));
-    EXPECT_EQ(1 * MemoryConstants::kiloByte, cmdList.getTransferThreshold(TransferType::deviceUsmToHostNonUsm));
-
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::sharedUsmToHostUsm));
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::sharedUsmToDeviceUsm));
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::sharedUsmToSharedUsm));
-    EXPECT_EQ(0u, cmdList.getTransferThreshold(TransferType::sharedUsmToHostNonUsm));
+    for (auto transferType : transferTypes) {
+        EXPECT_EQ(productHelper.getCpuCopyThreshold(transferType), cmdList.getCpuCopyThreshold(transferType));
+    }
 }
 
-HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListAndThresholdDebugFlagSetWhenGetTransferThresholdThenReturnCorrectValue) {
+HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListAndThresholdDebugFlagSetWhenGetCpuCopyThresholdThenReturnDebugValue) {
     ze_command_queue_desc_t queueDesc = {};
     auto queue = std::make_unique<Mock<CommandQueue>>(device, device->getNEODevice()->getDefaultEngine().commandStreamReceiver, &queueDesc);
     MockCommandListImmediateHw<FamilyType::gfxCoreFamily> cmdList;
     cmdList.cmdQImmediate = queue.get();
     cmdList.copyThroughLockedPtrEnabled = true;
     cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
-    EXPECT_EQ(4 * MemoryConstants::megaByte, cmdList.getTransferThreshold(TransferType::hostNonUsmToDeviceUsm));
-    EXPECT_EQ(1 * MemoryConstants::kiloByte, cmdList.getTransferThreshold(TransferType::deviceUsmToHostNonUsm));
 
     debugManager.flags.ExperimentalH2DCpuCopyThreshold.set(5 * MemoryConstants::megaByte);
-    EXPECT_EQ(5 * MemoryConstants::megaByte, cmdList.getTransferThreshold(TransferType::hostNonUsmToDeviceUsm));
+    EXPECT_EQ(5 * MemoryConstants::megaByte, cmdList.getCpuCopyThreshold(TransferType::hostNonUsmToDeviceUsm));
 
     debugManager.flags.ExperimentalD2HCpuCopyThreshold.set(6 * MemoryConstants::megaByte);
-    EXPECT_EQ(6 * MemoryConstants::megaByte, cmdList.getTransferThreshold(TransferType::deviceUsmToHostNonUsm));
+    EXPECT_EQ(6 * MemoryConstants::megaByte, cmdList.getCpuCopyThreshold(TransferType::deviceUsmToHostNonUsm));
 }
 
 HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListAndNonUsmHostPtrWhenCopyH2DThenLockPtr) {
@@ -950,11 +947,12 @@ HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListAndNonUsmHostPtrWh
     cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
 
     NEO::SvmAllocationData *allocData;
-    device->getDriverHandle()->findAllocationDataForRange(devicePtr, 1024, allocData);
+    const size_t copySize = device->getProductHelper().getCpuCopyThreshold(TransferType::deviceUsmToHostNonUsm);
+    device->getDriverHandle()->findAllocationDataForRange(devicePtr, copySize, allocData);
     auto dstAlloc = allocData->gpuAllocations.getGraphicsAllocation(device->getRootDeviceIndex());
 
     EXPECT_EQ(nullptr, dstAlloc->getLockedPtr());
-    cmdList.appendMemoryCopy(nonUsmHostPtr, devicePtr, 1024, nullptr, 0, nullptr, copyParams);
+    cmdList.appendMemoryCopy(nonUsmHostPtr, devicePtr, copySize, nullptr, 0, nullptr, copyParams);
     EXPECT_EQ(1u, reinterpret_cast<MockMemoryManager *>(device->getDriverHandle()->getMemoryManager())->lockResourceCalled);
     EXPECT_NE(nullptr, dstAlloc->getLockedPtr());
 }
@@ -1393,8 +1391,10 @@ HWTEST_F(AppendMemoryLockedCopyTest, givenImmediateCommandListAndNonUsmDstHostPt
     MockAppendMemoryLockedCopyTestImmediateCmdList<FamilyType::gfxCoreFamily> cmdList;
     cmdList.cmdQImmediate = queue.get();
 
+    const size_t copySize = device->getProductHelper().getCpuCopyThreshold(TransferType::deviceUsmToHostNonUsm) * 2;
+
     cmdList.initialize(device, NEO::EngineGroupType::renderCompute, 0u);
-    cmdList.appendMemoryCopy(nonUsmHostPtr, devicePtr, 2 * MemoryConstants::kiloByte, nullptr, 0, nullptr, copyParams);
+    cmdList.appendMemoryCopy(nonUsmHostPtr, devicePtr, copySize, nullptr, 0, nullptr, copyParams);
     EXPECT_GE(cmdList.appendMemoryCopyKernelWithGACalled, 1u);
 }
 

@@ -18,6 +18,8 @@
 #include <unordered_map>
 #include <vector>
 
+enum class TransferType : uint32_t;
+
 namespace aub_stream {
 enum class ProductFamily : uint32_t;
 class AubManager;
@@ -254,6 +256,7 @@ class ProductHelper {
     virtual bool isAvailableExtendedScratch() const = 0;
     virtual std::optional<bool> isCoherentAllocation(uint64_t patIndex) const = 0;
     virtual bool isStagingBuffersEnabled() const = 0;
+    virtual size_t getCpuCopyThreshold(TransferType transferType) const = 0;
     virtual uint32_t getCacheLineSize() const = 0;
     virtual bool supports2DBlockStore() const = 0;
     virtual bool supports2DBlockLoad() const = 0;

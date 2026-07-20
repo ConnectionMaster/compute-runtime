@@ -28,6 +28,7 @@
 #include "shared/source/os_interface/product_helper.h"
 #include "shared/source/os_interface/product_helper_hw.h"
 #include "shared/source/release_helpers/release_helper/release_helper.h"
+#include "shared/source/unified_memory/unified_memory.h"
 #include "shared/source/unified_memory/usm_memory_support.h"
 #include "shared/source/utilities/logger.h"
 
@@ -892,6 +893,42 @@ bool ProductHelperHw<gfxProduct>::isAvailableExtendedScratch() const {
 template <PRODUCT_FAMILY gfxProduct>
 bool ProductHelperHw<gfxProduct>::isStagingBuffersEnabled() const {
     return false;
+}
+
+template <PRODUCT_FAMILY gfxProduct>
+size_t ProductHelperHw<gfxProduct>::getCpuCopyThreshold(TransferType transferType) const {
+    size_t threshold = 0u;
+
+    switch (transferType) {
+    case TransferType::deviceUsmToHostUsm:
+        threshold = 128u;
+        break;
+    case TransferType::deviceUsmToHostNonUsm:
+        threshold = 1 * MemoryConstants::kiloByte;
+        break;
+    case TransferType::hostUsmToDeviceUsm:
+        threshold = 50 * MemoryConstants::kiloByte;
+        break;
+    case TransferType::hostUsmToHostUsm:
+        threshold = 200 * MemoryConstants::kiloByte;
+        break;
+    case TransferType::hostUsmToHostNonUsm:
+        threshold = 500 * MemoryConstants::kiloByte;
+        break;
+    case TransferType::hostNonUsmToDeviceUsm:
+        threshold = 4 * MemoryConstants::megaByte;
+        break;
+    case TransferType::hostNonUsmToHostUsm:
+        threshold = 1 * MemoryConstants::megaByte;
+        break;
+    case TransferType::hostNonUsmToHostNonUsm:
+        threshold = 1 * MemoryConstants::megaByte;
+        break;
+    default:
+        break;
+    }
+
+    return threshold;
 }
 
 template <PRODUCT_FAMILY gfxProduct>

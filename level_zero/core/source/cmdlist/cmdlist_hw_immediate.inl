@@ -20,6 +20,7 @@
 #include "shared/source/helpers/completion_stamp.h"
 #include "shared/source/helpers/cpu_copy_helper.h"
 #include "shared/source/helpers/engine_node_helper.h"
+#include "shared/source/helpers/hw_info.h"
 #include "shared/source/helpers/in_order_cmd_helpers.h"
 #include "shared/source/helpers/state_base_address_helper.h"
 #include "shared/source/helpers/surface_format_info.h"
@@ -1544,7 +1545,7 @@ bool CommandListCoreFamilyImmediate<gfxCoreFamily>::preferCopyThroughLockedPtr(C
     }
 
     const TransferType transferType = getTransferType(cpuMemCopyInfo);
-    const size_t transferThreshold = getTransferThreshold(transferType);
+    const size_t transferThreshold = getCpuCopyThreshold(transferType);
 
     bool cpuMemCopyEnabled = false;
 
@@ -1795,61 +1796,13 @@ TransferType CommandListCoreFamilyImmediate<gfxCoreFamily>::getTransferType(cons
 }
 
 template <GFXCORE_FAMILY gfxCoreFamily>
-size_t CommandListCoreFamilyImmediate<gfxCoreFamily>::getTransferThreshold(TransferType transferType) {
-    size_t retVal = 0u;
+size_t CommandListCoreFamilyImmediate<gfxCoreFamily>::getCpuCopyThreshold(TransferType transferType) {
+    size_t retVal = this->device->getProductHelper().getCpuCopyThreshold(transferType);
 
-    switch (transferType) {
-    case TransferType::hostNonUsmToHostUsm:
-        retVal = 1 * MemoryConstants::megaByte;
-        break;
-    case TransferType::hostNonUsmToDeviceUsm:
-        retVal = 4 * MemoryConstants::megaByte;
-        if (NEO::debugManager.flags.ExperimentalH2DCpuCopyThreshold.get() != -1) {
-            retVal = NEO::debugManager.flags.ExperimentalH2DCpuCopyThreshold.get();
-        }
-        break;
-    case TransferType::hostNonUsmToSharedUsm:
-        retVal = 0u;
-        break;
-    case TransferType::hostNonUsmToHostNonUsm:
-        retVal = 1 * MemoryConstants::megaByte;
-        break;
-    case TransferType::hostUsmToHostUsm:
-        retVal = 200 * MemoryConstants::kiloByte;
-        break;
-    case TransferType::hostUsmToDeviceUsm:
-        retVal = 50 * MemoryConstants::kiloByte;
-        break;
-    case TransferType::hostUsmToSharedUsm:
-        retVal = 0u;
-        break;
-    case TransferType::hostUsmToHostNonUsm:
-        retVal = 500 * MemoryConstants::kiloByte;
-        break;
-    case TransferType::deviceUsmToDeviceUsm:
-        retVal = 0u;
-        break;
-    case TransferType::deviceUsmToSharedUsm:
-        retVal = 0u;
-        break;
-    case TransferType::deviceUsmToHostUsm:
-        retVal = 128u;
-        break;
-    case TransferType::deviceUsmToHostNonUsm:
-        retVal = 1 * MemoryConstants::kiloByte;
-        if (NEO::debugManager.flags.ExperimentalD2HCpuCopyThreshold.get() != -1) {
-            retVal = NEO::debugManager.flags.ExperimentalD2HCpuCopyThreshold.get();
-        }
-        break;
-    case TransferType::sharedUsmToHostUsm:
-    case TransferType::sharedUsmToDeviceUsm:
-    case TransferType::sharedUsmToSharedUsm:
-    case TransferType::sharedUsmToHostNonUsm:
-        retVal = 0u;
-        break;
-    default:
-        retVal = 0u;
-        break;
+    if (transferType == TransferType::hostNonUsmToDeviceUsm && NEO::debugManager.flags.ExperimentalH2DCpuCopyThreshold.get() != -1) {
+        retVal = NEO::debugManager.flags.ExperimentalH2DCpuCopyThreshold.get();
+    } else if (transferType == TransferType::deviceUsmToHostNonUsm && NEO::debugManager.flags.ExperimentalD2HCpuCopyThreshold.get() != -1) {
+        retVal = NEO::debugManager.flags.ExperimentalD2HCpuCopyThreshold.get();
     }
 
     return retVal;
